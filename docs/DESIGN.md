@@ -25,7 +25,7 @@ translation lines, no accounts/login (single-user local mode). See
 ## 1. The method being modeled
 
 An analysis relates **propositions** (clause-level units of assertion) using nested,
-never-crossing **brackets**, each labeled with one of 17 logical relationship types:
+never-crossing **brackets**, each labeled with one of 18 logical relationship types:
 
 | Family | Type | Symbol | Star default |
 |---|---|---|---|

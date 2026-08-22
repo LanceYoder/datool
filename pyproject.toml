@@ -1,7 +1,25 @@
 [project]
-name = "django-vercel"
+name = "datool"
 version = "0.1.0"
-requires-python = ">=3.12"
+description = "Discourse analysis (bracketing) tool for the Greek New Testament"
+requires-python = ">=3.11"
 dependencies = [
-    "django>=6.0",
+    "django>=5.2",
+    "djangorestframework>=3.15",
+    "django-cors-headers>=4.4",
+    "dj-database-url>=2.2",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-django>=4.9",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+python_files = ["test_*.py"]
+testpaths = ["da/tests"]
+
+[tool.uv]
+package = false

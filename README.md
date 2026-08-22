@@ -1,46 +1,51 @@
----
-name: Django Hello World
-slug: django-hello-world
-description: Use Django on Vercel with Serverless Functions using the Python Runtime.
-framework: Python
-useCase: Starter
-deployUrl: https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fexamples%2Ftree%2Fmain%2Fpython%2Fdjango&env=DJANGO_SECRET_KEY&envDescription=Secret%20key%20for%20Django%20cryptographic%20signing&demo-title=Django%20%2B%20Vercel&demo-description=Use%20Django%20on%20Vercel%20with%20Serverless%20Functions%20using%20the%20Python%20Runtime.&demo-url=https%3A%2F%2Fdjango-template.vercel.app%2F&demo-image=https://assets.vercel.com/image/upload/v1669994241/random/django.png
-demoUrl: https://django-template.vercel.app/
----
+# datool
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fexamples%2Ftree%2Fmain%2Fpython%2Fdjango&env=DJANGO_SECRET_KEY&envDescription=Secret%20key%20for%20Django%20cryptographic%20signing&demo-title=Django%20%2B%20Vercel&demo-description=Use%20Django%20on%20Vercel%20with%20Serverless%20Functions%20using%20the%20Python%20Runtime.&demo-url=https%3A%2F%2Fdjango-template.vercel.app%2F&demo-image=https://assets.vercel.com/image/upload/v1669994241/random/django.png)
+A web tool for **discourse analysis (bracketing) of Greek New Testament passages**:
+paste a chunk of Greek text, get an automated first-pass analysis (proposition
+segmentation + logical-relationship classification into a bracket tree), then refine
+the structure and annotations in an editor built for the method.
 
-# Django + Vercel
+See [`docs/DESIGN.md`](docs/DESIGN.md) for the full design: the method being modeled,
+the tree data model, the MorphGNT corpus foundation, the first-pass rules, and the
+editor architecture.
 
-This example shows how to use Django on Vercel with Serverless Functions using the [Python Runtime](https://vercel.com/docs/concepts/functions/serverless-functions/runtimes/python).
+## Running locally
 
-## Demo
-
-https://django-template.vercel.app/
-
-## Setting the Secret Key
-
-Django requires a secret key for cryptographic signing to be set in the `DJANGO_SECRET_KEY` environment variable. This can be set in the web interface, or by running:
-
-```bash
-uv run python -c 'from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())' | vercel env add -y DJANGO_SECRET_KEY prod
-```
-
-## How it Works
-
-Vercel detects Django's `manage.py` and uses that to find the WSGI entrypoint and the configuration for static files.
-
-## Running Locally
+Backend (Django + DRF, Python ≥ 3.11, [uv](https://docs.astral.sh/uv/)):
 
 ```bash
 uv sync
-uv run python manage.py runserver
+uv run python manage.py migrate
+uv run python manage.py runserver          # http://localhost:8000
 ```
 
-Your Django application is now available at `http://localhost:8000`.
+By default this uses SQLite (zero configuration). For Postgres parity with
+production, start the bundled Docker service and point `DATABASE_URL` at it:
 
-## One-Click Deploy
+```bash
+docker compose up -d
+export DATABASE_URL=postgres://datool:datool@localhost:5432/datool
+```
 
-Deploy the example using [Vercel](https://vercel.com?utm_source=github&utm_medium=readme&utm_campaign=vercel-examples):
+Frontend (React + Vite, in a second terminal):
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fexamples%2Ftree%2Fmain%2Fpython%2Fdjango&env=DJANGO_SECRET_KEY&envDescription=Secret%20key%20for%20Django%20cryptographic%20signing&demo-title=Django%20%2B%20Vercel&demo-description=Use%20Django%20on%20Vercel%20with%20Serverless%20Functions%20using%20the%20Python%20Runtime.&demo-url=https%3A%2F%2Fdjango-template.vercel.app%2F&demo-image=https://assets.vercel.com/image/upload/v1669994241/random/django.png)
+```bash
+cd frontend
+npm install
+npm run dev                                 # http://localhost:5173
+```
+
+The Vite dev server proxies `/api` to Django on port 8000.
+
+## Tests
+
+```bash
+uv run pytest
+```
+
+## Corpus data
+
+The Greek text and morphology come from the
+[MorphGNT SBLGNT](https://github.com/morphgnt/sblgnt) dataset, bundled under
+`da/corpus/data/` — see `ATTRIBUTION.md` there for licensing (SBLGNT EULA for the
+text; CC-BY-SA for the morphological analysis).

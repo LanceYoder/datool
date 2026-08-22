@@ -15,3 +15,8 @@ env.bak/
 venv.bak/
 
 env*.local
+
+node_modules/
+frontend/dist/
+staticfiles/
+.pytest_cache/
