@@ -1,0 +1,249 @@
+// Editing commands for the bracketing editor. Each command takes the Tiptap
+// Editor plus plain arguments, returns true and dispatches exactly one
+// transaction on success, or returns false (dispatching nothing) when the
+// operation is invalid.
+//
+// ProseMirror's content expressions guarantee bracket arity and the single
+// root; these commands additionally maintain the attribute-level invariant:
+// `prominent` is a valid child index iff the relationship is subordinate,
+// and null iff it is coordinate.
+
+import type { Editor } from '@tiptap/core';
+import type { Node as PMNode } from '@tiptap/pm/model';
+import { findWrapping } from '@tiptap/pm/transform';
+import type { TaxonomyEntry } from '../types';
+
+/**
+ * Default prominent child index for a relationship: null for coordinate;
+ * for subordinate, the taxonomy's starredLabel index used as a child index
+ * (clamped into [0, childCount-1]; callers can move it afterwards).
+ */
+export function defaultProminent(
+  entry: TaxonomyEntry,
+  childCount: number,
+): number | null {
+  if (entry.coordinate) return null;
+  const idx = entry.starredLabel ?? 0;
+  return Math.min(Math.max(idx, 0), Math.max(childCount - 1, 0));
+}
+
+function taxonomyEntry(
+  taxonomy: readonly TaxonomyEntry[],
+  rel: string,
+): TaxonomyEntry | undefined {
+  return taxonomy.find((entry) => entry.code === rel);
+}
+
+function bracketAt(editor: Editor, pos: number): PMNode | null {
+  const { doc } = editor.state;
+  if (pos < 0 || pos >= doc.content.size) return null;
+  const node = doc.nodeAt(pos);
+  return node !== null && node.type.name === 'bracket' ? node : null;
+}
+
+/** Replace a bracket's attrs wholesale (merged over the current attrs). */
+function setBracketAttrs(
+  editor: Editor,
+  pos: number,
+  node: PMNode,
+  changes: Record<string, unknown>,
+): boolean {
+  const tr = editor.state.tr.setNodeMarkup(pos, undefined, {
+    ...node.attrs,
+    ...changes,
+  });
+  editor.view.dispatch(tr);
+  return true;
+}
+
+/**
+ * Wrap the contiguous sibling units covering doc positions [from, to] in a
+ * new bracket with relationship `rel`. The covering set is the deepest run
+ * of adjacent siblings spanning both positions. Rejects (returns false) when
+ * that set has fewer than 2 units, when `rel` is not in the taxonomy, or when
+ * wrapping would invalidate the parent (e.g. wrapping ALL children of a
+ * bracket, which would leave it a single child).
+ */
+export function wrapUnits(
+  editor: Editor,
+  from: number,
+  to: number,
+  rel: string,
+  taxonomy: readonly TaxonomyEntry[],
+): boolean {
+  const entry = taxonomyEntry(taxonomy, rel);
+  if (entry === undefined) return false;
+
+  const { state } = editor;
+  const { doc } = state;
+  if (from < 0 || to > doc.content.size || from > to) return false;
+
+  const $from = doc.resolve(from);
+  const $to = doc.resolve(to);
+  const range = $from.blockRange($to);
+  if (range === null) return false;
+
+  const childCount = range.endIndex - range.startIndex;
+  if (childCount < 2) return false;
+
+  const bracketType = state.schema.nodes.bracket;
+  if (bracketType === undefined) return false;
+
+  const attrs = {
+    rel,
+    prominent: defaultProminent(entry, childCount),
+    reversed: false,
+    flag: null,
+  };
+  const wrapping = findWrapping(range, bracketType, attrs);
+  if (wrapping === null) return false;
+
+  editor.view.dispatch(state.tr.wrap(range, wrapping));
+  return true;
+}
+
+/**
+ * Dissolve the bracket at `pos`, splicing its children into the parent in
+ * place. The parent's `prominent` is re-indexed: indices past the splice
+ * shift by (childCount - 1); if the lifted bracket itself was prominent, the
+ * parent's star moves to the lifted bracket's own prominent child (its first
+ * child when it was coordinate). Returns false for the root bracket — its
+ * >= 2 children cannot live at the top level (doc content is a single unit).
+ */
+export function liftBracket(editor: Editor, pos: number): boolean {
+  const node = bracketAt(editor, pos);
+  if (node === null) return false;
+
+  const { state } = editor;
+  const $pos = state.doc.resolve(pos);
+  const parent = $pos.parent;
+  if (parent.type.name !== 'bracket') return false; // root bracket: disallowed
+
+  const index = $pos.index($pos.depth);
+  const spliceCount = node.childCount;
+
+  let tr = state.tr.replaceWith(pos, pos + node.nodeSize, node.content);
+
+  const prom = parent.attrs.prominent;
+  if (typeof prom === 'number') {
+    let next = prom;
+    if (prom > index) {
+      next = prom + spliceCount - 1;
+    } else if (prom === index) {
+      const inner = node.attrs.prominent;
+      next = index + (typeof inner === 'number' ? inner : 0);
+    }
+    if (next !== prom) {
+      const parentPos = $pos.before($pos.depth);
+      tr = tr.setNodeMarkup(parentPos, undefined, {
+        ...parent.attrs,
+        prominent: next,
+      });
+    }
+  }
+
+  editor.view.dispatch(tr);
+  return true;
+}
+
+/**
+ * Change the relationship of the bracket at `pos`. Fixes `prominent`:
+ * null for a coordinate target; for a subordinate target the existing index
+ * is kept (clamped into range) or, coming from coordinate, defaults per the
+ * taxonomy's starredLabel. `reversed` and `flag` are kept.
+ */
+export function setRelationship(
+  editor: Editor,
+  pos: number,
+  rel: string,
+  taxonomy: readonly TaxonomyEntry[],
+): boolean {
+  const entry = taxonomyEntry(taxonomy, rel);
+  if (entry === undefined) return false;
+  const node = bracketAt(editor, pos);
+  if (node === null) return false;
+
+  let prominent: number | null = null;
+  if (!entry.coordinate) {
+    const current = node.attrs.prominent;
+    prominent =
+      typeof current === 'number'
+        ? Math.min(Math.max(current, 0), node.childCount - 1)
+        : defaultProminent(entry, node.childCount);
+  }
+  return setBracketAttrs(editor, pos, node, { rel, prominent });
+}
+
+/**
+ * Move the star. Only valid on subordinate brackets (prominent !== null) and
+ * for an in-range child index.
+ */
+export function setProminent(
+  editor: Editor,
+  pos: number,
+  index: number,
+): boolean {
+  const node = bracketAt(editor, pos);
+  if (node === null) return false;
+  if (node.attrs.prominent === null) return false; // coordinate: no star
+  if (!Number.isInteger(index) || index < 0 || index >= node.childCount) {
+    return false;
+  }
+  return setBracketAttrs(editor, pos, node, { prominent: index });
+}
+
+/** Swap which taxonomy label sits at which end of the bracket. */
+export function toggleReversed(editor: Editor, pos: number): boolean {
+  const node = bracketAt(editor, pos);
+  if (node === null) return false;
+  return setBracketAttrs(editor, pos, node, {
+    reversed: node.attrs.reversed !== true,
+  });
+}
+
+/** Clear the review flag (flag -> null). */
+export function confirmFlag(editor: Editor, pos: number): boolean {
+  const node = bracketAt(editor, pos);
+  if (node === null) return false;
+  return setBracketAttrs(editor, pos, node, { flag: null });
+}
+
+/** Mark the bracket for review (flag -> 'review'). */
+export function setFlag(
+  editor: Editor,
+  pos: number,
+  flag: 'review' = 'review',
+): boolean {
+  const node = bracketAt(editor, pos);
+  if (node === null) return false;
+  return setBracketAttrs(editor, pos, node, { flag });
+}
+
+/** Position of the proposition node with the given pid, or null. */
+export function findPropositionPos(doc: PMNode, pid: string): number | null {
+  let found: number | null = null;
+  doc.descendants((node, pos) => {
+    if (found !== null) return false;
+    if (node.type.name === 'proposition' && node.attrs.pid === pid) {
+      found = pos;
+      return false;
+    }
+    return true;
+  });
+  return found;
+}
+
+export interface BracketHit {
+  pos: number;
+  node: PMNode;
+}
+
+/** All bracket nodes with their positions, in document (pre-)order. */
+export function findBrackets(doc: PMNode): BracketHit[] {
+  const hits: BracketHit[] = [];
+  doc.descendants((node, pos) => {
+    if (node.type.name === 'bracket') hits.push({ pos, node });
+    return true;
+  });
+  return hits;
+}

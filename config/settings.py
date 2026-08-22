@@ -84,6 +84,9 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
     # v1 runs in single-user local mode; auth switches on at first deployment.
+    # No authentication classes: SessionAuthentication would demand CSRF tokens
+    # on every POST, which is pure friction with no login concept.
+    "DEFAULT_AUTHENTICATION_CLASSES": [],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "UNAUTHENTICATED_USER": None,
