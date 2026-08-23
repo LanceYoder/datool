@@ -100,11 +100,11 @@ As a datool document (the `document` JSON of one `Analysis` row):
 {
   "schemaVersion": 1,
   "propositions": [
-    { "id": "p1", "label": "6a", "source": { "kind": "corpus", "start": 137723, "end": 137724 } },
-    { "id": "p2", "label": "6b", "source": { "kind": "corpus", "start": 137725, "end": 137729 } },
-    { "id": "p3", "label": "6c", "source": { "kind": "corpus", "start": 137730, "end": 137734 } },
-    { "id": "p4", "label": "6d", "source": { "kind": "corpus", "start": 137735, "end": 137735 } },
-    { "id": "p5", "label": "6e", "source": { "kind": "corpus", "start": 137736, "end": 137740 } }
+    { "id": "p1", "label": "6a", "source": { "kind": "corpus", "start": 124771, "end": 124772 } },
+    { "id": "p2", "label": "6b", "source": { "kind": "corpus", "start": 124773, "end": 124777 } },
+    { "id": "p3", "label": "6c", "source": { "kind": "corpus", "start": 124778, "end": 124782 } },
+    { "id": "p4", "label": "6d", "source": { "kind": "corpus", "start": 124783, "end": 124783 } },
+    { "id": "p5", "label": "6e", "source": { "kind": "corpus", "start": 124784, "end": 124788 } }
   ],
   "tree": {
     "kind": "bracket", "rel": "CndE", "prominent": 1,          // C? → E*
