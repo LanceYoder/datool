@@ -23,11 +23,11 @@ function mapsEqual(a: ReadonlyMap<string, number>, b: ReadonlyMap<string, number
   return true;
 }
 
-/** Words of a corpus-sourced proposition, sliced from the batched fetch. Range is [start, end). */
+/** Words of a corpus-sourced proposition, sliced from the batched fetch. Range is INCLUSIVE [start, end]. */
 function propWords(p: Proposition, words: ReadonlyMap<number, CorpusWord>): CorpusWord[] {
   if (p.source.kind !== 'corpus') return [];
   const out: CorpusWord[] = [];
-  for (let i = p.source.start; i < p.source.end; i++) {
+  for (let i = p.source.start; i <= p.source.end; i++) {
     const w = words.get(i);
     if (w !== undefined) out.push(w);
   }
@@ -72,7 +72,7 @@ export default function AnalysisView({ document: doc }: { document: AnalysisDocu
         max = Math.max(max, p.source.end);
       }
     }
-    return min < max ? { start: min, end: max } : null;
+    return min <= max ? { start: min, end: max } : null;
   }, [doc]);
 
   useEffect(() => {

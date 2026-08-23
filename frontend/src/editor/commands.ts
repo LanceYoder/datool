@@ -98,7 +98,31 @@ export function wrapUnits(
   const wrapping = findWrapping(range, bracketType, attrs);
   if (wrapping === null) return false;
 
-  editor.view.dispatch(state.tr.wrap(range, wrapping));
+  let tr = state.tr.wrap(range, wrapping);
+
+  // Re-index the parent bracket's star: the wrapped run collapses to one
+  // child, so an index inside the run moves to the new packet and indices
+  // past it shift left by (childCount - 1). The parent's own start position
+  // is unchanged by the wrap (it happens inside it).
+  const parent = range.parent;
+  if (parent.type.name === 'bracket' && typeof parent.attrs.prominent === 'number') {
+    const prom = parent.attrs.prominent;
+    let next = prom;
+    if (prom >= range.startIndex && prom < range.endIndex) {
+      next = range.startIndex;
+    } else if (prom >= range.endIndex) {
+      next = prom - (childCount - 1);
+    }
+    if (next !== prom) {
+      const parentPos = range.$from.before(range.depth);
+      tr = tr.setNodeMarkup(parentPos, undefined, {
+        ...parent.attrs,
+        prominent: next,
+      });
+    }
+  }
+
+  editor.view.dispatch(tr);
   return true;
 }
 

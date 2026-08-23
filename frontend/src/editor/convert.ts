@@ -23,8 +23,9 @@ import type {
 
 /**
  * Resolve display text per proposition id: corpus sources join their word
- * range's `text` column with spaces (half-open [start, end)); raw sources
- * pass their text through. Corpus props with no words supplied resolve to ''.
+ * range's `text` column with spaces (INCLUSIVE [start, end] — the server
+ * contract); raw sources pass their text through. Corpus props with no words
+ * supplied resolve to ''.
  */
 export function buildTextById(
   document: AnalysisDocument,
@@ -38,7 +39,7 @@ export function buildTextById(
       continue;
     }
     const parts: string[] = [];
-    for (let i = prop.source.start; i < prop.source.end; i += 1) {
+    for (let i = prop.source.start; i <= prop.source.end; i += 1) {
       const word = byIndex.get(i);
       if (word !== undefined) parts.push(word.text);
     }

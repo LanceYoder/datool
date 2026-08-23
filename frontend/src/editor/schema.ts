@@ -45,6 +45,18 @@ export const EditorDoc = Node.create({
   content: 'unit',
 });
 
+/**
+ * ProseMirror's schema compiler requires a 'text' node type to exist in every
+ * schema, and Tiptap's content checker builds a temporary schema whose
+ * catch-all node needs the 'inline' group to resolve. Neither 'text' nor
+ * 'inline' appears in any of OUR content expressions, so text can never occur
+ * in a document — typing stays impossible by construction.
+ */
+export const EditorText = Node.create({
+  name: 'text',
+  group: 'inline',
+});
+
 export const EditorProposition = Node.create({
   name: 'proposition',
   group: 'unit',
@@ -144,4 +156,4 @@ export const EditorBracket = Node.create({
  * the atom terminates that search — a bracket would recursively require more
  * units.
  */
-export const editorNodes = [EditorDoc, EditorProposition, EditorBracket];
+export const editorNodes = [EditorDoc, EditorText, EditorProposition, EditorBracket];

@@ -14,13 +14,13 @@ afterEach(() => {
 });
 
 describe('buildTextById', () => {
-  it('joins corpus word text with spaces over half-open ranges and passes raw through', () => {
+  it('joins corpus word text with spaces over inclusive ranges and passes raw through', () => {
     const doc = firstJohn16();
     const text = buildTextById(doc, CORPUS_WORDS);
-    expect(text.get('p1')).toBe('Ἐὰν εἴπωμεν');
-    expect(text.get('p2')).toBe('ὅτι κοινωνίαν ἔχομεν μετʼ αὐτοῦ');
+    expect(text.get('p1')).toBe('ἐὰν εἴπωμεν');
+    expect(text.get('p2')).toBe('ὅτι κοινωνίαν ἔχομεν μετ’ αὐτοῦ');
     expect(text.get('p3')).toBe('καὶ ἐν τῷ σκότει περιπατῶμεν,');
-    expect(text.get('p4')).toBe('ψευδόμεθα');
+    expect(text.get('p4')).toBe('ψευδόμεθα'); // single-word inclusive range
     expect(text.get('p5')).toBe(RAW_1JOHN_1_6E);
   });
 
