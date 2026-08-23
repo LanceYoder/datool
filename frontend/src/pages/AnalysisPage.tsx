@@ -1,18 +1,23 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import type { Analysis } from '../types';
+import type { Analysis, Document as AnalysisDocument } from '../types';
 import { deleteAnalysis, errorMessages, getAnalysis, updateAnalysis } from '../api';
-import AnalysisView from '../components/AnalysisView';
+import AnalysisEditor from '../editor/AnalysisEditor';
 
 export default function AnalysisPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  // The document handed to the editor: set once on load so edit history
+  // survives saves (saving must not rebuild the editor).
+  const [initialDoc, setInitialDoc] = useState<AnalysisDocument | null>(null);
+  const draftRef = useRef<AnalysisDocument | null>(null);
   const [title, setTitle] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
     if (id === undefined) return;
@@ -21,6 +26,8 @@ export default function AnalysisPage() {
       .then((a) => {
         if (cancelled) return;
         setAnalysis(a);
+        setInitialDoc(a.document);
+        draftRef.current = a.document;
         setTitle(a.title);
       })
       .catch((err: unknown) => {
@@ -31,14 +38,38 @@ export default function AnalysisPage() {
     };
   }, [id]);
 
+  // Warn before closing the tab with unsaved edits.
+  useEffect(() => {
+    if (!dirty) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
+    };
+  }, [dirty]);
+
+  const onDocumentChange = useCallback((doc: AnalysisDocument) => {
+    draftRef.current = doc;
+    setDirty(true);
+    setSavedAt(null);
+  }, []);
+
+  const titleDirty = analysis !== null && title !== analysis.title;
+
   const save = async () => {
-    if (id === undefined || analysis === null) return;
+    if (id === undefined || draftRef.current === null) return;
     setBusy(true);
     setErrors([]);
     try {
-      const updated = await updateAnalysis(id, { title, document: analysis.document });
-      setAnalysis(updated);
+      const updated = await updateAnalysis(id, { title, document: draftRef.current });
+      // Keep the editor untouched: update metadata only.
+      setAnalysis((prev) =>
+        prev === null ? updated : { ...prev, title: updated.title, passageRef: updated.passageRef, updatedAt: updated.updatedAt },
+      );
       setTitle(updated.title);
+      setDirty(false);
       setSavedAt(new Date());
     } catch (err) {
       setErrors(errorMessages(err));
@@ -71,13 +102,18 @@ export default function AnalysisPage() {
           placeholder="Untitled analysis"
           aria-label="Analysis title"
         />
-        <button className="primary" onClick={() => void save()} disabled={busy || analysis === null}>
+        <button
+          className="primary"
+          onClick={() => void save()}
+          disabled={busy || analysis === null || (!dirty && !titleDirty)}
+        >
           Save
         </button>
         <button className="danger" onClick={() => void remove()} disabled={busy || analysis === null}>
           Delete
         </button>
-        {savedAt !== null && errors.length === 0 && (
+        {dirty && <span className="muted">Unsaved changes</span>}
+        {savedAt !== null && errors.length === 0 && !dirty && (
           <span className="muted">Saved {savedAt.toLocaleTimeString()}</span>
         )}
       </div>
@@ -88,10 +124,10 @@ export default function AnalysisPage() {
           ))}
         </ul>
       )}
-      {analysis !== null && (
+      {analysis !== null && initialDoc !== null && (
         <>
           <p className="muted passage-ref">{analysis.passageRef}</p>
-          <AnalysisView document={analysis.document} />
+          <AnalysisEditor document={initialDoc} onChange={onDocumentChange} />
         </>
       )}
       {analysis === null && errors.length === 0 && <p className="muted">Loading…</p>}

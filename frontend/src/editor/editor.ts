@@ -31,6 +31,18 @@ const NoTextInput = Extension.create({
 });
 
 /**
+ * The core extension set: schema nodes (with an optional replacement for the
+ * proposition node — the UI swaps in one carrying a React node view), history,
+ * and the text-input guard.
+ */
+export function editorExtensions(
+  propositionNode: AnyExtension = editorNodes[2] as AnyExtension,
+): AnyExtension[] {
+  const [doc, text, , bracket] = editorNodes;
+  return [doc, text, propositionNode, bracket, UndoRedo, NoTextInput] as AnyExtension[];
+}
+
+/**
  * Build an Editor with the bracketing schema, undo/redo history, and text
  * input disabled (atoms only). `content` is ProseMirror doc JSON (from
  * documentToNode); when given it becomes the initial state and is NOT an
@@ -42,7 +54,7 @@ export function buildEditor(
   content?: JSONContent,
 ): Editor {
   return new Editor({
-    extensions: [...editorNodes, UndoRedo, NoTextInput, ...extensions],
+    extensions: [...editorExtensions(), ...extensions],
     ...(content !== undefined ? { content } : {}),
     editable: true,
     injectCSS: false,

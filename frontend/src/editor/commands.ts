@@ -9,7 +9,8 @@
 // and null iff it is coordinate.
 
 import type { Editor } from '@tiptap/core';
-import type { Node as PMNode } from '@tiptap/pm/model';
+import type { Node as PMNode, NodeRange } from '@tiptap/pm/model';
+import type { EditorState } from '@tiptap/pm/state';
 import { findWrapping } from '@tiptap/pm/transform';
 import type { TaxonomyEntry } from '../types';
 
@@ -56,6 +57,39 @@ function setBracketAttrs(
   return true;
 }
 
+interface WrapTarget {
+  range: NodeRange;
+  childCount: number;
+}
+
+/** The covering sibling run for [from, to], when it is a wrappable target. */
+function wrapTarget(state: EditorState, from: number, to: number): WrapTarget | null {
+  const { doc } = state;
+  if (from < 0 || to > doc.content.size || from > to) return null;
+  const range = doc.resolve(from).blockRange(doc.resolve(to));
+  if (range === null) return null;
+  const childCount = range.endIndex - range.startIndex;
+  if (childCount < 2) return null;
+  return { range, childCount };
+}
+
+/** Dry-run of wrapUnits — true when the positions cover a wrappable run. */
+export function canWrapUnits(state: EditorState, from: number, to: number): boolean {
+  const target = wrapTarget(state, from, to);
+  if (target === null) return false;
+  const bracketType = state.schema.nodes.bracket;
+  if (bracketType === undefined) return false;
+  // Attrs don't affect content matching; dummy values suffice for the check.
+  return (
+    findWrapping(target.range, bracketType, {
+      rel: 'Ser',
+      prominent: null,
+      reversed: false,
+      flag: null,
+    }) !== null
+  );
+}
+
 /**
  * Wrap the contiguous sibling units covering doc positions [from, to] in a
  * new bracket with relationship `rel`. The covering set is the deepest run
@@ -75,16 +109,9 @@ export function wrapUnits(
   if (entry === undefined) return false;
 
   const { state } = editor;
-  const { doc } = state;
-  if (from < 0 || to > doc.content.size || from > to) return false;
-
-  const $from = doc.resolve(from);
-  const $to = doc.resolve(to);
-  const range = $from.blockRange($to);
-  if (range === null) return false;
-
-  const childCount = range.endIndex - range.startIndex;
-  if (childCount < 2) return false;
+  const target = wrapTarget(state, from, to);
+  if (target === null) return false;
+  const { range, childCount } = target;
 
   const bracketType = state.schema.nodes.bracket;
   if (bracketType === undefined) return false;

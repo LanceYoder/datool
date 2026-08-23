@@ -248,3 +248,86 @@ div.error-box {
   background: #eef2ff;
   border-radius: 3px;
 }
+
+/* ---- Interactive editor ---- */
+
+.editor-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0;
+  margin-top: 0.5rem;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.toolbar-spacer {
+  flex: 1;
+}
+
+.rel-select {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  max-width: 16rem;
+}
+
+.bracket-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding-left: 0.6rem;
+  border-left: 1px solid var(--border);
+}
+
+.star-btn {
+  font-size: 0.8rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.star-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.confirm-btn {
+  color: var(--review);
+  border-color: var(--review);
+}
+
+.editor-shell {
+  position: relative;
+  margin-top: 0.75rem;
+  padding: 0.5rem 0;
+}
+
+.editor-shell .bracket-layer.interactive {
+  pointer-events: none;
+}
+
+.editor-shell .bracket-hit {
+  pointer-events: all;
+  cursor: pointer;
+}
+
+.editor-shell .prop-row {
+  cursor: pointer;
+  padding: 1px 0;
+  border-radius: 4px;
+}
+
+.editor-shell .prop-row.selected {
+  background: #eef2ff;
+}
+
+.editor-shell .ProseMirror {
+  outline: none;
+}

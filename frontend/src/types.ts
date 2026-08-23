@@ -5,7 +5,7 @@ export interface CorpusSource {
   kind: 'corpus';
   /** Inclusive start word index into the corpus. */
   start: number;
-  /** Exclusive end word index into the corpus. */
+  /** Inclusive end word index into the corpus. */
   end: number;
 }
 
