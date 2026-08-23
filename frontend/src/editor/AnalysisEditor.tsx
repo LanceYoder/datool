@@ -34,7 +34,7 @@ import type {
   TaxonomyEntry,
 } from '../types';
 import { errorMessages, getCorpusWords, getTaxonomy } from '../api';
-import { buildTextById, documentToNode, nodeToDocument } from './convert';
+import { buildTextById, displayWordText, documentToNode, nodeToDocument } from './convert';
 import { editorExtensions } from './editor';
 import { EditorProposition } from './schema';
 import {
@@ -79,7 +79,7 @@ function rowText(
     if (w === undefined) continue;
     parts.push(
       <span key={i} className="word" title={`${w.lemma} · ${w.parsing}`}>
-        {w.text}
+        {displayWordText(w.text)}
       </span>,
       ' ',
     );
@@ -370,11 +370,20 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
                 <g
                   key={b.pos}
                   className="bracket-hit"
+                  data-rel={b.rel}
                   onMouseDown={(e) => {
                     e.preventDefault();
                     setSelection({ kind: 'bracket', pos: b.pos });
                   }}
                 >
+                  {/* invisible widened hit area along the bracket's spine */}
+                  <rect
+                    x={b.x - 7}
+                    y={Math.min(b.top, b.bottom) - 10}
+                    width={14}
+                    height={Math.abs(b.bottom - b.top) + 20}
+                    fill="transparent"
+                  />
                   <line x1={b.x} y1={b.top} x2={b.x} y2={b.bottom} stroke={stroke} strokeWidth={isSelected ? 2.5 : 1.5} />
                   {b.ticks.map((t) => (
                     <line key={t.childIndex} x1={t.x1} y1={t.y} x2={t.x2} y2={t.y} stroke={stroke} strokeWidth={isSelected ? 2 : 1.2} />

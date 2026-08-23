@@ -22,6 +22,16 @@ import type {
 } from '../types';
 
 /**
+ * The SBLGNT text column carries critical-apparatus sigla (⸀ ⸂ ⸃ …) inline;
+ * they are part of the edition but noise in an analysis display.
+ */
+const SIGLA = /[⸀⸁⸂⸃⸄⸅⸆⸇⸈⸉⸊°]/g;
+
+export function displayWordText(text: string): string {
+  return text.replace(SIGLA, '');
+}
+
+/**
  * Resolve display text per proposition id: corpus sources join their word
  * range's `text` column with spaces (INCLUSIVE [start, end] — the server
  * contract); raw sources pass their text through. Corpus props with no words
@@ -41,7 +51,7 @@ export function buildTextById(
     const parts: string[] = [];
     for (let i = prop.source.start; i <= prop.source.end; i += 1) {
       const word = byIndex.get(i);
-      if (word !== undefined) parts.push(word.text);
+      if (word !== undefined) parts.push(displayWordText(word.text));
     }
     out.set(prop.id, parts.join(' '));
   }
