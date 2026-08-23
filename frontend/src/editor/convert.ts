@@ -22,10 +22,11 @@ import type {
 } from '../types';
 
 /**
- * The SBLGNT text column carries critical-apparatus sigla (⸀ ⸂ ⸃ …) inline;
- * they are part of the edition but noise in an analysis display.
+ * The SBLGNT text column carries critical-apparatus sigla (⸀ ⸂ ⸃ …) inline —
+ * some numbered (⸀1ἄλλῳ in 1 Cor 12:10). Part of the edition, but noise in
+ * an analysis display.
  */
-const SIGLA = /[⸀⸁⸂⸃⸄⸅⸆⸇⸈⸉⸊°]/g;
+const SIGLA = /[⸀⸁⸂⸃⸄⸅⸆⸇⸈⸉⸊°][0-9]?/g;
 
 export function displayWordText(text: string): string {
   return text.replace(SIGLA, '');

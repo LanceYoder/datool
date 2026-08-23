@@ -114,10 +114,15 @@ class FirstPassView(APIView):
             return _errors(["text must be a non-empty string"])
         # Imported at call time: the first-pass service is a separate module;
         # the rest of the API must not go down with it, and tests may stub it.
+        from .documents import DocumentError
         from .firstpass import first_pass
 
         try:
             result = first_pass(text)
+        except DocumentError:
+            # build_document's self-validation failing is a builder bug, not
+            # bad input — let it surface as a 500, never a 400 blaming the user.
+            raise
         except ValueError as e:  # e.g. nothing analyzable in the paste
             return _errors([str(e)])
         return Response({

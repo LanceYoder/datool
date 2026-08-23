@@ -77,8 +77,18 @@ export function firstPass(text: string): Promise<FirstPassResult> {
   return request<FirstPassResult>('/api/first-pass', 'POST', { text });
 }
 
-export function getCorpusWords(start: number, end: number): Promise<CorpusWord[]> {
-  return request<CorpusWord[]>(`/api/corpus/words?start=${start}&end=${end}`);
+/** Server-side cap on one corpus words request (see da/views.py). */
+const WORD_RANGE_CAP = 2000;
+
+/** Fetch an inclusive corpus word range, chunking past the server's cap so
+ * long passages (e.g. several chapters) load fully. */
+export async function getCorpusWords(start: number, end: number): Promise<CorpusWord[]> {
+  const out: CorpusWord[] = [];
+  for (let from = start; from <= end; from += WORD_RANGE_CAP) {
+    const to = Math.min(from + WORD_RANGE_CAP - 1, end);
+    out.push(...(await request<CorpusWord[]>(`/api/corpus/words?start=${from}&end=${to}`)));
+  }
+  return out;
 }
 
 let taxonomyPromise: Promise<TaxonomyEntry[]> | null = null;

@@ -1,11 +1,15 @@
 """Locate pasted Greek text in the corpus (paste alignment).
 
 Strategy: fold the pasted tokens and the corpus words to bare-letter keys,
-index the corpus by folded n-grams, vote on candidate start offsets, then score
-the best-aligned corpus window. A verbatim SBLGNT paste matches 100%; other
-editions usually align with a handful of mismatches, which are reported.
+index the corpus by folded n-grams, vote on candidate start offsets, then run
+a token-level sequence match over a padded corpus window around each
+candidate. The sequence match (rather than a fixed-offset comparison) is what
+makes pastes from other editions work: NA28 differs from SBLGNT by occasional
+one-word insertions/omissions (e.g. SBLGNT's δὲ in 1 John 1:7), which would
+otherwise shift every following token off by one.
 """
 
+import difflib
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -14,6 +18,9 @@ from .normalize import tokenize
 
 NGRAM = 3
 MIN_MATCH_RATIO = 0.75
+# Corpus words of slack on each side of a candidate window, allowing for the
+# paste having words the corpus lacks and vice versa.
+WINDOW_PAD = 8
 
 
 @dataclass(frozen=True)
@@ -61,24 +68,31 @@ def align(text: str) -> Alignment | None:
     if not votes:
         return None
 
-    # Score the top candidates by per-token agreement over the aligned window.
+    # Sequence-match the paste against a padded window around each candidate.
     best: Alignment | None = None
     candidates = sorted(votes, key=votes.get, reverse=True)[:5]
     for start in candidates:
-        end = start + len(tokens) - 1
-        if end >= len(words):
+        lo = max(0, start - WINDOW_PAD)
+        hi = min(len(words) - 1, start + len(tokens) + WINDOW_PAD)
+        window = [words[k].folded for k in range(lo, hi + 1)]
+        matcher = difflib.SequenceMatcher(None, tokens, window, autojunk=False)
+        blocks = [b for b in matcher.get_matching_blocks() if b.size > 0]
+        if not blocks:
             continue
-        if words[start].book != words[end].book:
+        c_start = lo + blocks[0].b
+        c_end = lo + blocks[-1].b + blocks[-1].size - 1
+        if words[c_start].book != words[c_end].book:
             continue  # a paste never spans a book boundary
-        mismatches = tuple(
-            i for i, tok in enumerate(tokens) if words[start + i].folded != tok
-        )
+        matched_paste: set[int] = set()
+        for b in blocks:
+            matched_paste.update(range(b.a, b.a + b.size))
+        mismatches = tuple(i for i in range(len(tokens)) if i not in matched_paste)
         matched = len(tokens) - len(mismatches)
         if best is None or matched > best.matched_tokens:
             best = Alignment(
-                start=start,
-                end=end,
-                ref=format_ref(start, end),
+                start=c_start,
+                end=c_end,
+                ref=format_ref(c_start, c_end),
                 total_tokens=len(tokens),
                 matched_tokens=matched,
                 mismatched_positions=mismatches,

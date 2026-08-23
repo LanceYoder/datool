@@ -68,6 +68,11 @@ POSTPOSITIVES = _nfc(("γάρ", "δέ", "οὖν", "ἄρα", "μέν", "τε", 
 # Interjections that never open a segment.
 INTERJECTIONS = _nfc(("ἰδού", "ἴδε"))
 
+# Interrogative lemmas that introduce (indirect) questions. MorphGNT tags the
+# indefinite τις with pos RI as well — the lemma separates them (indefinite
+# τις is unaccented, interrogative τίς accented).
+INTERROGATIVES = _nfc(("τίς", "ὁποῖος", "ποῖος", "πόσος", "ὁπόσος", "πηλίκος", "ποταπός"))
+
 # Prepositions that form adverbial infinitive constructions with an article
 # (εἰς τό, διὰ τό, μετὰ τό, πρὸς τό, ἐν τῷ, πρὸ τοῦ, ἕως τοῦ, ἀντὶ τοῦ).
 INF_PREPS = _nfc(("εἰς", "διά", "μετά", "πρός", "ἐν", "πρό", "ἕως", "ἀντί"))
@@ -101,8 +106,16 @@ def _articular(words, i: int) -> bool:
     """Attributive/substantival participle heuristic: an RA article agreeing
     in case+number+gender within the 4 words before the participle, with no
     finite verb between, and not claimed by an intervening agreeing noun
-    (which would make e.g. a genitive absolute look articular)."""
+    (which would make e.g. a genitive absolute look articular). An anarthrous
+    participle directly after a noun it agrees with is also attributive
+    (θεῷ ζῶντι καὶ ἀληθινῷ) — except in the genitive, where that shape is
+    usually a genitive absolute."""
     p = words[i]
+    if (i > 0 and p.case != "G" and words[i - 1].pos == "N-"
+            and words[i - 1].case == p.case
+            and words[i - 1].number == p.number
+            and words[i - 1].gender == p.gender):
+        return True
     for j in range(i - 1, max(0, i - 4) - 1, -1):
         w = words[j]
         if w.ends_sentence:          # crossed into the previous sentence
@@ -123,11 +136,13 @@ def _articular(words, i: int) -> bool:
 def _predicate_follows(words, b: int, skip: int, end: int) -> bool:
     """Would a segment opened at ``b`` contain a predicate? Scans forward to
     the range end / sentence end / next clause marker looking for a finite
-    verb (an embedded relative clause's verb does not count as the host's) or,
-    failing that, an adverbial participle."""
+    verb (an embedded relative clause's verb does not count as the host's).
+    An adverbial participle is itself a clause marker — it opens its own
+    segment, so it neither licenses a coordinator split (Phil 1:10 ἦτε
+    εἰλικρινεῖς καὶ ἀπρόσκοποι … πεπληρωμένοι must not split at καί) nor
+    counts as the predicate."""
     embedded = False
     embedded_finite = False
-    saw_adverbial_ptcp = False
     for j in range(b, end + 1):
         w = words[j]
         if j != skip:
@@ -142,10 +157,10 @@ def _predicate_follows(words, b: int, skip: int, end: int) -> bool:
                     w.pos == "C-" and w.lemma in COORD_LEMMAS):
                 break                        # next clause boundary
             elif w.is_participle and not _articular(words, j):
-                saw_adverbial_ptcp = True
+                break                        # next clause boundary (own segment)
         if w.ends_sentence:
             break
-    return saw_adverbial_ptcp
+    return False
 
 
 def _governed_complement(words, i: int, lo: int) -> bool:
@@ -200,6 +215,8 @@ def segment(start: int, end: int) -> list[Segment]:
     embedded_finite = False
     last_comma = -1          # index of the last comma-bearing word in segment
     has_content = False      # any non-absorbable word seen in segment
+    ptcp_absorbed = False    # an adverbial ptcp was absorbed into this segment
+    any_verb = False         # any verb form at all (finite, inf, ptcp) inline
 
     def emit(seg_end: int) -> None:
         segs.append(Segment(start=seg_start, end=seg_end, sentence=sentence, opener=opener))
@@ -207,6 +224,7 @@ def segment(start: int, end: int) -> list[Segment]:
     def clear(b: int, new_opener: Opener | None) -> None:
         nonlocal seg_start, opener, host_finite, last_finite
         nonlocal embedded, embedded_finite, last_comma, has_content
+        nonlocal ptcp_absorbed, any_verb
         seg_start = b
         opener = new_opener
         host_finite = False
@@ -215,12 +233,14 @@ def segment(start: int, end: int) -> list[Segment]:
         embedded_finite = False
         last_comma = -1
         has_content = False
+        ptcp_absorbed = new_opener is not None and new_opener.kind == "ptcp"
+        any_verb = False
 
     def split(b: int, new_opener: Opener | None, moved_upto: int) -> None:
         """Close the current segment at b-1, open a new one at b. Words
         [b, moved_upto] (possibly none) already belong to the new segment;
         replay their state contributions."""
-        nonlocal host_finite, last_finite, last_comma, has_content
+        nonlocal host_finite, last_finite, last_comma, has_content, any_verb
         emit(b - 1)
         clear(b, new_opener)
         for j in range(b, moved_upto + 1):
@@ -228,6 +248,8 @@ def segment(start: int, end: int) -> list[Segment]:
             if wj.is_finite_verb:
                 host_finite = True
                 last_finite = j
+            if wj.is_verb:
+                any_verb = True
             if "," in wj.text:
                 last_comma = j
             if not _absorbable(wj):
@@ -250,17 +272,30 @@ def segment(start: int, end: int) -> list[Segment]:
             else:
                 split(i, Opener("sub_conj", lemma, i), i - 1)
 
-        elif w.pos == "RR":
-            # Relative pronoun.
-            if at_seg_start:
+        elif w.pos == "RR" or (w.pos == "RI" and lemma in INTERROGATIVES):
+            # Relative pronoun — or an interrogative introducing an indirect
+            # question (ὁποίαν εἴσοδον ἔσχομεν), which opens a clause the same
+            # way (the indefinite τις, also tagged RI, does not). A preposition
+            # immediately before it belongs to the relative clause (ἐν ᾧ,
+            # δι᾽ οὗ …), so the clause starts there.
+            b = i - 1 if i > seg_start and words[i - 1].pos == "P-" else i
+            if at_seg_start or b <= seg_start:
                 if opener is None:
                     opener = Opener("rel", lemma, i)
-            elif not host_finite:
-                # Interrupting relative clause: host clause has no finite verb
-                # yet, so the relative stays inline (embedded).
+            elif all(_absorbable(words[j]) for j in range(seg_start, b)):
+                # Only connectives before the clause start: absorb.
+                if opener is None or opener.kind == "coord":
+                    opener = Opener("rel", lemma, i)
+            elif not host_finite and not any_verb and b == i:
+                # Interrupting relative clause: host material precedes but no
+                # verb of any kind has arrived, so the relative stays inline
+                # (embedded), e.g. Mt 2:9 ὁ ἀστήρ, ὃν εἶδον…, προῆγεν. A
+                # relative after a non-finite predicate (1 Thess 1:10
+                # ἀναμένειν τὸν υἱὸν … ὃν ἤγειρεν) is a normal trailing
+                # relative and splits.
                 embedded = True
             else:
-                split(i, Opener("rel", lemma, i), i - 1)
+                split(b, Opener("rel", lemma, i), i - 1)
 
         elif w.pos == "C-" and lemma in COORD_LEMMAS:
             # Coordinating conjunction — splits only when it joins clauses.
@@ -280,6 +315,11 @@ def segment(start: int, end: int) -> list[Segment]:
                     opener = Opener("coord", lemma, i)
             elif not has_content and b == i:
                 pass  # e.g. καὶ γάρ: only connectives so far, keep together
+            elif not host_finite and b == i:
+                # The current clause hasn't reached its own verb yet: the
+                # coordinator joins words within it, not clauses (Phil 1:9
+                # ἵνα … ἔτι μᾶλλον καὶ μᾶλλον περισσεύῃ).
+                pass
             elif _predicate_follows(words, b, i, end):
                 split(b, Opener("coord", lemma, i), i - 1)
 
@@ -289,12 +329,20 @@ def segment(start: int, end: int) -> list[Segment]:
                 if at_seg_start:
                     if opener is None:
                         opener = Opener("ptcp", lemma, i)
+                    ptcp_absorbed = True
                 elif embedded:
                     pass  # participle inside an embedded relative clause
                 elif not has_content:
                     # e.g. καὶ προσελθόντες: fold the connective in.
                     if opener is None or opener.kind == "coord":
                         opener = Opener("ptcp", lemma, i)
+                    ptcp_absorbed = True
+                elif (opener is not None and opener.kind in ("rel", "sub_conj")
+                        and not host_finite):
+                    # The participle is this dependent clause's own predicate
+                    # so far (Eph 1:13 ἐν ᾧ καὶ πιστεύσαντες …): keep it — if
+                    # a finite verb follows, the resumption rule below splits.
+                    ptcp_absorbed = True
                 else:
                     split(i, Opener("ptcp", lemma, i), i - 1)
 
@@ -321,11 +369,14 @@ def segment(start: int, end: int) -> list[Segment]:
                     embedded_finite = False
                     host_finite = True
                     last_finite = i
-            elif opener is not None and opener.kind in ("ptcp", "inf") and not host_finite:
+            elif not host_finite and (
+                    ptcp_absorbed
+                    or (opener is not None and opener.kind in ("ptcp", "inf"))):
                 # Host clause resumes after a dependent participle/infinitive
                 # unit: break at the clause start (after a comma if one
                 # followed the dependent unit, else at the verb).
-                b = last_comma + 1 if last_comma >= opener.index else i
+                marker = opener.index if opener is not None else seg_start
+                b = last_comma + 1 if last_comma >= marker else i
                 if b > seg_start:
                     split(b, None, i - 1)
                 host_finite = True
@@ -344,6 +395,8 @@ def segment(start: int, end: int) -> list[Segment]:
                 last_finite = i
 
         # State contributions of the word itself.
+        if w.is_verb:
+            any_verb = True
         if "," in w.text:
             last_comma = i
         if not _absorbable(w):

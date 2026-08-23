@@ -12,13 +12,16 @@ take it from there. No classification without morphology.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 
 from .corpus import Alignment, align
 from .documents import validate_document
 from .treebuild import build_document
 
-_SENTENCE_SPLIT = re.compile(r"[.;·]+")
+# NFC first (below) maps the Greek question mark U+037E to ';' and ano teleia
+# U+0387 to U+00B7, but both stay in the class as defense in depth.
+_SENTENCE_SPLIT = re.compile(r"[.;·;·]+")
 
 
 @dataclass
@@ -37,11 +40,17 @@ def first_pass(text: str) -> FirstPassResult:
     from .segmentation import segment
 
     segments = segment(alignment.start, alignment.end)
+    # An inexact alignment still builds with aligned=True: once located, the
+    # SBLGNT corpus text is authoritative — it is what the document references,
+    # displays, and classifies, so its morphology describes the analyzed words
+    # even where the paste (e.g. NA28) differed. The UI surfaces the
+    # matched/total token count so the user knows their paste varied.
     return FirstPassResult(build_document(segments), alignment)
 
 
 def _raw_document(text: str) -> dict:
     """Punctuation-only segmentation for unaligned pastes."""
+    text = unicodedata.normalize("NFC", text)
     chunks = [c.strip() for c in _SENTENCE_SPLIT.split(text) if c.strip()]
     if not chunks:
         raise ValueError("no analyzable text in the paste")
