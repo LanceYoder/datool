@@ -204,11 +204,20 @@ propose a structurally valid default and get out of the way.
 - ἰδού/ἴδε interjections stay inline (lemma check).
 - A dependent unit interrupting its host clause is kept in place and marked embedded
   (parenthesized in display).
-- Coordinating conjunctions (καί, δέ, ἀλλά) open a new segment when a new finite verb
-  follows.
+- Coordinating conjunctions (καί, δέ, ἀλλά) open a new segment when they join
+  clauses — the current clause must already have its own verb, and a verb must
+  follow before the next boundary.
+- **Implicit propositions — err toward splitting**: a trailing prepositional
+  phrase directly after a comma (Eph 1:14 εἰς ἀπολύτρωσιν…, εἰς ἔπαινον…), a
+  comma-preceded article apposition (Eph 1:13 τὸ εὐαγγέλιον…), and the
+  attributive article + preposition construction (Phil 1:11 τὸν διὰ Ἰησοῦ
+  Χριστοῦ) split into their own propositions, classified by preposition
+  (εἰς/πρός→M-Ed, ἐν→Loc, διά/ἐκ/ἀπό→G, ἕως/ἄχρι/μέχρι→T; appositions→Ft-In),
+  always review-flagged. Over-splits are repaired with the editor's merge.
 
 Each segment records *why* it opened (connective lemma, relative, participle,
-infinitive, asyndeton) — that metadata drives Stage 2.
+infinitive, prepositional phrase, apposition, asyndeton) — that metadata
+drives Stage 2.
 
 **Stage 2 — tree construction + classification** (a shift-reduce pass over clause
 units; dependents attach to their host, innermost first, so nesting and contiguity hold
@@ -268,9 +277,12 @@ What the framework provides vs. what we build:
   "enforce structure" decision implemented at the data-structure level. Relationship
   type, prominent index, reversed, and flags are node attributes.
 - **Built-in transforms are the bracket operations**: `wrapIn` = relate selection,
-  `lift` = dissolve bracket, `split`/`join` = adjust proposition boundaries, attribute
-  updates = re-label / move star / reverse / confirm flag. Legality checks come with
-  them.
+  `lift` = dissolve bracket, attribute updates = re-label / move star / reverse /
+  confirm flag. Legality checks come with them. Proposition **split** (double-click
+  the word it should divide before — implicit propositions are the interpreter's
+  call) and **merge** (two adjacent sibling propositions; contiguous corpus ranges
+  re-join, anything else degrades to a raw source) are custom transactions on the
+  same model, with labels recomputed automatically.
 - **Undo/redo** via prosemirror-history (invertible transaction steps) — restructuring
   without eraser marks is half the product's pitch. The same step model enables
   real-time collaboration later (prosemirror-collab / Yjs) if classroom features want it.
