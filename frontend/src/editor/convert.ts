@@ -83,6 +83,9 @@ export function documentToNode(
           label: prop.label,
           text: textById.get(prop.id) ?? fallback,
           color: prop.color ?? null,
+          srcStart: prop.source.kind === 'corpus' ? prop.source.start : null,
+          srcEnd: prop.source.kind === 'corpus' ? prop.source.end : null,
+          rawText: prop.source.kind === 'raw' ? prop.source.text : null,
         },
       };
     }
@@ -102,10 +105,11 @@ export function documentToNode(
 }
 
 /**
- * ProseMirror doc node -> Document. Propositions are rebuilt in leaf order;
- * source/color/label are carried over from `priorDocument` by pid. A pid
- * unknown to the prior document (not producible via the editor commands)
- * degrades to a raw source from the node's own attrs.
+ * ProseMirror doc node -> Document. Propositions are rebuilt in leaf order,
+ * with source/color/label read from the node attrs (which documentToNode
+ * populates and structural edits like splits maintain). `priorDocument` is
+ * the fallback for nodes lacking source attrs, and lastly the node degrades
+ * to a raw source from its display text.
  */
 export function nodeToDocument(
   pmDoc: PMNode,
@@ -119,18 +123,29 @@ export function nodeToDocument(
       const pid = String(node.attrs.pid);
       const prior = priorById.get(pid);
       let prop: Proposition;
-      if (prior !== undefined) {
+      if (typeof node.attrs.srcStart === 'number' && typeof node.attrs.srcEnd === 'number') {
+        prop = {
+          id: pid,
+          label: String(node.attrs.label ?? ''),
+          source: { kind: 'corpus', start: node.attrs.srcStart, end: node.attrs.srcEnd },
+        };
+      } else if (typeof node.attrs.rawText === 'string') {
+        prop = {
+          id: pid,
+          label: String(node.attrs.label ?? ''),
+          source: { kind: 'raw', text: node.attrs.rawText },
+        };
+      } else if (prior !== undefined) {
         prop = { id: prior.id, label: prior.label, source: prior.source };
-        if (prior.color !== undefined) prop.color = prior.color;
       } else {
         prop = {
           id: pid,
           label: String(node.attrs.label ?? ''),
           source: { kind: 'raw', text: String(node.attrs.text ?? '') },
         };
-        if (typeof node.attrs.color === 'string' && node.attrs.color !== '') {
-          prop.color = node.attrs.color;
-        }
+      }
+      if (typeof node.attrs.color === 'string' && node.attrs.color !== '') {
+        prop.color = node.attrs.color;
       }
       propositions.push(prop);
       return { kind: 'prop', ref: pid };

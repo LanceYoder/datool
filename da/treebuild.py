@@ -93,6 +93,15 @@ VERBA_DICENDI = _lset(
     "θεωρέω", "ἀναγγέλλω", "ἀπαγγέλλω", "λαλέω",
 )
 
+# Implicit-proposition prepositional phrases: best-guess relation by
+# preposition (all review-flagged — these are the interpretive calls).
+_PP_REL: dict[str, str] = (
+    {_L(p): "MEd" for p in ("εἰς", "πρός")}          # purpose/goal
+    | {_L(p): "Tmp" for p in ("ἕως", "ἄχρι", "μέχρι", "πρό", "μετά")}
+    | {_L(p): "Loc" for p in ("ἐν", "ἐπί", "ὑπό", "παρά", "πρὸ")}
+    | {_L(p): "Grnd" for p in ("διά", "ἐκ", "ἀπό", "χάριν", "ἕνεκα")}
+)
+
 # Protasis-type forward-attaching subordinators → their bracket relationship.
 _PROTASIS_REL: dict[str, str] = (
     {l: "CndE" for l in CONDITIONAL}
@@ -204,6 +213,12 @@ def _dependent_call(seg, j: int, segs: Sequence, words) -> tuple[str, bool] | No
     if op.kind == "rel":
         # The relative clause interprets its antecedent's clause: Ft → In*.
         return "FtIn", True
+    if op.kind == "appos":
+        # Apposition / attributive-article phrase restates: Ft → In*.
+        return "FtIn", True
+    if op.kind == "pp":
+        # Implicit-proposition prepositional phrase: guess by preposition.
+        return _PP_REL.get(lemma, "WEd"), True
     if op.kind == "ptcp":
         # Adverbial participle: Way–End best guess, the participle side is W.
         return "WEd", True

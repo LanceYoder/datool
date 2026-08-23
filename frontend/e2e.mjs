@@ -92,6 +92,16 @@ if ((await page.locator('.bracket-hit').count()) !== bracketCount0) fail('undo f
 await page.click('button:has-text("Redo")');
 if ((await page.locator('.bracket-hit').count()) !== bracketCount1) fail('redo failed');
 
+// (d2) Split a proposition by double-clicking a word, then merge it back.
+await page.locator('.prop-row').nth(6).locator('.word').nth(1).dblclick();
+if ((await page.locator('.prop-row').count()) !== 15) fail('split did not add a row');
+console.log('split a proposition');
+await page.locator('.prop-row').nth(6).click();
+await page.locator('.prop-row').nth(7).click({ modifiers: ['Shift'] });
+await page.click('button:has-text("Merge")');
+if ((await page.locator('.prop-row').count()) !== 14) fail('merge did not restore');
+console.log('merged it back');
+
 // (e) Move a star on a subordinate bracket.
 await page.locator('.bracket-hit').first().dispatchEvent('mousedown');
 await page.waitForSelector('.bracket-controls');

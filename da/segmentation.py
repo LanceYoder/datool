@@ -7,6 +7,14 @@ pronouns, adverbial participles, adverbial infinitives) and at coordinating
 conjunctions that join clauses. Each segment records *why* it opened — that
 metadata drives Stage 2 classification.
 
+Beyond clause-level segments, the first pass errs toward splitting the clear
+IMPLICIT-PROPOSITION patterns (phrases smaller than a clause that carry a
+whole idea — the TF→DA step in the course docs): a trailing prepositional
+phrase directly after a comma (Eph 1:14 εἰς ἀπολύτρωσιν…, εἰς ἔπαινον…), a
+comma-preceded article apposition (Eph 1:13 τὸ εὐαγγέλιον…), and the
+attributive article + preposition construction (Phil 1:11 τὸν διὰ Ἰησοῦ
+Χριστοῦ). Over-splits are cheap to repair — the editor can merge.
+
 Contract:
     segment(start, end) -> list[Segment]   segments exactly tile [start, end]
     Segment.start/end                       inclusive corpus word indexes
@@ -25,7 +33,7 @@ __all__ = ["Opener", "Segment", "segment"]
 
 @dataclass(frozen=True)
 class Opener:
-    kind: str    # 'sub_conj' | 'rel' | 'ptcp' | 'inf' | 'coord'
+    kind: str    # 'sub_conj' | 'rel' | 'ptcp' | 'inf' | 'coord' | 'pp' | 'appos'
     lemma: str
     index: int   # corpus index of the marker word
 
@@ -358,6 +366,26 @@ def segment(start: int, end: int) -> list[Segment]:
                             opener = Opener("inf", lemma, i)
                     else:
                         split(b, Opener("inf", lemma, i), i - 1)
+
+        elif (w.pos == "P-" and i > seg_start and last_comma == i - 1
+                and not embedded
+                and not (i + 1 <= end and words[i + 1].pos == "RR")
+                and (any_verb or (opener is not None and opener.kind in ("pp", "appos")))):
+            # Implicit proposition: trailing prepositional phrase directly
+            # after a comma, once the clause (or a preceding implicit unit)
+            # is complete — εἰς ἀπολύτρωσιν…, εἰς ἔπαινον… (Eph 1:14).
+            # (Preposition + relative — ἐν ᾧ — belongs to the relative clause,
+            # handled by the RR branch at the next word.)
+            split(i, Opener("pp", lemma, i), i - 1)
+
+        elif (w.pos == "RA" and i > seg_start and not embedded
+                and (any_verb or (opener is not None and opener.kind in ("pp", "appos")))
+                and (last_comma == i - 1
+                     or (i + 1 <= end and words[i + 1].pos == "P-"))):
+            # Implicit proposition: comma-preceded article apposition
+            # (τὸ εὐαγγέλιον…, Eph 1:13) or attributive article + preposition
+            # (τὸν διὰ Ἰησοῦ Χριστοῦ, Phil 1:11).
+            split(i, Opener("appos", lemma, i), i - 1)
 
         elif w.is_finite_verb:
             if embedded:

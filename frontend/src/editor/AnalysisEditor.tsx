@@ -18,7 +18,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import type { ReactNode } from 'react';
 import {
   EditorContent,
   NodeViewWrapper,
@@ -30,7 +29,6 @@ import type { Editor } from '@tiptap/core';
 import type {
   CorpusWord,
   Document as AnalysisDocument,
-  Proposition,
   TaxonomyEntry,
 } from '../types';
 import { errorMessages, getCorpusWords, getTaxonomy } from '../api';
@@ -42,8 +40,10 @@ import {
   confirmFlag,
   findBrackets,
   liftBracket,
+  mergeWithNext,
   setProminent,
   setRelationship,
+  splitProposition,
   toggleReversed,
   wrapUnits,
 } from './commands';
@@ -58,33 +58,34 @@ const LABEL_GUTTER = 46; // px between the bracket columns and the row gutter
 
 interface RowContextValue {
   words: ReadonlyMap<number, CorpusWord>;
-  propsById: ReadonlyMap<string, Proposition>;
   selectedPids: ReadonlySet<string>;
   onUnitMouseDown: (pos: number, shiftKey: boolean) => void;
+  /** Split the proposition at `pos` before its `ordinal`-th word (1-based). */
+  onSplitAt: (pos: number, ordinal: number) => void;
 }
 
 const RowContext = createContext<RowContextValue | null>(null);
 
-function rowText(
-  prop: Proposition | undefined,
-  attrText: string,
+/** Word tokens of one proposition row, from its source attrs. */
+function rowTokens(
+  node: ReactNodeViewProps['node'],
   words: ReadonlyMap<number, CorpusWord>,
-): ReactNode {
-  if (prop === undefined || prop.source.kind === 'raw') {
-    return attrText;
+): { key: string | number; display: string; hover?: string }[] {
+  const { srcStart, srcEnd } = node.attrs as { srcStart: unknown; srcEnd: unknown };
+  if (typeof srcStart === 'number' && typeof srcEnd === 'number') {
+    const out = [];
+    for (let i = srcStart; i <= srcEnd; i += 1) {
+      const w = words.get(i);
+      if (w !== undefined) {
+        out.push({ key: i, display: displayWordText(w.text), hover: `${w.lemma} · ${w.parsing}` });
+      }
+    }
+    if (out.length > 0) return out;
   }
-  const parts: ReactNode[] = [];
-  for (let i = prop.source.start; i <= prop.source.end; i += 1) {
-    const w = words.get(i);
-    if (w === undefined) continue;
-    parts.push(
-      <span key={i} className="word" title={`${w.lemma} · ${w.parsing}`}>
-        {displayWordText(w.text)}
-      </span>,
-      ' ',
-    );
-  }
-  return parts.length > 0 ? parts : attrText;
+  return String(node.attrs.text ?? '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((t, i) => ({ key: i, display: t }));
 }
 
 function PropositionRow({ node, getPos }: ReactNodeViewProps) {
@@ -92,6 +93,7 @@ function PropositionRow({ node, getPos }: ReactNodeViewProps) {
   const pid = String(node.attrs.pid);
   const selected = ctx?.selectedPids.has(pid) ?? false;
   const color = typeof node.attrs.color === 'string' ? node.attrs.color : undefined;
+  const tokens = ctx !== null ? rowTokens(node, ctx.words) : [];
 
   return (
     <NodeViewWrapper
@@ -109,7 +111,27 @@ function PropositionRow({ node, getPos }: ReactNodeViewProps) {
       <span className="verse-label">{String(node.attrs.label)}</span>
       <span className="prop-text greek" style={color !== undefined ? { color } : undefined}>
         {ctx !== null
-          ? rowText(ctx.propsById.get(pid), String(node.attrs.text), ctx.words)
+          ? tokens.map((t, ordinal) => (
+              <span
+                key={t.key}
+                className="word"
+                title={
+                  (t.hover !== undefined ? `${t.hover}\n` : '') +
+                  (ordinal > 0 ? 'double-click: split before this word' : '')
+                }
+                onDoubleClick={
+                  ordinal > 0
+                    ? (event) => {
+                        event.preventDefault();
+                        const pos = typeof getPos === 'function' ? getPos() : undefined;
+                        if (pos !== undefined) ctx.onSplitAt(pos, ordinal);
+                      }
+                    : undefined
+                }
+              >
+                {t.display}{' '}
+              </span>
+            ))
           : String(node.attrs.text)}
       </span>
     </NodeViewWrapper>
@@ -201,10 +223,6 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
   const [layoutTick, setLayoutTick] = useState(0);
   const shellRef = useRef<HTMLDivElement | null>(null);
 
-  const propsById = useMemo(
-    () => new Map(baseDoc.propositions.map((p) => [p.id, p])),
-    [baseDoc],
-  );
   const taxonomyByCode = useMemo(
     () => new Map(taxonomy.map((t) => [t.code, t])),
     [taxonomy],
@@ -284,6 +302,13 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     [],
   );
 
+  const onSplitAt = useCallback(
+    (pos: number, ordinal: number) => {
+      if (editor !== null) splitProposition(editor, pos, ordinal, words);
+    },
+    [editor, words],
+  );
+
   // Derived selection info.
   const unitInfo =
     editor !== null && selection?.kind === 'units'
@@ -296,8 +321,8 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
   const selectedBracketPos = selection?.kind === 'bracket' ? selection.pos : null;
 
   const rowCtx = useMemo<RowContextValue>(
-    () => ({ words, propsById, selectedPids, onUnitMouseDown }),
-    [words, propsById, selectedPids, onUnitMouseDown],
+    () => ({ words, selectedPids, onUnitMouseDown, onSplitAt }),
+    [words, selectedPids, onUnitMouseDown, onSplitAt],
   );
 
   // ---- Geometry -----------------------------------------------------------
@@ -348,6 +373,21 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
   const selectedBracket =
     selectedBracketPos !== null ? editor.state.doc.nodeAt(selectedBracketPos) : null;
 
+  // The selection covers exactly two adjacent sibling propositions → offer
+  // Merge (the command re-checks arity and contiguity itself).
+  const mergeFrom = (() => {
+    if (unitInfo === null || unitInfo.count !== 2) return null;
+    const $from = editor.state.doc.resolve(unitInfo.from);
+    const parent = $from.parent;
+    const index = $from.index();
+    if (index + 1 >= parent.childCount) return null;
+    const a = parent.child(index);
+    const b = parent.child(index + 1);
+    if (a.type.name !== 'proposition' || b.type.name !== 'proposition') return null;
+    if (parent.type.name === 'bracket' && parent.childCount <= 2) return null;
+    return unitInfo.from;
+  })();
+
   return (
     <RowContext.Provider value={rowCtx}>
       <Toolbar
@@ -357,6 +397,8 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
         onWrap={(rel) => {
           if (unitInfo !== null) wrapUnits(editor, unitInfo.from, unitInfo.to, rel, taxonomy);
         }}
+        mergeFrom={mergeFrom}
+        onMerge={(from) => mergeWithNext(editor, from, words)}
         bracketPos={selectedBracketPos}
         bracket={selectedBracket?.type.name === 'bracket' ? selectedBracket : null}
         clearSelection={() => setSelection(null)}
@@ -444,6 +486,9 @@ interface ToolbarProps {
   taxonomy: TaxonomyEntry[];
   wrapEnabled: boolean;
   onWrap: (rel: string) => void;
+  /** Position of the first of two mergeable sibling propositions, or null. */
+  mergeFrom: number | null;
+  onMerge: (from: number) => void;
   bracketPos: number | null;
   bracket: ReturnType<Editor['state']['doc']['nodeAt']>;
   clearSelection: () => void;
@@ -502,6 +547,8 @@ function Toolbar({
   taxonomy,
   wrapEnabled,
   onWrap,
+  mergeFrom,
+  onMerge,
   bracketPos,
   bracket,
   clearSelection,
@@ -518,6 +565,14 @@ function Toolbar({
         disabled={!wrapEnabled}
         onPick={onWrap}
       />
+      {mergeFrom !== null && (
+        <button
+          title="Merge the two selected propositions into one"
+          onClick={() => onMerge(mergeFrom)}
+        >
+          Merge
+        </button>
+      )}
 
       {bracketPos !== null && bracketAttrs !== null && (
         <span className="bracket-controls">

@@ -17,7 +17,9 @@
 
 import { Node } from '@tiptap/core';
 
-/** Attrs carried by every `proposition` node. */
+/** Attrs carried by every `proposition` node. The source lives in the attrs
+ * (not only in the Document) so structural edits like proposition splits can
+ * derive correct new sources without outside bookkeeping. */
 export interface PropositionAttrs {
   /** Proposition id — the join key back to Document.propositions. */
   pid: string;
@@ -26,6 +28,11 @@ export interface PropositionAttrs {
   /** Pre-resolved display text (Greek). */
   text: string;
   color: string | null;
+  /** Inclusive corpus word range for corpus sources; null for raw. */
+  srcStart: number | null;
+  srcEnd: number | null;
+  /** Raw source text for raw sources; null for corpus. */
+  rawText: string | null;
 }
 
 /** Attrs carried by every `bracket` node. */
@@ -70,6 +77,9 @@ export const EditorProposition = Node.create({
       label: { default: '', rendered: false },
       text: { default: '', rendered: false },
       color: { default: null as string | null, rendered: false },
+      srcStart: { default: null as number | null, rendered: false },
+      srcEnd: { default: null as number | null, rendered: false },
+      rawText: { default: null as string | null, rendered: false },
     };
   },
 

@@ -93,7 +93,7 @@ CASES = [
     (
         "Discourse Analysis 2 - NT 003 - James Jourlait.xlsx",
         "Philippians 1:9–11",
-        ["τον"],  # implicit prop: τὸν διὰ Ἰησοῦ Χριστοῦ (relative-article PP)
+        [],  # τὸν διὰ Ἰησοῦ Χριστοῦ splits via the attributive-article rule
     ),
     (
         "Discourse Analysis 3 - NT 003 - James Jourlait.xlsx",
@@ -106,8 +106,7 @@ CASES = [
     (
         "Discourse Analysis 4 - NT 003 - James Jourlait.xlsx",
         "Ephesians 1:13–14",
-        # Implicit props: the apposition and the two purpose PPs.
-        ["το", "εισ", "εισ"],
+        [],  # apposition + trailing-PP rules produce all seven propositions
     ),
 ]
 

@@ -328,3 +328,104 @@ describe('nodeToDocument after editing', () => {
     });
   });
 });
+
+import { mergeWithNext, splitProposition } from '../commands';
+import { CORPUS_WORDS as WORDS } from './fixtures';
+
+const WORD_MAP = new Map(WORDS.map((w) => [w.index, w]));
+
+describe('splitProposition / mergeWithNext', () => {
+  it('splits a corpus proposition, recomputing sources, labels, and text', () => {
+    const doc = firstJohn16();
+    const ed = open(doc);
+    // p2 = ὅτι κοινωνίαν ἔχομεν μετ’ αὐτοῦ (124773–124777): split after 2 words.
+    expect(splitProposition(ed, propPos(ed, 'p2'), 2, WORD_MAP)).toBe(true);
+    ed.state.doc.check();
+
+    const out = nodeToDocument(ed.state.doc, doc);
+    expect(out.propositions).toHaveLength(6);
+    expect(out.propositions[1]?.source).toEqual({ kind: 'corpus', start: 124773, end: 124774 });
+    expect(out.propositions[2]?.source).toEqual({ kind: 'corpus', start: 124775, end: 124777 });
+    // New pid is fresh; labels recomputed across the verse (6 props → 6a..6f).
+    expect(out.propositions.map((p) => p.label)).toEqual(['6a', '6b', '6c', '6d', '6e', '6f']);
+    expect(new Set(out.propositions.map((p) => p.id)).size).toBe(6);
+    // The Adv bracket's star pointed at p2 (index 0) and stays there.
+    expect(out.tree).toMatchObject({
+      children: [
+        { rel: 'FtIn', children: [{ kind: 'prop' }, { rel: 'Adv', prominent: 0 }] },
+        { rel: 'Ser' },
+      ],
+    });
+  });
+
+  it('splits a raw proposition by tokens', () => {
+    const doc = firstJohn16();
+    const ed = open(doc);
+    // p5 raw: καὶ οὐ ποιοῦμεν τὴν ἀλήθειαν· → split after 2 tokens.
+    expect(splitProposition(ed, propPos(ed, 'p5'), 2, WORD_MAP)).toBe(true);
+    const out = nodeToDocument(ed.state.doc, doc);
+    expect(out.propositions).toHaveLength(6);
+    expect(out.propositions[4]?.source).toEqual({ kind: 'raw', text: 'καὶ οὐ' });
+    expect(out.propositions[5]?.source).toEqual({ kind: 'raw', text: 'ποιοῦμεν τὴν ἀλήθειαν·' });
+  });
+
+  it('rejects out-of-range split points and non-propositions', () => {
+    const doc = firstJohn16();
+    const ed = open(doc);
+    const before = ed.getJSON();
+    expect(splitProposition(ed, propPos(ed, 'p4'), 1, WORD_MAP)).toBe(false); // single word
+    expect(splitProposition(ed, propPos(ed, 'p2'), 0, WORD_MAP)).toBe(false);
+    expect(splitProposition(ed, propPos(ed, 'p2'), 5, WORD_MAP)).toBe(false);
+    expect(splitProposition(ed, 0, 1, WORD_MAP)).toBe(false); // a bracket
+    expect(ed.getJSON()).toEqual(before);
+  });
+
+  it('shifts the parent star when splitting before it', () => {
+    const doc = flatDoc('CndE', 2);
+    // Make prop 'a' corpus-backed so it can split on words.
+    doc.propositions[0]!.source = { kind: 'corpus', start: 124771, end: 124772 };
+    const ed = open(doc);
+    expect(splitProposition(ed, propPos(ed, 'a'), 1, WORD_MAP)).toBe(true);
+    expect(ed.state.doc.child(0).childCount).toBe(4);
+    expect(ed.state.doc.child(0).attrs.prominent).toBe(3);
+  });
+
+  it('merges contiguous corpus propositions back together', () => {
+    const doc = firstJohn16();
+    const ed = open(doc);
+    expect(splitProposition(ed, propPos(ed, 'p2'), 2, WORD_MAP)).toBe(true);
+    // The two halves are adjacent siblings inside the (now 3-child) Adv.
+    expect(mergeWithNext(ed, propPos(ed, 'p2'), WORD_MAP)).toBe(true);
+    ed.state.doc.check();
+    const out = nodeToDocument(ed.state.doc, doc);
+    expect(out.propositions).toHaveLength(5);
+    expect(out.propositions[1]?.source).toEqual({ kind: 'corpus', start: 124773, end: 124777 });
+    expect(out.propositions.map((p) => p.label)).toEqual(['6a', '6b', '6c', '6d', '6e']);
+  });
+
+  it('refuses to merge the only two children of a bracket', () => {
+    const doc = firstJohn16();
+    const ed = open(doc);
+    // p4/p5 are the flagged Ser's only children.
+    expect(mergeWithNext(ed, propPos(ed, 'p4'), WORD_MAP)).toBe(false);
+  });
+
+  it('merge of non-contiguous sources degrades to a raw source', () => {
+    const doc = flatDoc('Ser');
+    doc.propositions[0]!.source = { kind: 'corpus', start: 124771, end: 124772 };
+    doc.propositions[1]!.source = { kind: 'corpus', start: 124778, end: 124780 };
+    const ed = open(doc);
+    expect(mergeWithNext(ed, propPos(ed, 'a'), WORD_MAP)).toBe(true);
+    const out = nodeToDocument(ed.state.doc, doc);
+    expect(out.propositions[0]?.source.kind).toBe('raw');
+  });
+
+  it('undo restores the document after a split', () => {
+    const doc = firstJohn16();
+    const ed = open(doc);
+    const before = ed.getJSON();
+    expect(splitProposition(ed, propPos(ed, 'p2'), 2, WORD_MAP)).toBe(true);
+    expect(ed.commands.undo()).toBe(true);
+    expect(ed.getJSON()).toEqual(before);
+  });
+});

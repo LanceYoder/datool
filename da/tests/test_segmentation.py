@@ -198,7 +198,7 @@ def test_segments_tile_range(book):
         # a sentence break can only sit at the very end of a segment
         assert not any(words[i].ends_sentence for i in range(s.start, s.end))
         if s.opener is not None:
-            assert s.opener.kind in {"sub_conj", "rel", "ptcp", "inf", "coord"}
+            assert s.opener.kind in {"sub_conj", "rel", "ptcp", "inf", "coord", "pp", "appos"}
             assert s.start <= s.opener.index <= s.end
             assert s.opener.lemma
         eos_before += sum(1 for i in range(s.start, s.end + 1) if words[i].ends_sentence)
