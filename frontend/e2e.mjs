@@ -185,25 +185,29 @@ await page.waitForURL(/\/analysis\//);
 const analysisUrl = page.url();
 ok(`created ${analysisUrl}`);
 
-// --- (b) Initial entry: ONE block, no auto-analysis -------------------------
-step('(b) initial entry is one block of text — no propositions, no tree');
+// --- (b) Initial entry: pre-split clauses, NO tree ---------------------------
+step('(b) initial entry: auto-split into clause propositions, no connections');
 await page.waitForSelector(SEL.row);
-await expectCount(SEL.row, 1, 'exactly one proposition row');
-await expectCount(SEL.bracket, 0, 'the auto analyzer is off: no brackets');
-await expectCount(SEL.dot, 1, 'one dot for the one block');
-await expectCount(SEL.rootDot, 1, 'the block is a disconnected root');
-const blockLabel = (await page.locator(SEL.row).locator('.verse-label').textContent()) ?? '';
-if (blockLabel !== '5–7') await fail(`block label should be "5–7", got "${blockLabel}"`);
-ok(`the block is labeled by its verse span (${blockLabel})`);
+await expectCount(SEL.row, 14, 'one row per clause segment (1 Jn 1:5–7 = 14)');
+await expectCount(SEL.bracket, 0, 'auto-relationing is off: no brackets');
+await expectCount(SEL.dot, 14, 'one dot per proposition');
+await expectCount(SEL.rootDot, 14, 'every proposition is a disconnected root');
+const blockLabel = (await page.locator(SEL.row).nth(0).locator('.verse-label').textContent()) ?? '';
+if (blockLabel !== '5a') await fail(`first row label should be "5a", got "${blockLabel}"`);
+ok(`rows carry verse-letter labels (first is ${blockLabel})`);
 
-// The English reference line — built word-by-word from THIS row's Greek
+// The English reference line — built word-by-word from EACH row's own Greek
 // (TAGNT contextual renderings) — loads above the text. Display only.
 await page.waitForSelector('.prop-row .english-line');
 const english0 = (await page.textContent('.prop-row .english-line')) ?? '';
-if (!english0.includes('the message') || !english0.includes('fellowship')) {
-  await fail(`English reference line looks wrong: "${english0.slice(0, 120)}…"`);
+if (!english0.includes('the message')) {
+  await fail(`first English line looks wrong: "${english0.slice(0, 120)}…"`);
 }
-ok('word-matched English line shows above the Greek');
+const englishAll = await page.evaluate(() =>
+  [...document.querySelectorAll('.english-line')].map((el) => el.textContent).join(' '),
+);
+if (!englishAll.includes('fellowship')) await fail('English lines missing verse-6 content');
+ok('word-matched English lines show above each row');
 await expectCount('.english-line .ev', 3, 'verse markers at each verse start (5, 6, 7)');
 
 // Confidence labeling is gone: nothing in the overlay is amber, and the
@@ -274,11 +278,11 @@ ok('toolbar has Undo and Redo only');
 await snap('editor-first-pass');
 
 // --- (c) Split after --------------------------------------------------------
-step('(c) split the block');
+step('(c) split the first proposition');
 const splitRow = page.locator(SEL.row).nth(0);
 const splitPid = await splitRow.getAttribute('data-pid');
 const splitLabel = (await splitRow.locator('.verse-label').textContent()) ?? '';
-console.log(`  splitting the block (${splitPid}, "${splitLabel}") after its 2nd word`);
+console.log(`  splitting row 0 (${splitPid}, "${splitLabel}") after its 2nd word`);
 
 await splitRow.locator('.word.splittable').nth(1).click();
 await page.waitForSelector(SEL.wordPopover);
@@ -293,28 +297,27 @@ ok(`word popover shows info ("${gloss.trim()}" · "${parse.trim()}") plus Split 
 await snap('split-popover');
 
 await page.click(`${SEL.wordPopover} .popover-item`);
-await expectCount(SEL.row, 2, 'rows after split');
+await expectCount(SEL.row, 15, 'rows after split');
 
 const newRow = page.locator(SEL.row).nth(1);
 const newPid = await newRow.getAttribute('data-pid');
-// Labels re-derive from the corpus verses: the two-word head sits in verse 5
-// alone ("5"), the remainder still spans verses 5–7.
+// Labels re-derive from the corpus verses: verse 5 now holds six clauses, so
+// the letters re-run a–f (no primes anywhere).
 const headLabel = (await page.locator(SEL.row).nth(0).locator('.verse-label').textContent()) ?? '';
 const newLabel = (await newRow.locator('.verse-label').textContent()) ?? '';
 console.log(`  labels after split: "${headLabel}" / "${newLabel}"`);
-if (headLabel !== '5') await fail(`head label should be "5", got "${headLabel}"`);
-if (newLabel !== '5–7') await fail(`tail label should be "5–7", got "${newLabel}"`);
-ok('labels re-derived from the verses (5 / 5–7 — no primes)');
-// Each half now shows exactly ITS OWN words' English (the DA2-example rule:
+if (headLabel !== '5a') await fail(`head label should be "5a", got "${headLabel}"`);
+if (newLabel !== '5b') await fail(`second label should be "5b", got "${newLabel}"`);
+ok('labels re-lettered from the verses (5a / 5b — no primes)');
+// Each half shows exactly ITS OWN words' English (the DA2-example rule:
 // the English matches the proposition, not the verse).
-await expectCount('.prop-row .english-line', 2, 'both halves carry their own English');
 const headEnglish = (await page.locator('.prop-row .english-line').nth(0).textContent()) ?? '';
 const tailEnglish = (await page.locator('.prop-row .english-line').nth(1).textContent()) ?? '';
-// Head = καὶ ἔστιν → its own two words only; the rest belongs to the tail.
+// Head = Καὶ ἔστιν → its own two words only; "the message" starts the tail.
 if (headEnglish.includes('message')) {
   await fail(`head English should stop at its own words: "${headEnglish}"`);
 }
-if (!tailEnglish.includes('message') || !tailEnglish.includes('fellowship')) {
+if (!tailEnglish.includes('message')) {
   await fail(`tail English missing its words: "${tailEnglish.slice(0, 100)}…"`);
 }
 ok('the English is divided exactly at the split point');
@@ -401,27 +404,17 @@ await waitFor(
 );
 if ((await mergeBtn.textContent()) !== 'Merge below') await fail('merge button text changed');
 await mergeBtn.click();
-await expectCount(SEL.row, 1, 'back to one row after merge');
+await expectCount(SEL.row, 14, 'back to fourteen rows after merge');
 const mergedLabel = await page.locator(SEL.row).nth(0).locator('.verse-label').textContent();
 if (mergedLabel !== splitLabel) await fail(`merged row label is "${mergedLabel}"`);
 ok(`merged row is ${splitPid} again ("${mergedLabel}")`);
 
 // --- (e) Dot connect --------------------------------------------------------
-step('(e) build by hand: split twice, then connect two adjacent roots');
-// Two splits leave three disconnected roots to work with.
-for (const [rowIndex, want] of [
-  [0, 2],
-  [1, 3],
-]) {
-  await page.locator(SEL.row).nth(rowIndex).locator('.word.splittable').nth(1).click();
-  await page.waitForSelector(SEL.wordPopover);
-  await page.click(`${SEL.wordPopover} .popover-item`);
-  await expectCount(SEL.row, want, `rows after split ${want - 1}`);
-}
+step('(e) connect two adjacent roots by their dots');
 const bracketsBeforeConnect = await countOf(SEL.bracket);
 const rootsBeforeConnect = await countOf(SEL.rootDot);
 console.log(`  brackets: ${bracketsBeforeConnect}  roots: ${rootsBeforeConnect}`);
-if (rootsBeforeConnect !== 3) await fail('splitting twice did not leave three roots');
+if (rootsBeforeConnect !== 14) await fail('the pre-split roots are not all loose');
 
 // Root dots come out in forest-root order, so any two neighbours in this
 // list are adjacent roots — the plain (no unzip needed) connect case.
@@ -449,22 +442,32 @@ await expectCount(SEL.menu, 0, 'menu closed after picking a relationship');
 await expectCount('g.label-hit[data-label="G"]', 1, 'the new bracket is labeled Ground (G)');
 const bracketsAfterConnect = await countOf(SEL.bracket);
 
-// Two roots remain, so the analysis is incomplete: nothing is red yet.
+// Many roots remain, so the analysis is incomplete: nothing is red yet.
 await expectNone('.prop-row.main-point', 'no main point while the forest is loose');
 
 // --- (e2) Complete the tree: the main point turns red ------------------------
-step('(e2) connect the last root — the star walk paints the main point red');
-await page.locator(SEL.rootDot).nth(0).dispatchEvent('click');
-await page.locator(SEL.rootDot).nth(1).dispatchEvent('click');
-await page.waitForSelector(SEL.menu);
+step('(e2) connect everything into one tree — the star walk paints the main point red');
+// Ground stars child 0, so an all-Ground left-deep tree walks to row 0.
+let looseRoots = await countOf(SEL.rootDot);
+while (looseRoots > 1) {
+  await page.locator(SEL.rootDot).nth(0).dispatchEvent('click');
+  await page.locator(SEL.rootDot).nth(1).dispatchEvent('click');
+  await page.waitForSelector(SEL.menu);
+  await page.click(`${SEL.menu} .menu-item:has(.menu-name:text-is("Ground"))`);
+  await page.waitForFunction(
+    (n) => document.querySelectorAll('g.dot-group.root').length === n,
+    looseRoots - 1,
+    { timeout: 8000 },
+  );
+  looseRoots -= 1;
+}
+ok('all fourteen propositions connected into one tree (all Ground)');
 await expectCount(SEL.rootDot, 1, 'everything is one tree now');
-// Make the top-level call Ground too: its star (child 0) is the walk's target.
-await page.click(`${SEL.menu} .menu-item:has(.menu-name:text-is("Ground"))`);
 await expectCount('.prop-row.main-point', 1, 'exactly one proposition is the main point');
 await waitFor(
   () => document.querySelectorAll('.prop-row')[0]?.classList.contains('main-point') === true,
   null,
-  'the main point is the starred top-level side (row 1)',
+  'the star walk lands on row 0 (child 0 down the Ground chain)',
 );
 await snap('main-point');
 
@@ -481,6 +484,9 @@ console.log(`  ${starCount} stars; first star y=${starBefore}`);
 // A REAL pointer click on the star glyph itself (not a dispatched event):
 // stars paint above every label hit, so this must flip the star — a mis-hit
 // that opened the relationship menu here is the regression this guards.
+// (Scroll to the top first: the connect loop's menu clicks scrolled the page,
+// and mouse.click works in viewport coordinates.)
+await page.evaluate(() => window.scrollTo(0, 0));
 const starPoint = await page.evaluate(() => {
   const t = document.querySelector('g.star-hit text.bracket-star');
   const r = t.getBoundingClientRect();
@@ -496,13 +502,16 @@ await waitFor(
   'the star moved to the other end of its bracket',
 );
 await expectNone(SEL.menu, 'the star click did NOT open the relationship menu');
-// The red main point follows the star: prominence moved to the other side,
-// whose walk lands on row 2.
+// The red main point follows the star: the top bracket's prominence moved to
+// its other side — the last-connected proposition, i.e. the final row.
 await expectCount('.prop-row.main-point', 1, 'still exactly one main point');
 await waitFor(
-  () => document.querySelectorAll('.prop-row')[1]?.classList.contains('main-point') === true,
+  () => {
+    const rows = document.querySelectorAll('.prop-row');
+    return rows[rows.length - 1]?.classList.contains('main-point') === true;
+  },
   null,
-  'the main point followed the star to the other side',
+  'the main point followed the star to the other side (last row)',
 );
 const starAfter = await page
   .locator(`${SEL.star} text.bracket-star`)

@@ -213,9 +213,10 @@ def test_build_document_1john_hand_segments():
     roundtrip(doc)
 
 
-def test_first_pass_1john_1_5_7_is_one_block():
-    """The automatic analyzer is OFF at entry: a located paste becomes ONE
-    corpus proposition spanning the whole passage, labeled by verse span."""
+def test_first_pass_1john_1_5_7_pre_splits_disconnected():
+    """Auto-splitting is ON, auto-relationing OFF: a located paste becomes
+    one proposition per clause segment, verse-lettered, every one its own
+    forest root (no brackets)."""
     words = load_words()
     text = " ".join(w.text for w in words[J_START:J_END + 1])
     result = first_pass(text)
@@ -223,11 +224,19 @@ def test_first_pass_1john_1_5_7_is_one_block():
     assert result.alignment.exact
     assert result.alignment.ref == "1 John 1:5–7"
     doc = result.document
-    assert doc["propositions"] == [{
-        "id": "p1", "label": "5–7",
-        "source": {"kind": "corpus", "start": J_START, "end": J_END},
-    }]
-    assert doc["forest"] == [{"kind": "prop", "ref": "p1"}]
+    props = doc["propositions"]
+    assert [p["label"] for p in props] == [
+        "5a", "5b", "5c", "5d", "5e",
+        "6a", "6b", "6c", "6d", "6e",
+        "7a", "7b", "7c", "7d",
+    ]
+    # The segments exactly tile the passage.
+    assert props[0]["source"]["start"] == J_START
+    assert props[-1]["source"]["end"] == J_END
+    for a, b in zip(props, props[1:]):
+        assert a["source"]["end"] + 1 == b["source"]["start"]
+    # Disconnected: one prop root per segment, in order.
+    assert doc["forest"] == [{"kind": "prop", "ref": p["id"]} for p in props]
     roundtrip(doc)
 
 
@@ -317,18 +326,20 @@ def test_build_document_hebrews_hand_segments():
     roundtrip(doc)
 
 
-def test_first_pass_hebrews_4_9_12_is_one_block():
+def test_first_pass_hebrews_4_9_12_pre_splits_disconnected():
     words = load_words()
     text = " ".join(w.text for w in words[H_START:H_END + 1])
     result = first_pass(text)
     assert result.alignment is not None
     assert result.alignment.ref == "Hebrews 4:9–12"
     doc = result.document
-    assert doc["propositions"] == [{
-        "id": "p1", "label": "9–12",
-        "source": {"kind": "corpus", "start": H_START, "end": H_END},
-    }]
-    assert doc["forest"] == [{"kind": "prop", "ref": "p1"}]
+    props = doc["propositions"]
+    # Live segmentation also splits verse 12 at the adverbial participle
+    # διϊκνούμενος (the hand-built stage-2 segments keep v12 whole).
+    assert [p["label"] for p in props] == [
+        "9", "10a", "10b", "11a", "11b", "12a", "12b",
+    ]
+    assert doc["forest"] == [{"kind": "prop", "ref": p["id"]} for p in props]
     roundtrip(doc)
 
 
@@ -346,17 +357,17 @@ def test_raw_mode_english_text():
     assert doc["forest"] == [{"kind": "prop", "ref": "p1"}]
 
 
-def test_raw_mode_non_nt_greek_is_one_block():
+def test_raw_mode_non_nt_greek_splits_on_punctuation():
     result = first_pass("ὁ ἄνθρωπος βλέπει τὸν κόσμον. ἡ γυνὴ γράφει.")
     assert result.alignment is None
     doc = result.document
     validate_document(doc)
-    assert doc["propositions"] == [{
-        "id": "p1", "label": "1",
-        "source": {"kind": "raw",
-                   "text": "ὁ ἄνθρωπος βλέπει τὸν κόσμον. ἡ γυνὴ γράφει."},
-    }]
-    assert doc["forest"] == [{"kind": "prop", "ref": "p1"}]
+    assert [(p["label"], p["source"]["text"]) for p in doc["propositions"]] == [
+        ("1", "ὁ ἄνθρωπος βλέπει τὸν κόσμον"),
+        ("2", "ἡ γυνὴ γράφει"),
+    ]
+    # Disconnected roots — no auto-relationing in raw mode either.
+    assert doc["forest"] == [{"kind": "prop", "ref": "p1"}, {"kind": "prop", "ref": "p2"}]
     roundtrip(doc)
 
 

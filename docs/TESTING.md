@@ -46,8 +46,9 @@ morphology, no passage reference).
 
 ## What to test (the editor)
 
-An analysis starts as **one block of text** — there is no automatic
-analysis. Everything is built by hand:
+An analysis starts **pre-split into clause propositions** (automatic
+segmentation from the morphology) but with **no connections** — the tree
+itself is built by hand:
 
 1. **Create**: paste the passage → **Locate** (should read
    `1 John 1:5–7 — 70/70 tokens matched (exact)`) → **Create**.
