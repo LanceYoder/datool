@@ -4,16 +4,18 @@ Error contract: every 400 carries ``{"errors": [str, ...]}``.
 """
 
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .corpus import format_ref, load_words, verses_for_range
 from .documents import DocumentError, validate_document
-from .models import Analysis
+from .models import Analysis, purge_expired
 from .serializers import (
     AnalysisDetailSerializer,
     AnalysisListSerializer,
+    DeletedAnalysisSerializer,
     alignment_json,
     word_json,
 )
@@ -53,7 +55,7 @@ def _derive_passage_ref(document: dict) -> str:
 
 class AnalysisListCreateView(APIView):
     def get(self, request):
-        rows = Analysis.objects.order_by("-updated_at")
+        rows = Analysis.objects.filter(deleted_at__isnull=True).order_by("-updated_at")
         return Response(AnalysisListSerializer(rows, many=True).data)
 
     def post(self, request):
@@ -77,12 +79,15 @@ class AnalysisListCreateView(APIView):
 
 
 class AnalysisDetailView(APIView):
+    """A LIVE analysis: one in Recently Deleted reads as gone (404) until it
+    is restored. Only delete() reaches a trashed row, to purge it."""
+
     def get(self, request, pk: int):
-        analysis = get_object_or_404(Analysis, pk=pk)
+        analysis = get_object_or_404(Analysis, pk=pk, deleted_at__isnull=True)
         return Response(AnalysisDetailSerializer(analysis).data)
 
     def put(self, request, pk: int):
-        analysis = get_object_or_404(Analysis, pk=pk)
+        analysis = get_object_or_404(Analysis, pk=pk, deleted_at__isnull=True)
         payload = request.data
         if not isinstance(payload, dict):
             return _errors(["request body must be an object"])
@@ -97,13 +102,42 @@ class AnalysisDetailView(APIView):
             except DocumentError as e:
                 return _errors(e.problems)
             analysis.passage_ref = _derive_passage_ref(analysis.document)
+        if "notes" in payload:
+            notes = payload["notes"]
+            if not isinstance(notes, str):
+                return _errors(["notes must be a string"])
+            analysis.notes = notes
         analysis.save()
         return Response(AnalysisDetailSerializer(analysis).data)
 
     def delete(self, request, pk: int):
+        """Soft by default — the analysis moves to Recently Deleted. Only
+        ``?purge=1`` (emptying the trash) removes the row itself."""
         analysis = get_object_or_404(Analysis, pk=pk)
-        analysis.delete()
+        if request.query_params.get("purge") in ("1", "true"):
+            analysis.delete()
+        else:
+            analysis.deleted_at = timezone.now()
+            analysis.save(update_fields=["deleted_at"])
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class DeletedAnalysisListView(APIView):
+    """Recently Deleted. Listing it is also what purges the expired rows —
+    a single-user app needs no scheduler for a 30-day window."""
+
+    def get(self, request):
+        purge_expired()
+        rows = Analysis.objects.filter(deleted_at__isnull=False).order_by("-deleted_at")
+        return Response(DeletedAnalysisSerializer(rows, many=True).data)
+
+
+class AnalysisRestoreView(APIView):
+    def post(self, request, pk: int):
+        analysis = get_object_or_404(Analysis, pk=pk, deleted_at__isnull=False)
+        analysis.deleted_at = None
+        analysis.save(update_fields=["deleted_at"])
+        return Response(AnalysisDetailSerializer(analysis).data)
 
 
 class FirstPassView(APIView):

@@ -91,6 +91,15 @@ export interface AnalysisSummary {
 
 export interface Analysis extends AnalysisSummary {
   document: Document;
+  /** Exegetical comments on the analysis as a whole; '' when never written. */
+  notes: string;
+}
+
+/** A row of Recently Deleted: what it was, and how long it has left. */
+export interface DeletedAnalysisSummary extends AnalysisSummary {
+  deletedAt: string;
+  /** Whole days before it is purged for good. */
+  daysLeft: number;
 }
 
 export interface CorpusWord {

@@ -27,7 +27,18 @@ class AnalysisDetailSerializer(AnalysisListSerializer):
     """Full shape for detail responses and successful writes."""
 
     class Meta(AnalysisListSerializer.Meta):
-        fields = ["id", "title", "passageRef", "document", "updatedAt"]
+        fields = ["id", "title", "passageRef", "document", "notes", "updatedAt"]
+
+
+class DeletedAnalysisSerializer(AnalysisListSerializer):
+    """Row shape for ``GET /api/analyses/deleted`` — the Recently Deleted list,
+    where what matters is when it goes."""
+
+    deletedAt = serializers.DateTimeField(source="deleted_at", read_only=True)
+    daysLeft = serializers.IntegerField(source="days_left", read_only=True)
+
+    class Meta(AnalysisListSerializer.Meta):
+        fields = ["id", "title", "passageRef", "updatedAt", "deletedAt", "daysLeft"]
 
 
 def word_json(word: Word) -> dict:

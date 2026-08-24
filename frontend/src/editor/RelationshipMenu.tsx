@@ -1,5 +1,5 @@
-// The bracket dropdown: every relationship in the taxonomy, grouped by family,
-// plus Disconnect for forest ROOT brackets.
+// The bracket dropdown: every relationship in the taxonomy, grouped by family.
+// Removing a connection is not in here — that is a double click on its dot.
 //
 // It is a menu of commands, nothing more: picking an item runs exactly one
 // core command and closes. Every relationship also answers to its own key
@@ -13,19 +13,10 @@ export interface RelationshipMenuProps {
   taxonomy: readonly TaxonomyEntry[];
   /** The bracket's current relationship code (marked in the list). */
   current: string;
-  /** Show "Disconnect" — the bracket is a forest root. */
-  root: boolean;
   onPick: (rel: string) => void;
-  onDisconnect: () => void;
 }
 
-export default function RelationshipMenu({
-  taxonomy,
-  current,
-  root,
-  onPick,
-  onDisconnect,
-}: RelationshipMenuProps) {
+export default function RelationshipMenu({ taxonomy, current, onPick }: RelationshipMenuProps) {
   const groups = groupByFamily(taxonomy);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const currentRef = useRef<HTMLButtonElement | null>(null);
@@ -83,14 +74,6 @@ export default function RelationshipMenu({
           })}
         </div>
       ))}
-      {root && (
-        <>
-          <div className="menu-sep" />
-          <button type="button" role="menuitem" className="menu-item action" onClick={onDisconnect}>
-            Disconnect
-          </button>
-        </>
-      )}
     </div>
   );
 }

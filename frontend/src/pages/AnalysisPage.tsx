@@ -3,6 +3,9 @@ import { useNavigate, useParams } from 'react-router-dom';
 import type { Analysis, Document as AnalysisDocument } from '../types';
 import { deleteAnalysis, errorMessages, getAnalysis, updateAnalysis } from '../api';
 import AnalysisEditor from '../editor/AnalysisEditor';
+
+/** Printable width of US Letter portrait at 0.5in margins, in CSS pixels. */
+const PRINT_WIDTH_PX = 7.5 * 96;
 import { useUnsavedChanges } from '../unsavedChanges';
 
 export default function AnalysisPage() {
@@ -14,7 +17,9 @@ export default function AnalysisPage() {
   // survives saves (saving must not rebuild the editor).
   const [initialDoc, setInitialDoc] = useState<AnalysisDocument | null>(null);
   const draftRef = useRef<AnalysisDocument | null>(null);
+  const notesRef = useRef<HTMLTextAreaElement | null>(null);
   const [title, setTitle] = useState('');
+  const [notes, setNotes] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
@@ -30,6 +35,7 @@ export default function AnalysisPage() {
         setInitialDoc(a.document);
         draftRef.current = a.document;
         setTitle(a.title);
+        setNotes(a.notes);
       })
       .catch((err: unknown) => {
         if (!cancelled) setErrors(errorMessages(err));
@@ -58,21 +64,31 @@ export default function AnalysisPage() {
   }, []);
 
   const titleDirty = analysis !== null && title !== analysis.title;
+  const notesDirty = analysis !== null && notes !== analysis.notes;
 
   // Let the header links confirm before navigating away from unsaved edits.
-  useUnsavedChanges(dirty || titleDirty);
+  useUnsavedChanges(dirty || titleDirty || notesDirty);
 
   const save = async () => {
     if (id === undefined || draftRef.current === null) return;
     setBusy(true);
     setErrors([]);
     try {
-      const updated = await updateAnalysis(id, { title, document: draftRef.current });
+      const updated = await updateAnalysis(id, { title, notes, document: draftRef.current });
       // Keep the editor untouched: update metadata only.
       setAnalysis((prev) =>
-        prev === null ? updated : { ...prev, title: updated.title, passageRef: updated.passageRef, updatedAt: updated.updatedAt },
+        prev === null
+          ? updated
+          : {
+              ...prev,
+              title: updated.title,
+              notes: updated.notes,
+              passageRef: updated.passageRef,
+              updatedAt: updated.updatedAt,
+            },
       );
       setTitle(updated.title);
+      setNotes(updated.notes);
       setDirty(false);
       setSavedAt(new Date());
     } catch (err) {
@@ -82,9 +98,38 @@ export default function AnalysisPage() {
     }
   };
 
+  /**
+   * Printing is the browser's, but the fit is ours: the analysis is as wide as
+   * its deepest tree, which is often wider than a page, so it is scaled down
+   * to the printable width first (see the @media print block), and the notes
+   * box is grown to its full text so nothing is cut off at row six.
+   */
+  const print = () => {
+    const shell = document.querySelector<HTMLElement>('.editor-shell');
+    if (shell !== null) {
+      const scale = Math.min(1, PRINT_WIDTH_PX / Math.max(1, shell.scrollWidth));
+      shell.style.setProperty('--print-scale', scale.toFixed(3));
+    }
+    const area = notesRef.current;
+    if (area !== null) area.style.height = `${area.scrollHeight}px`;
+    window.print();
+  };
+
+  // Undo the print fit-up once the dialog is gone.
+  useEffect(() => {
+    const onAfterPrint = () => {
+      const area = notesRef.current;
+      if (area !== null) area.style.height = '';
+    };
+    window.addEventListener('afterprint', onAfterPrint);
+    return () => {
+      window.removeEventListener('afterprint', onAfterPrint);
+    };
+  }, []);
+
   const remove = async () => {
     if (id === undefined) return;
-    if (!window.confirm('Delete this analysis? This cannot be undone.')) return;
+    if (!window.confirm('Delete this analysis? It moves to Recently deleted.')) return;
     setBusy(true);
     setErrors([]);
     try {
@@ -109,14 +154,17 @@ export default function AnalysisPage() {
         <button
           className="primary"
           onClick={() => void save()}
-          disabled={busy || analysis === null || (!dirty && !titleDirty)}
+          disabled={busy || analysis === null || (!dirty && !titleDirty && !notesDirty)}
         >
           Save
+        </button>
+        <button type="button" onClick={print} disabled={analysis === null}>
+          Print
         </button>
         <button className="danger" onClick={() => void remove()} disabled={busy || analysis === null}>
           Delete
         </button>
-        {dirty && <span className="muted">Unsaved changes</span>}
+        {(dirty || titleDirty || notesDirty) && <span className="muted">Unsaved changes</span>}
         {savedAt !== null && errors.length === 0 && !dirty && (
           <span className="muted">Saved {savedAt.toLocaleTimeString()}</span>
         )}
@@ -132,6 +180,18 @@ export default function AnalysisPage() {
         <>
           <p className="muted passage-ref">{analysis.passageRef}</p>
           <AnalysisEditor document={initialDoc} onChange={onDocumentChange} />
+          <section className="notes-panel">
+            <h2>Notes</h2>
+            <textarea
+              ref={notesRef}
+              className="notes-area"
+              value={notes}
+              rows={6}
+              placeholder="Exegetical comments on this passage…"
+              aria-label="Notes"
+              onChange={(e) => setNotes(e.target.value)}
+            />
+          </section>
         </>
       )}
       {analysis === null && errors.length === 0 && <p className="muted">Loading…</p>}

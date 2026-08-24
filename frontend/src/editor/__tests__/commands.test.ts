@@ -6,6 +6,7 @@ import type { BracketNode, Document as AnalysisDocument, TreeNode } from '../../
 import { buildTextById, documentToNode, nodeToDocument } from '../convert';
 import { buildEditor } from '../editor';
 import {
+  clearConnections,
   connectUnits,
   disconnectRoot,
   findBrackets,
@@ -232,6 +233,32 @@ describe('connectUnits', () => {
         ],
       },
     ]);
+  });
+});
+
+describe('clearConnections', () => {
+  it('leaves every proposition a root, in document order, in one undo step', () => {
+    const doc = firstJohn16(); // CndE[ FtIn[p1, Adv[p2,p3]], Ser[p4,p5] ]
+    const ed = open(doc);
+    const propsBefore = nodeToDocument(ed.state.doc, doc).propositions;
+
+    expect(clearConnections(ed)).toBe(true);
+    ed.state.doc.check();
+
+    const after = nodeToDocument(ed.state.doc, doc);
+    expect(after.forest).toEqual(propsBefore.map((p) => ({ kind: 'prop', ref: p.id })));
+    // The propositions themselves are untouched.
+    expect(after.propositions).toEqual(propsBefore);
+
+    ed.commands.undo();
+    expect(nodeToDocument(ed.state.doc, doc).forest).toEqual(doc.forest);
+  });
+
+  it('does nothing when there is nothing connected', () => {
+    const doc = looseDoc();
+    const ed = open(doc);
+    expect(clearConnections(ed)).toBe(false);
+    expect(nodeToDocument(ed.state.doc, doc).forest).toEqual(doc.forest);
   });
 });
 

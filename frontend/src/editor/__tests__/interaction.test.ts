@@ -214,7 +214,11 @@ describe('relationship shortcuts', () => {
     expect(relationshipForKey('g', TAXONOMY)).toBe('Grnd');
     expect(relationshipForKey('G', TAXONOMY)).toBe('Grnd');
     expect(relationshipForKey('s', TAXONOMY)).toBe('Ser');
-    expect(relationshipForKey('?', TAXONOMY)).toBeNull();
+    // Punctuation keys carry the relationships whose SYMBOL is the handle.
+    expect(relationshipForKey('/', TAXONOMY)).toBe('Cmp');
+    expect(relationshipForKey('?', TAXONOMY)).toBe('CndE');
+    expect(relationshipForKey('c', TAXONOMY)).toBe('CE');
+    expect(relationshipForKey('&', TAXONOMY)).toBeNull();
   });
 
   it('ignores a key whose relationship the taxonomy does not carry', () => {

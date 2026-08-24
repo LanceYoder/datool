@@ -50,6 +50,7 @@ import { buildTextById, displayWordText, documentToNode, nodeToDocument } from '
 import { editorExtensions } from './editor';
 import { EditorProposition } from './schema';
 import {
+  clearConnections,
   connectUnits,
   disconnectRoot,
   findBrackets,
@@ -58,6 +59,7 @@ import {
   mergeBelow,
   setRelationship,
   splitProposition,
+  unzipToRoot,
 } from './commands';
 import { COL_W, STUB_W, computeColumns, layoutBrackets, layoutDots, leafRefs } from './layout';
 import type { DotGeom, RowBox } from './layout';
@@ -74,6 +76,7 @@ import BracketLayer from './BracketLayer';
 import type { PositionedBracket, ShakeState } from './BracketLayer';
 import RelationshipMenu from './RelationshipMenu';
 import ColorSettings from './ColorSettings';
+import HelpPanel from './HelpPanel';
 import { loadViewSettings, saveViewSettings } from './viewSettings';
 import type { ViewSettings } from './viewSettings';
 
@@ -365,14 +368,18 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
   // browser, never part of the analysis.
   const [view, setView] = useState<ViewSettings>(loadViewSettings);
   const [colorPanel, setColorPanel] = useState(false);
+  const [helpPanel, setHelpPanel] = useState(false);
   const [docTick, setDocTick] = useState(0);
   const [layoutTick, setLayoutTick] = useState(0);
   const shellRef = useRef<HTMLDivElement | null>(null);
-  // The last overlay laid out from a complete set of row measurements.
+  // The last overlay laid out from a complete set of row measurements, and
+  // the rows the last measurement pass saw (see the re-measure effect).
   const lastOverlay = useRef<Overlay | null>(null);
+  const measuredRows = useRef('');
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const flashTimer = useRef<number | null>(null);
   const wordClickTimer = useRef<number | null>(null);
+  const dotClickTimer = useRef<number | null>(null);
   // onSplit is defined further down (it needs the editor); the row context is
   // built before it, so it reaches the command through this ref.
   const onSplitRef = useRef<(pid: string, ordinal: number) => void>(() => {});
@@ -414,38 +421,46 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     [content],
   );
 
-  // Re-measure when the shell or any row changes size, and when rows enter or
-  // leave the document. A document change reaches the DOM in two steps —
-  // ProseMirror swaps the rows, then the React node views fill them in — so
-  // only the mutation announces a split's new row; without it the overlay
-  // would keep the geometry it had before the split. Observing fires the
+  // Re-measure when the shell or any row changes size. Observing fires the
   // callback once per target immediately, which is what first paints the
   // overlay; the effect itself must NOT depend on layoutTick or that initial
-  // callback would re-arm itself forever.
-  //
-  // Both observers watch the ROWS, never the overlay: the overlay is redrawn
-  // from every tick, so watching it would feed itself.
+  // callback would re-arm itself forever. It watches the ROWS, never the
+  // overlay: the overlay is redrawn from every tick, so watching it would
+  // feed itself.
   useEffect(() => {
     const shell = shellRef.current;
     if (shell === null) return;
-    const remeasure = () => {
+    const sizes = new ResizeObserver(() => {
       setLayoutTick((t) => t + 1);
-    };
-    const sizes = new ResizeObserver(remeasure);
+    });
     sizes.observe(shell);
     for (const row of shell.querySelectorAll<HTMLElement>('[data-pid]')) {
       sizes.observe(row);
     }
-    const rowsEl = shell.querySelector<HTMLElement>('.ProseMirror');
-    const mounts = new MutationObserver(remeasure);
-    if (rowsEl !== null) {
-      mounts.observe(rowsEl, { childList: true, subtree: true });
-    }
     return () => {
       sizes.disconnect();
-      mounts.disconnect();
     };
   }, [editor, docTick]);
+
+  // A document change reaches the DOM in two steps: ProseMirror swaps the rows
+  // (a split's new row, a connect's re-created ones), then the React node
+  // views fill them in a commit later. So after EVERY render, compare the rows
+  // the DOM now holds with the ones the last layout pass measured, and
+  // re-measure when they differ. This is what lands a split's or a connect's
+  // geometry — and it cannot loop, because the comparison is against what was
+  // measured, not against what was drawn: an unchanged DOM asks for nothing.
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (shell === null) return;
+    const present: string[] = [];
+    for (const el of shell.querySelectorAll<HTMLElement>('[data-pid]')) {
+      const pid = el.dataset.pid;
+      if (pid !== undefined && el.querySelector('.prop-text') !== null) present.push(pid);
+    }
+    if (present.join(',') !== measuredRows.current) {
+      setLayoutTick((t) => t + 1);
+    }
+  });
 
   // Escape closes the popover and clears every selection; Mod-z / Mod-Shift-z
   // undo/redo (the editor is not contenteditable, so the shortcuts are ours),
@@ -552,6 +567,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
       const top = rect.top - shellRect.top;
       rows.set(pid, { y: top + rect.height / 2, top, bottom: top + rect.height });
     }
+    measuredRows.current = [...rows.keys()].join(',');
     if (rows.size === 0) return null;
 
     const current = nodeToDocument(editor.state.doc, baseDoc);
@@ -665,11 +681,40 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     }, FLASH_MS);
   };
 
+  /** Double click on a dot: remove the connections it names — a bracket's own
+   * connection, or every bracket above a proposition. The single-click
+   * gesture (select, then connect) is held back the same way a word's is, so
+   * the first half of a double click never connects anything. */
+  const onDotDoubleClick = (dot: DotGeom) => {
+    if (dotClickTimer.current !== null) {
+      window.clearTimeout(dotClickTimer.current);
+      dotClickTimer.current = null;
+    }
+    setPopover(null);
+    setSelectedDotId(null);
+    const ref = parseDotId(dot.id);
+    if (ref === null) return;
+    if (ref.kind === 'bracket') {
+      const pos = bracketPosAt(ref.index);
+      if (pos !== null) disconnectRoot(editor, pos);
+      return;
+    }
+    unzipToRoot(editor, ref.pid);
+  };
+
   const onDotClick = (dot: DotGeom) => {
     // Every dot is a live handle, connected or not: a click selects it, a
     // click on the SAME dot unselects it, and a click on a second dot
     // connects the two (dissolving any old connections above either unit —
     // connectUnits' job). No modifier keys.
+    if (dotClickTimer.current !== null) window.clearTimeout(dotClickTimer.current);
+    dotClickTimer.current = window.setTimeout(() => {
+      dotClickTimer.current = null;
+      runDotClick(dot);
+    }, DOUBLE_CLICK_MS);
+  };
+
+  const runDotClick = (dot: DotGeom) => {
     setPopover(null);
     if (selectedDotId === null) {
       setSelectedDotId(dot.id);
@@ -718,20 +763,22 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
   };
   onSplitRef.current = onSplit;
 
-  const onPickRelationship = (pos: number, rel: string) => {
-    setRelationship(editor, pos, rel, taxonomy);
-  };
-
-  const onDisconnect = (pos: number) => {
-    disconnectRoot(editor, pos);
-  };
-
-  /** The delete cross on a root bracket's dot: the same single command. */
-  const onDeleteBracket = (dot: DotGeom) => {
+  /** Toolbar: remove every connection at once (the propositions stay put). */
+  const onClearTree = () => {
     setPopover(null);
     setSelectedDotId(null);
-    const pos = dotPos(dot.id);
-    if (pos !== null) disconnectRoot(editor, pos);
+    if (findBrackets(editor.state.doc).length === 0) return;
+    if (!window.confirm('Remove every connection? The propositions stay as they are.')) return;
+    clearConnections(editor);
+  };
+
+  const onPickRelationship = (pos: number, rel: string) => {
+    // Close on every pick, including one that changes nothing (the menu opens
+    // on a fresh connection already set to Series, so choosing Series is a
+    // legitimate no-op that must still feel like a choice).
+    setPopover(null);
+    setSelectedDotId(null);
+    setRelationship(editor, pos, rel, taxonomy);
   };
 
   // ---- Popovers -----------------------------------------------------------
@@ -783,7 +830,6 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
           MENU_SIZE,
           bounds,
         );
-        const isRoot = editor.state.doc.resolve(popover.pos).depth === 0;
         popoverNode = (
           <div
             ref={popoverRef}
@@ -793,9 +839,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
             <RelationshipMenu
               taxonomy={taxonomy}
               current={String(node.attrs.rel)}
-              root={isRoot}
               onPick={(rel) => onPickRelationship(popover.pos, rel)}
-              onDisconnect={() => onDisconnect(popover.pos)}
             />
           </div>
         );
@@ -812,21 +856,30 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
         <button type="button" disabled={!editor.can().redo()} onClick={() => editor.commands.redo()}>
           Redo
         </button>
-        <label className="toolbar-toggle">
+        <button
+          type="button"
+          onClick={onClearTree}
+          title="Remove every connection, leaving the propositions as they are"
+        >
+          Clear tree
+        </button>
+        <label className="switch">
           <input
             type="checkbox"
             checked={view.english}
             onChange={(event) => updateView({ ...view, english: event.target.checked })}
           />
-          English
+          <span className="switch-track" aria-hidden="true" />
+          <span className="switch-label">English</span>
         </label>
-        <label className="toolbar-toggle">
+        <label className="switch">
           <input
             type="checkbox"
             checked={view.colorCoding}
             onChange={(event) => updateView({ ...view, colorCoding: event.target.checked })}
           />
-          Color coding
+          <span className="switch-track" aria-hidden="true" />
+          <span className="switch-label">Color coding</span>
         </label>
         {view.colorCoding && (
           <button type="button" onClick={() => setColorPanel((open) => !open)}>
@@ -834,16 +887,23 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
           </button>
         )}
         <span className="toolbar-spacer" />
-        {flash !== null ? (
+        {flash !== null && (
           <span className="toolbar-flash" role="status">
             {flash}
           </span>
-        ) : (
-          <span className="muted toolbar-hint">
-            Click a dot, then click an adjacent one to connect
-          </span>
         )}
+        <button
+          type="button"
+          className="help-button"
+          aria-label="How this editor works"
+          aria-expanded={helpPanel}
+          title="How this editor works"
+          onClick={() => setHelpPanel((open) => !open)}
+        >
+          ?
+        </button>
       </div>
+      {helpPanel && <HelpPanel onClose={() => setHelpPanel(false)} />}
       {colorPanel && view.colorCoding && (
         <ColorSettings
           taxonomy={taxonomy}
@@ -870,7 +930,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
             onDotClick={onDotClick}
             onLabelClick={onLabelClick}
             onStarClick={onStarClick}
-            onDeleteBracket={onDeleteBracket}
+            onDotDoubleClick={onDotDoubleClick}
             view={view}
           />
         )}

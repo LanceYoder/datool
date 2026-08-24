@@ -1,6 +1,7 @@
 import type {
   Analysis,
   AnalysisSummary,
+  DeletedAnalysisSummary,
   CorpusWord,
   Document,
   FirstPassResult,
@@ -65,13 +66,23 @@ export function getAnalysis(id: string): Promise<Analysis> {
 
 export function updateAnalysis(
   id: string,
-  input: { title?: string; document?: Document },
+  input: { title?: string; document?: Document; notes?: string },
 ): Promise<Analysis> {
   return request<Analysis>(`/api/analyses/${encodeURIComponent(id)}`, 'PUT', input);
 }
 
-export function deleteAnalysis(id: string): Promise<void> {
-  return request<void>(`/api/analyses/${encodeURIComponent(id)}`, 'DELETE');
+/** Move an analysis to Recently Deleted, or — with purge — end it there. */
+export function deleteAnalysis(id: string, purge = false): Promise<void> {
+  const path = `/api/analyses/${encodeURIComponent(id)}${purge ? '?purge=1' : ''}`;
+  return request<void>(path, 'DELETE');
+}
+
+export function listDeletedAnalyses(): Promise<DeletedAnalysisSummary[]> {
+  return request<DeletedAnalysisSummary[]>('/api/analyses/deleted');
+}
+
+export function restoreAnalysis(id: string): Promise<Analysis> {
+  return request<Analysis>(`/api/analyses/${encodeURIComponent(id)}/restore`, 'POST');
 }
 
 export function firstPass(text: string): Promise<FirstPassResult> {

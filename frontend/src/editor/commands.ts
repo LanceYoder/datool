@@ -350,6 +350,31 @@ export function disconnectRoot(editor: Editor, pos: number): boolean {
 }
 
 /**
+ * Remove EVERY connection in the document: each bracket is dissolved until
+ * the forest is nothing but its propositions, in document order. The
+ * propositions themselves — their text, their splits, their labels — are
+ * untouched, and the whole clearing is ONE undo step.
+ *
+ * Returns false when there was nothing to clear.
+ */
+export function clearConnections(editor: Editor): boolean {
+  const { state } = editor;
+  const props: PMNode[] = [];
+  state.doc.forEach(function collect(node) {
+    if (node.type.name === 'proposition') {
+      props.push(node);
+      return;
+    }
+    node.forEach(collect);
+  });
+  // Nothing to do when every proposition is already a root of its own.
+  if (props.length === state.doc.childCount) return false;
+  const tr = state.tr.replaceWith(0, state.doc.content.size, props);
+  dispatch(editor, tr);
+  return true;
+}
+
+/**
  * Dissolve, inside `tr`, every bracket between the proposition `pid` and the
  * forest floor, outermost first, until the proposition is itself a root.
  */

@@ -7,6 +7,7 @@ import pytest
 from rest_framework.test import APIClient
 
 from da.corpus import align, load_words
+from da.models import Analysis, TRASH_DAYS
 
 JOHN_1_1 = "Ἐν ἀρχῇ ἦν ὁ λόγος, καὶ ὁ λόγος ἦν πρὸς τὸν θεόν, καὶ θεὸς ἦν ὁ λόγος."
 
@@ -76,7 +77,7 @@ class TestAnalysisCrud:
         # Detail.
         detail = client.get(f"/api/analyses/{pk}").json()
         assert detail["document"] == document
-        assert set(detail) == {"id", "title", "passageRef", "document", "updatedAt"}
+        assert set(detail) == {"id", "title", "passageRef", "document", "notes", "updatedAt"}
 
         # Update title and document; passage_ref re-derives from the document.
         smaller = {
@@ -99,9 +100,36 @@ class TestAnalysisCrud:
         assert updated.json()["document"] == smaller
         assert client.get(f"/api/analyses/{pk}").json()["document"] == smaller
 
-        # Delete.
+        # Delete — soft: it reads as gone, and drops out of the listing.
         assert client.delete(f"/api/analyses/{pk}").status_code == 204
         assert client.get(f"/api/analyses/{pk}").status_code == 404
+        assert [row["title"] for row in client.get("/api/analyses").json()] == ["Second"]
+
+    def test_notes_round_trip(self, client, john_1_1):
+        """Notes are free text on the analysis: empty by default, saved by PUT."""
+        created = client.post(
+            "/api/analyses", {"document": small_document(john_1_1)}, format="json"
+        ).json()
+        assert created["notes"] == ""
+        pk = created["id"]
+
+        saved = client.put(f"/api/analyses/{pk}", {"notes": "  ἐν ἀρχῇ — the echo of Gen 1:1  "}, format="json")
+        assert saved.status_code == 200
+        # Kept verbatim: whitespace is the writer's, not ours to trim.
+        assert saved.json()["notes"] == "  ἐν ἀρχῇ — the echo of Gen 1:1  "
+        assert client.get(f"/api/analyses/{pk}").json()["notes"] == "  ἐν ἀρχῇ — the echo of Gen 1:1  "
+
+        # A document-only save leaves the notes alone.
+        client.put(f"/api/analyses/{pk}", {"document": small_document(john_1_1)}, format="json")
+        assert client.get(f"/api/analyses/{pk}").json()["notes"].strip().startswith("ἐν ἀρχῇ")
+
+    def test_notes_must_be_a_string(self, client, john_1_1):
+        pk = client.post(
+            "/api/analyses", {"document": small_document(john_1_1)}, format="json"
+        ).json()["id"]
+        bad = client.put(f"/api/analyses/{pk}", {"notes": 5}, format="json")
+        assert bad.status_code == 400
+        assert bad.json()["errors"] == ["notes must be a string"]
 
     def test_create_disconnected_forest(self, client, john_1_1):
         """A partly connected analysis — two roots — saves and reads back."""
@@ -278,3 +306,67 @@ class TestCorpusWords:
             response = client.get("/api/corpus/words", params)
             assert response.status_code == 400, params
             assert response.json()["errors"], params
+
+
+@pytest.mark.django_db
+class TestRecentlyDeleted:
+    """Deleting is a move, not an end: the analysis waits in Recently Deleted
+    until it is restored or its window runs out."""
+
+    def test_deleted_analysis_waits_in_the_trash_and_restores(self, client, john_1_1):
+        pk = client.post(
+            "/api/analyses", {"title": "Doomed", "document": small_document(john_1_1)},
+            format="json",
+        ).json()["id"]
+
+        assert client.delete(f"/api/analyses/{pk}").status_code == 204
+        assert client.get("/api/analyses").json() == []
+
+        trash = client.get("/api/analyses/deleted").json()
+        assert [row["title"] for row in trash] == ["Doomed"]
+        assert set(trash[0]) == {"id", "title", "passageRef", "updatedAt", "deletedAt", "daysLeft"}
+        assert trash[0]["daysLeft"] == TRASH_DAYS
+
+        restored = client.post(f"/api/analyses/{pk}/restore")
+        assert restored.status_code == 200
+        assert restored.json()["title"] == "Doomed"
+        assert [row["title"] for row in client.get("/api/analyses").json()] == ["Doomed"]
+        assert client.get("/api/analyses/deleted").json() == []
+        assert client.get(f"/api/analyses/{pk}").status_code == 200
+
+    def test_restoring_a_live_analysis_is_a_404(self, client, john_1_1):
+        pk = client.post(
+            "/api/analyses", {"document": small_document(john_1_1)}, format="json"
+        ).json()["id"]
+        assert client.post(f"/api/analyses/{pk}/restore").status_code == 404
+
+    def test_purge_removes_the_row_for_good(self, client, john_1_1):
+        pk = client.post(
+            "/api/analyses", {"document": small_document(john_1_1)}, format="json"
+        ).json()["id"]
+        client.delete(f"/api/analyses/{pk}")
+        assert client.delete(f"/api/analyses/{pk}?purge=1").status_code == 204
+        assert client.get("/api/analyses/deleted").json() == []
+        assert not Analysis.objects.filter(pk=pk).exists()
+
+    def test_listing_the_trash_purges_what_has_expired(self, client, john_1_1):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        fresh = client.post(
+            "/api/analyses", {"title": "Fresh", "document": small_document(john_1_1)},
+            format="json",
+        ).json()["id"]
+        stale = client.post(
+            "/api/analyses", {"title": "Stale", "document": small_document(john_1_1)},
+            format="json",
+        ).json()["id"]
+        client.delete(f"/api/analyses/{fresh}")
+        client.delete(f"/api/analyses/{stale}")
+        Analysis.objects.filter(pk=stale).update(
+            deleted_at=timezone.now() - timedelta(days=TRASH_DAYS, hours=1)
+        )
+
+        assert [row["title"] for row in client.get("/api/analyses/deleted").json()] == ["Fresh"]
+        assert not Analysis.objects.filter(pk=stale).exists()

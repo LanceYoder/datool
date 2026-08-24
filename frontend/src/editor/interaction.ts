@@ -51,26 +51,28 @@ export function groupByFamily(taxonomy: readonly TaxonomyEntry[]): RelationshipG
  * Keyboard shortcut per relationship code — what the menu shows in parentheses
  * and what typing that key picks while the menu is open.
  *
- * Mnemonics follow the relationship's own name or symbol wherever the letter
- * is free (g Ground, i Inference, m Means–End, t Temporal, l Locative …);
- * where two names compete for a letter the more common relationship keeps it
- * and the other takes its next distinctive letter (e Cause–Effect, v
- * adVersative, r situation–Response, d conDitional). General–Specific is the
- * one arbitrary key ('x'): every letter in its name was already taken.
+ * Mnemonics follow the relationship's own name or SYMBOL — the symbol wins
+ * where it is the more familiar handle ('/' Comparison for //, '?'
+ * Conditional for C?/E), the name elsewhere (c Cause–Effect, g Ground,
+ * i Inference, m Means–End, t Temporal, l Locative …). Where two names
+ * competed for a letter the more common relationship kept it and the other
+ * took its next distinctive letter (v adVersative, r situation–Response).
+ * General–Specific is the one arbitrary key ('x'): every letter in its name
+ * was already taken.
  */
 export const RELATIONSHIP_KEYS: Record<string, string> = {
   Ser: 's',
   Prog: 'p',
   Alt: 'a',
   WEd: 'w',
-  Cmp: 'c',
+  Cmp: '/',
   NegPos: 'n',
   GnSp: 'x',
   FtIn: 'f',
   Grnd: 'g',
   Inf: 'i',
-  CE: 'e',
-  CndE: 'd',
+  CE: 'c',
+  CndE: '?',
   MEd: 'm',
   Tmp: 't',
   Loc: 'l',

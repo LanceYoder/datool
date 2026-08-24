@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import type { AnalysisSummary, FirstPassResult } from '../types';
-import { createAnalysis, errorMessages, firstPass, listAnalyses } from '../api';
+import type { AnalysisSummary, DeletedAnalysisSummary, FirstPassResult } from '../types';
+import {
+  createAnalysis,
+  deleteAnalysis,
+  errorMessages,
+  firstPass,
+  listAnalyses,
+  listDeletedAnalyses,
+  restoreAnalysis,
+} from '../api';
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -21,6 +29,8 @@ export default function HomePage() {
   const pasteRef = useRef<HTMLTextAreaElement>(null);
   const [analyses, setAnalyses] = useState<AnalysisSummary[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
+  const [deleted, setDeleted] = useState<DeletedAnalysisSummary[]>([]);
+  const [showTrash, setShowTrash] = useState(false);
 
   const [text, setText] = useState('');
   const [result, setResult] = useState<FirstPassResult | null>(null);
@@ -36,10 +46,41 @@ export default function HomePage() {
       .catch((err: unknown) => {
         if (!cancelled) setListError(errorMessages(err).join('; '));
       });
+    // Listing the trash is also what purges the expired rows (see the API), so
+    // it runs on every visit, whether or not the section is open.
+    listDeletedAnalyses()
+      .then((items) => {
+        if (!cancelled) setDeleted(items);
+      })
+      .catch(() => {
+        // A trash that will not list is not worth an error over the page.
+      });
     return () => {
       cancelled = true;
     };
   }, []);
+
+  const restore = async (id: string) => {
+    setErrors([]);
+    try {
+      await restoreAnalysis(id);
+      setDeleted(await listDeletedAnalyses());
+      setAnalyses(await listAnalyses());
+    } catch (err) {
+      setErrors(errorMessages(err));
+    }
+  };
+
+  const purge = async (item: DeletedAnalysisSummary) => {
+    if (!window.confirm(`Delete “${item.title}” for good? This cannot be undone.`)) return;
+    setErrors([]);
+    try {
+      await deleteAnalysis(item.id, true);
+      setDeleted(await listDeletedAnalyses());
+    } catch (err) {
+      setErrors(errorMessages(err));
+    }
+  };
 
   // Arriving via the header's + button: start typing the new passage right away.
   const startNew = searchParams.get('new') !== null;
@@ -82,7 +123,7 @@ export default function HomePage() {
         <textarea
           ref={pasteRef}
           className="greek paste-area"
-          placeholder="Paste a Greek passage…"
+          placeholder="Paste a Greek passage, or type a reference — Eph 1:3–14…"
           rows={5}
           value={text}
           onChange={(e) => {
@@ -94,6 +135,11 @@ export default function HomePage() {
           <button onClick={() => void runFirstPass()} disabled={busy || text.trim() === ''}>
             Locate
           </button>
+          {result === null && (
+            <span className="muted alignment-line">
+              A reference finds the passage in the SBLGNT; anything else is matched as pasted text.
+            </span>
+          )}
           {result !== null && (
             <>
               <span className="alignment-line">{alignmentLine(result)}</span>
@@ -131,6 +177,41 @@ export default function HomePage() {
           </ul>
         )}
       </section>
+
+      {deleted.length > 0 && (
+        <section className="trash-section">
+          <h2>
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => setShowTrash((open) => !open)}
+            >
+              Recently deleted ({deleted.length}) {showTrash ? '▾' : '▸'}
+            </button>
+          </h2>
+          {showTrash && (
+            <ul className="analysis-list">
+              {deleted.map((a) => (
+                <li key={a.id} className="trash-row">
+                  <span className="analysis-title">{a.title}</span>
+                  <span className="muted">{a.passageRef}</span>
+                  <span className="muted analysis-date">
+                    {a.daysLeft === 0
+                      ? 'deleted — going today'
+                      : `${a.daysLeft} day${a.daysLeft === 1 ? '' : 's'} left`}
+                  </span>
+                  <button type="button" onClick={() => void restore(a.id)}>
+                    Restore
+                  </button>
+                  <button type="button" className="danger" onClick={() => void purge(a)}>
+                    Delete forever
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
     </div>
   );
 }

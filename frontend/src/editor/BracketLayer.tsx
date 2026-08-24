@@ -47,12 +47,19 @@ const LABEL_OFFSET = 12;
 /** Gap between an end label's last letter and its star. */
 const STAR_GAP = 4;
 
-/**
- * How far LEFT of a root bracket's dot its delete cross sits. Left, because
- * everything a bracket draws — spine, ticks, labels, stars — is at the dot or
- * to its right: out here the cross can never land on a line.
- */
-const DELETE_OFFSET = 17;
+/** Outer radius of the drawn star; the inner radius is this times 0.42. */
+const STAR_R = 7;
+
+/** A five-pointed star, point up, centered on (cx, cy). */
+function starPath(cx: number, cy: number, r: number): string {
+  const points: string[] = [];
+  for (let i = 0; i < 10; i += 1) {
+    const radius = i % 2 === 0 ? r : r * 0.42;
+    const angle = (Math.PI / 5) * i - Math.PI / 2;
+    points.push(`${(cx + radius * Math.cos(angle)).toFixed(2)},${(cy + radius * Math.sin(angle)).toFixed(2)}`);
+  }
+  return `M${points.join('L')}Z`;
+}
 
 export interface BracketLayerProps {
   brackets: PositionedBracket[];
@@ -64,8 +71,8 @@ export interface BracketLayerProps {
   onDotClick: (dot: DotGeom) => void;
   onLabelClick: (pos: number, at: Point) => void;
   onStarClick: (pos: number) => void;
-  /** Remove the connection a ROOT bracket's dot names (its delete cross). */
-  onDeleteBracket: (dot: DotGeom) => void;
+  /** Double click: remove the connections at this dot. */
+  onDotDoubleClick: (dot: DotGeom) => void;
   /** Reader's display options — here, the per-relationship bracket colors. */
   view: ViewSettings;
 }
@@ -85,7 +92,7 @@ export default function BracketLayer({
   onDotClick,
   onLabelClick,
   onStarClick,
-  onDeleteBracket,
+  onDotDoubleClick,
   view,
 }: BracketLayerProps) {
   return (
@@ -135,6 +142,7 @@ export default function BracketLayer({
               data-dot={d.id}
               onMouseDown={swallow}
               onClick={() => onDotClick(d)}
+              onDoubleClick={() => onDotDoubleClick(d)}
             >
               {d.stubX1 !== undefined && d.stubX2 !== undefined && (
                 <line
@@ -157,37 +165,6 @@ export default function BracketLayer({
                 stroke={selected ? ACCENT : LINE}
                 strokeWidth={1.6}
               />
-              {/* One click to undo a connection, on the bracket that holds it.
-                  Only a ROOT bracket can be dissolved on its own, which is
-                  exactly where the menu offers Disconnect. */}
-              {d.kind === 'bracket' && d.root && (
-                <g
-                  className="dot-delete"
-                  onMouseDown={swallow}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onDeleteBracket(d);
-                  }}
-                >
-                  <title>Delete this connection</title>
-                  <circle
-                    cx={d.x - DELETE_OFFSET}
-                    cy={d.y}
-                    r={DOT_HIT_R - 1}
-                    fill="transparent"
-                  />
-                  <circle
-                    className="dot-delete-disc"
-                    cx={d.x - DELETE_OFFSET}
-                    cy={d.y}
-                    r={DOT_R + 2}
-                  />
-                  <path
-                    className="dot-delete-cross"
-                    d={`M${d.x - DELETE_OFFSET - 3},${d.y - 3} l6,6 M${d.x - DELETE_OFFSET + 3},${d.y - 3} l-6,6`}
-                  />
-                </g>
-              )}
             </g>
           );
         })}
@@ -258,16 +235,12 @@ export default function BracketLayer({
                     onMouseDown={swallow}
                     onClick={() => onStarClick(b.pos)}
                   >
-                    <circle cx={sx + 5} cy={t.y - 9} r={12} fill="transparent" />
-                    <text
+                    <circle cx={sx + STAR_R} cy={t.y - 8} r={12} fill="transparent" />
+                    <path
                       className="bracket-star"
-                      x={sx}
-                      y={t.y - 5}
+                      d={starPath(sx + STAR_R, t.y - 8, STAR_R)}
                       fill={relationColor(view, b.rel)}
-                      textAnchor="start"
-                    >
-                      *
-                    </text>
+                    />
                   </g>
                 );
               })}
