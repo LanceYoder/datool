@@ -194,10 +194,15 @@ def assert_1john_structure(doc):
     assert b5["prominent"] == 1
     assert ids["5c"] in leaf_refs(b5["children"][0])
 
-    # The three sentences chain into one n-ary discourse-level Series.
+    # The three sentences chain at discourse level as Series — and every
+    # bracket is binary, so three sentences nest to the left: Ser[Ser[1,2],3].
     assert tree["kind"] == "bracket" and tree["rel"] == "Ser"
     assert tree["prominent"] is None
-    assert len(tree["children"]) == 3
+    assert len(tree["children"]) == 2
+    inner = tree["children"][0]
+    assert inner["kind"] == "bracket" and inner["rel"] == "Ser"
+    assert inner["prominent"] is None
+    assert len(inner["children"]) == 2
 
     # Main point of the whole passage is computable.
     mp = main_point(doc)

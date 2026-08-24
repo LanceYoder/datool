@@ -144,15 +144,16 @@ ACTS = B("top-sr", "SR", 1,                           # far-left 'S' / 'R*'
 # matches is again the connective/participle-driven tail of v40 — the λέγων
 # W/Ed exactly (reversed, star on the Ed side) and both v40/v37 series; the
 # drawing's Tmp on Ἀκούσαντες comes out grouped (the tool reads the aorist
-# participle as W/Ed). Everything else is missed: the S/R speech frames have
-# no morphological signal, τε/δέ/asyndeton narrative folds to flat n-ary
-# Ser (so sr-37, prog-38, ser-38bc and the packet edges around 38a never
-# form), the tool splits v39 at τοῖς εἰς μακράν rather than ὅσους, reads
-# οὖν (v41) as Inf where the student draws C/E, and over-splits ὡσεὶ
-# τρισχίλιαι in v41.
+# participle as W/Ed). Binary coordinate chaining is what earns ser-38bc: a
+# run of τε/δέ/asyndeton clauses now nests to the left, one bracket per join,
+# so the pairs the student drew can appear instead of one flat packet. Still
+# missed: the S/R speech frames have no morphological signal (so sr-37,
+# prog-38 and the packet edges around 38a never form), the tool splits v39 at
+# τοῖς εἰς μακράν rather than ὅσους, reads οὖν (v41) as Inf where the student
+# draws C/E, and over-splits ὡσεὶ τρισχίλιαι in v41.
 IMAGE_CASES = [
     ("Acts 2:37–41", ACTS_ROWS, ACTS, {
-        "exact": {"ser-37bc", "wed-40", "ser-40ab"},
+        "exact": {"ser-37bc", "ser-38bc", "wed-40", "ser-40ab"},
         "grouped": {"tmp-37"},
     }),
 ]

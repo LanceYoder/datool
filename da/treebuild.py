@@ -24,7 +24,9 @@ Within a sentence
     bracket once the apodosis completes at sentence end. Dependents and
     coordinations arriving while a protasis is held build onto the held packet.
   * Coordinate joins (καί/οὐδέ/τε, ἤ, δέ) coordinate at the right edge of the
-    target packet, accumulating consecutive clauses into ONE n-ary bracket.
+    target packet. Every bracket is BINARY, so a run of coordinate clauses
+    nests to the LEFT — the packet built so far joins the clause that arrives
+    next, exactly as connecting them by hand in the editor would.
     Postpositive γάρ/οὖν within a sentence relate the new clause to the whole
     packet so far with their table relation.
   * At sentence end leftover stack packets are wrapped as Ser (review).
@@ -35,8 +37,8 @@ Between sentences
     review, ἀλλά → NegPos review, ἤ → Alt, μέν…δέ → Alt); with none, a
     previous sentence ending in a verbum dicendi + '·' yields FtIn (speech
     content, review), and otherwise the deliberate dumb default: Ser,
-    UNFLAGGED. Consecutive Ser-joined sentences accumulate into one n-ary
-    Ser bracket.
+    UNFLAGGED. A run of Ser-joined sentences nests to the left, one binary
+    Ser bracket per join.
 
 Star placement is derived from the taxonomy: for each relationship we know
 which label index the grammatically marked (dependent) side carries;
@@ -157,31 +159,34 @@ def _sub(rel: str, first: dict, second: dict, dep_child: int,
     return node
 
 
-def _coord(rel: str, children: Sequence[dict], review: bool = False,
-           open_: bool = False) -> dict:
+def _coord(rel: str, first: dict, second: dict, review: bool = False) -> dict:
+    """Coordinate bracket over exactly [first, second]. Brackets are binary —
+    a longer series is a left-nested chain of these (see _chain)."""
     node: dict = {"kind": "bracket", "rel": rel, "prominent": None,
-                  "children": list(children)}
+                  "children": [first, second]}
     if review:
         node["flag"] = "review"
-    if open_:
-        node["_open"] = True  # may still accept n-ary siblings; stripped later
     return node
 
 
+def _chain(rel: str, nodes: Sequence[dict], review: bool = False) -> dict:
+    """A run of coordinate members as a LEFT-nested chain of binary brackets:
+    [a, b, c] → rel[ rel[a, b], c ]. One member is itself."""
+    packet = nodes[0]
+    for node in nodes[1:]:
+        packet = _coord(rel, packet, node, review=review)
+    return packet
+
+
 def _edge_coord(node: dict, new: dict, rel: str, review: bool) -> dict:
-    """Coordinate ``new`` at the right edge of ``node``: append to an open
-    coordinate bracket of the same relationship (n-ary accumulation), descend
-    through subordinate brackets to their last child, else open a bracket."""
-    if node["kind"] == "bracket":
-        if node.get("_open") and node["rel"] == rel and node["prominent"] is None:
-            node["children"].append(new)
-            if review:
-                node["flag"] = "review"
-            return node
-        if node["prominent"] is not None:
-            node["children"][-1] = _edge_coord(node["children"][-1], new, rel, review)
-            return node
-    return _coord(rel, [node, new], review=review, open_=True)
+    """Coordinate ``new`` at the right edge of ``node``: descend through
+    subordinate brackets to their last child, else bracket the two. A further
+    coordinate clause brackets THAT packet with the next one, so a run comes
+    out left-nested and every bracket stays binary."""
+    if node["kind"] == "bracket" and node["prominent"] is not None:
+        node["children"][-1] = _edge_coord(node["children"][-1], new, rel, review)
+        return node
+    return _coord(rel, node, new, review=review)
 
 
 def _edge_sub(node: dict, new: dict, rel: str, review: bool) -> dict:
@@ -325,7 +330,7 @@ def _assemble_sentence(indexed_segs: list[tuple[int, "Segment"]], words) -> dict
                 rel = "Grnd" if lemma in GROUND else "Inf"
                 if stack:
                     if len(stack) > 1:
-                        stack[:] = [_coord("Ser", stack, review=True)]
+                        stack[:] = [_chain("Ser", stack, review=True)]
                     stack.append(_sub(rel, stack.pop(), leaf, dep_child=1))
                 else:
                     assert held is not None
@@ -357,7 +362,7 @@ def _assemble_sentence(indexed_segs: list[tuple[int, "Segment"]], words) -> dict
 
     main: dict | None = None
     if stack:
-        main = stack[0] if len(stack) == 1 else _coord("Ser", stack, review=True)
+        main = _chain("Ser", stack, review=True)
     if held is not None and main is not None:
         return _sub(held.rel, held.packet, main, dep_child=0, review=held.review)
     if held is not None:
@@ -408,11 +413,12 @@ def _sentence_join(prev_segs: list, cur_segs: list, words) -> tuple[str, bool]:
 
 
 def _fold_sentences(sentence_packets: list[tuple[dict, list]], words) -> dict:
-    """Fold sentence packets left to right; consecutive Ser joins accumulate
-    into one n-ary bracket, closed when a non-Ser join appears."""
+    """Fold sentence packets left to right; a run of Ser joins becomes a
+    left-nested chain of binary Ser brackets, closed when a non-Ser join
+    appears."""
 
     def close(nodes: list[dict], review: bool) -> dict:
-        return nodes[0] if len(nodes) == 1 else _coord("Ser", nodes, review=review)
+        return _chain("Ser", nodes, review=review)
 
     group: list[dict] = [sentence_packets[0][0]]
     group_review = False
@@ -423,7 +429,7 @@ def _fold_sentences(sentence_packets: list[tuple[dict, list]], words) -> dict:
             group.append(packet)
             group_review = group_review or review
         elif rel == "Alt":
-            group = [_coord("Alt", [close(group, group_review), packet])]
+            group = [_coord("Alt", close(group, group_review), packet)]
             group_review = False
         else:
             group = [_sub(rel, close(group, group_review), packet,
@@ -481,10 +487,9 @@ def _propositions(segments: Sequence, words) -> list[dict]:
 
 
 def _strip_private(node: dict) -> None:
-    """Remove builder bookkeeping documents never carry: the ``_open`` edge
-    marker and the classifier's internal ``review`` flags (confidence labeling
-    is not part of the product)."""
-    node.pop("_open", None)
+    """Remove builder bookkeeping documents never carry: the classifier's
+    internal ``review`` flags (confidence labeling is not part of the
+    product)."""
     node.pop("flag", None)
     for child in node.get("children", ()):
         _strip_private(child)
