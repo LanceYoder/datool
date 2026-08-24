@@ -300,6 +300,13 @@ div.error-box {
   border-radius: 4px;
 }
 
+/* The completed analysis's main point (star walk from the top of the tree):
+   the text itself is colored inline; the verse label follows suit. */
+.prop-row.main-point .verse-label {
+  color: var(--danger);
+  font-weight: 700;
+}
+
 .editor-shell .word.splittable {
   cursor: pointer;
 }

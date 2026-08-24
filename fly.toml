@@ -1,0 +1,30 @@
+# Single-app deployment: Django serves both the API and the built frontend.
+# The SQLite database lives on the "data" volume — run exactly ONE machine.
+# Full walkthrough: docs/DEPLOY.md.
+
+app = "datool"
+primary_region = "ord"
+
+[build]
+
+[env]
+  DJANGO_DEBUG = "0"
+  DJANGO_ALLOWED_HOSTS = "*"
+  DJANGO_CSRF_TRUSTED_ORIGINS = "https://datool.fly.dev"
+  DATABASE_URL = "sqlite:////data/db.sqlite3"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[mounts]]
+  source = "data"
+  destination = "/data"
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1

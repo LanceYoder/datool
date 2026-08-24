@@ -6,6 +6,7 @@ import {
   canSplitAfter,
   clampPopover,
   groupByFamily,
+  mainPointRefs,
   parseDotId,
 } from '../interaction';
 import { TAXONOMY } from './fixtures';
@@ -94,6 +95,31 @@ describe('parseDotId', () => {
     for (const dot of layoutDots(buildForest(), rows, 200)) {
       expect(parseDotId(dot.id)).not.toBeNull();
     }
+  });
+});
+
+describe('mainPointRefs', () => {
+  it('star-walks a complete single tree: prominent children, whole coordinate packets', () => {
+    // Root CndE stars child 1 (the coordinate Ser packet), so the walk fans
+    // out over Ser's two propositions.
+    const [tree] = buildForest();
+    expect(mainPointRefs([tree!])).toEqual(['p4', 'p5']);
+  });
+
+  it('follows a chain of prominent children to a single proposition', () => {
+    const inner: BracketNode = {
+      kind: 'bracket', rel: 'Grnd', prominent: 0, children: [p('x'), p('y')],
+    };
+    const root: BracketNode = {
+      kind: 'bracket', rel: 'CndE', prominent: 1, children: [p('w'), inner],
+    };
+    expect(mainPointRefs([root])).toEqual(['x']);
+  });
+
+  it('is empty while the analysis is incomplete (many roots, or a bare proposition)', () => {
+    expect(mainPointRefs(buildForest())).toEqual([]); // three roots
+    expect(mainPointRefs([p('p1')])).toEqual([]); // one root, but no tree
+    expect(mainPointRefs([])).toEqual([]);
   });
 });
 

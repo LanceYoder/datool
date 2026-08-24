@@ -7,10 +7,14 @@
 //  1. Brackets are created BINARY ONLY. Legacy n-ary brackets still load and
 //     display, but any op whose meaning assumes two children (flipStar) no-ops
 //     on them.
-//  2. NOTHING recomputes globally. A command applies its own local operation
-//     and nothing else — no relabeling sweep, no re-indexing of unrelated
-//     nodes. (Structure above a proposition that an edit invalidates is
-//     dissolved explicitly, by unzipToRoot, not silently repaired.)
+//  2. STRUCTURE never recomputes globally. A command applies its own local
+//     operation — no re-classification, no re-indexing of unrelated nodes.
+//     (Structure above a proposition that an edit invalidates is dissolved
+//     explicitly, by unzipToRoot, not silently repaired.) The one re-derived
+//     piece of DISPLAY state is the verse numbering: split and merge re-label
+//     corpus propositions from their words' verses (11a, 11b, … — see
+//     relabelCorpusInTransaction), because the corpus always knows where the
+//     verses fall.
 //  3. `reversed` is DERIVED, never toggled: on a binary subordinate bracket
 //     reversed = (prominent !== entry.starredLabel), so the starred end always
 //     shows labels[starredLabel] and the other end labels[1 - starredLabel].
@@ -392,6 +396,84 @@ export function freshPid(doc: PMNode): string {
   return `p${n}`;
 }
 
+/** 0 → 'a', 25 → 'z', 26 → 'aa', … (bijective base 26, matching the server). */
+function verseLetter(i: number): string {
+  let s = '';
+  let n = i + 1;
+  while (n > 0) {
+    n -= 1;
+    s = String.fromCharCode(97 + (n % 26)) + s;
+    n = Math.floor(n / 26);
+  }
+  return s;
+}
+
+/**
+ * Re-derive the label of every CORPUS-sourced proposition in `tr` from its
+ * word range — the corpus always knows where the verses fall:
+ *
+ *  - within one verse: the verse number, with bijective letters appended in
+ *    document order when several propositions sit in that verse (11a, 11b, …
+ *    — a verse holding only one proposition is unlettered);
+ *  - spanning verses: the span ("10–12", or "1:28–2:3" across chapters).
+ *
+ * Raw propositions (and corpus ones whose words are not loaded) keep their
+ * labels. Split and merge call this inside their own transaction, so the
+ * renumbering rides the same undo step.
+ */
+function relabelCorpusInTransaction(
+  tr: Transaction,
+  words: ReadonlyMap<number, CorpusWord>,
+): void {
+  interface Entry {
+    pos: number;
+    node: PMNode;
+    label: string;
+    groupKey: string | null;
+  }
+  const entries: Entry[] = [];
+  const groupCounts = new Map<string, number>();
+
+  tr.doc.descendants((node, pos) => {
+    if (node.type.name !== 'proposition') return true;
+    const { srcStart, srcEnd } = node.attrs;
+    if (typeof srcStart !== 'number' || typeof srcEnd !== 'number') return false;
+    const first = words.get(srcStart);
+    const last = words.get(srcEnd);
+    if (first === undefined || last === undefined) return false;
+
+    let label: string;
+    let groupKey: string | null = null;
+    if (first.book === last.book && first.chapter === last.chapter && first.verse === last.verse) {
+      label = String(first.verse);
+      groupKey = `${first.book}:${first.chapter}:${first.verse}`;
+    } else if (first.book === last.book && first.chapter === last.chapter) {
+      label = `${first.verse}–${last.verse}`;
+    } else {
+      label = `${first.chapter}:${first.verse}–${last.chapter}:${last.verse}`;
+    }
+    entries.push({ pos, node, label, groupKey });
+    if (groupKey !== null) {
+      groupCounts.set(groupKey, (groupCounts.get(groupKey) ?? 0) + 1);
+    }
+    return false;
+  });
+
+  const seen = new Map<string, number>();
+  for (const entry of entries) {
+    let label = entry.label;
+    if (entry.groupKey !== null) {
+      const i = seen.get(entry.groupKey) ?? 0;
+      seen.set(entry.groupKey, i + 1);
+      if ((groupCounts.get(entry.groupKey) ?? 0) > 1) label += verseLetter(i);
+    }
+    // setNodeMarkup only changes attrs, so the collected positions stay valid.
+    if (label !== String(entry.node.attrs.label)) {
+      tr.setNodeMarkup(entry.pos, undefined, { ...entry.node.attrs, label });
+    }
+  }
+}
+
 /** Display text for an inclusive corpus word range (apparatus sigla stripped). */
 export function corpusText(
   words: ReadonlyMap<number, CorpusWord>,
@@ -407,11 +489,13 @@ export function corpusText(
 }
 
 /**
- * Split the proposition at `pos` into two ROOT propositions: the first keeps
- * the pid and label, the second gets a fresh pid and the same label with a
- * prime (′) appended. `firstCount` is the number of words in the FIRST half
- * (a UI wanting "split after the word I clicked" passes clickedOrdinal + 1);
- * it must be >= 1 and < the proposition's word count.
+ * Split the proposition at `pos` into two ROOT propositions. The first keeps
+ * the pid; corpus labels are then RE-DERIVED from the words' verses across
+ * the document (11a, 11b, … — relabelCorpusInTransaction), while a raw
+ * source's second half takes the first's label with a prime (′) appended.
+ * `firstCount` is the number of words in the FIRST half (a UI wanting "split
+ * after the word I clicked" passes clickedOrdinal + 1); it must be >= 1 and
+ * < the proposition's word count.
  *
  * A proposition that is not already a root is unzipped first: the chain of
  * connections above it described the undivided proposition and cannot survive
@@ -477,6 +561,7 @@ export function splitProposition(
     type.create(attrsA),
     type.create(attrsB),
   ]);
+  if (words !== null) relabelCorpusInTransaction(tr, words);
   dispatch(editor, tr);
   return true;
 }
@@ -499,7 +584,9 @@ function propositionsInOrder(doc: PMNode): { pos: number; node: PMNode }[] {
  * wherever in the forest that one lives. Both are unzipped to roots first (so
  * they end up adjacent roots — nothing sits between two consecutive
  * propositions once their brackets are gone), then joined into a single root
- * proposition keeping the FIRST one's pid and label.
+ * proposition keeping the FIRST one's pid. Corpus labels are re-derived from
+ * the verses afterwards (relabelCorpusInTransaction); a raw result keeps the
+ * first proposition's label.
  *
  * Contiguous corpus ranges re-join into one range (text rebuilt from `words`,
  * apparatus sigla stripped); anything else degrades to a raw source with the
@@ -553,6 +640,7 @@ export function mergeBelow(
   if (posA + nodeA.nodeSize !== posB) return false;
 
   tr.replaceWith(posA, posB + nodeB.nodeSize, type.create(merged));
+  if (words !== null) relabelCorpusInTransaction(tr, words);
   dispatch(editor, tr);
   return true;
 }

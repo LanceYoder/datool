@@ -26,9 +26,12 @@
 import { chromium } from 'playwright';
 import { mkdirSync } from 'node:fs';
 
+// BASE is the UI origin (Vite dev server by default); API the Django server.
+// Point both at :8000 to drive the production single-app shape (gunicorn +
+// WhiteNoise serving the built frontend — see docs/DEPLOY.md).
 const SHOTS = process.env.SHOTS ?? '/tmp/e2e-shots';
-const BASE = 'http://127.0.0.1:5173';
-const API = 'http://127.0.0.1:8000';
+const BASE = process.env.BASE ?? 'http://127.0.0.1:5173';
+const API = process.env.API ?? 'http://127.0.0.1:8000';
 
 // Colors that must NOT appear anywhere in the overlay.
 const AMBER = '#b45309'; // the removed review/confidence color
@@ -279,12 +282,14 @@ await expectCount(SEL.row, 2, 'rows after split');
 
 const newRow = page.locator(SEL.row).nth(1);
 const newPid = await newRow.getAttribute('data-pid');
+// Labels re-derive from the corpus verses: the two-word head sits in verse 5
+// alone ("5"), the remainder still spans verses 5–7.
+const headLabel = (await page.locator(SEL.row).nth(0).locator('.verse-label').textContent()) ?? '';
 const newLabel = (await newRow.locator('.verse-label').textContent()) ?? '';
-console.log(`  new row: ${newPid} "${newLabel}"`);
-if (newLabel !== `${splitLabel}′`) {
-  await fail(`new row label should be "${splitLabel}′", got "${newLabel}"`);
-}
-ok(`new row carries the prime mark (${newLabel})`);
+console.log(`  labels after split: "${headLabel}" / "${newLabel}"`);
+if (headLabel !== '5') await fail(`head label should be "5", got "${headLabel}"`);
+if (newLabel !== '5–7') await fail(`tail label should be "5–7", got "${newLabel}"`);
+ok('labels re-derived from the verses (5 / 5–7 — no primes)');
 
 // Both halves are now disconnected roots.
 for (const pid of [splitPid, newPid]) {
@@ -416,6 +421,25 @@ await expectCount(SEL.menu, 0, 'menu closed after picking a relationship');
 await expectCount('g.label-hit[data-label="G"]', 1, 'the new bracket is labeled Ground (G)');
 const bracketsAfterConnect = await countOf(SEL.bracket);
 
+// Two roots remain, so the analysis is incomplete: nothing is red yet.
+await expectNone('.prop-row.main-point', 'no main point while the forest is loose');
+
+// --- (e2) Complete the tree: the main point turns red ------------------------
+step('(e2) connect the last root — the star walk paints the main point red');
+await page.locator(SEL.rootDot).nth(0).dispatchEvent('click');
+await page.locator(SEL.rootDot).nth(1).dispatchEvent('click');
+await page.waitForSelector(SEL.menu);
+await expectCount(SEL.rootDot, 1, 'everything is one tree now');
+// Make the top-level call Ground too: its star (child 0) is the walk's target.
+await page.click(`${SEL.menu} .menu-item:has(.menu-name:text-is("Ground"))`);
+await expectCount('.prop-row.main-point', 1, 'exactly one proposition is the main point');
+await waitFor(
+  () => document.querySelectorAll('.prop-row')[0]?.classList.contains('main-point') === true,
+  null,
+  'the main point is the starred top-level side (row 1)',
+);
+await snap('main-point');
+
 // --- (f) Star flip ----------------------------------------------------------
 step('(f) flip a star');
 await page.keyboard.press('Escape');
@@ -444,6 +468,14 @@ await waitFor(
   'the star moved to the other end of its bracket',
 );
 await expectNone(SEL.menu, 'the star click did NOT open the relationship menu');
+// The red main point follows the star: prominence moved to the other side,
+// whose walk lands on row 2.
+await expectCount('.prop-row.main-point', 1, 'still exactly one main point');
+await waitFor(
+  () => document.querySelectorAll('.prop-row')[1]?.classList.contains('main-point') === true,
+  null,
+  'the main point followed the star to the other side',
+);
 const starAfter = await page
   .locator(`${SEL.star} text.bracket-star`)
   .first()
@@ -482,12 +514,14 @@ if (!actions.includes('Disconnect')) await fail('a root bracket did not offer Di
 await page.click(`${SEL.menu} .menu-item.action:text-is("Disconnect")`);
 await expectCount(SEL.bracket, bracketsBeforeDisconnect - 1, 'the bracket is gone');
 await expectCount(SEL.rootDot, rootsBeforeDisconnect + 1, 'its children became roots');
+await expectNone('.prop-row.main-point', 'the main point cleared when the tree came apart');
 
 // --- (i) Undo / redo --------------------------------------------------------
 step('(i) undo / redo the disconnect');
 await page.click('.editor-toolbar button:has-text("Undo")');
 await expectCount(SEL.bracket, bracketsBeforeDisconnect, 'undo restored the bracket');
 await expectCount(SEL.rootDot, rootsBeforeDisconnect, 'undo restored the root count');
+await expectCount('.prop-row.main-point', 1, 'undo brought the main point back');
 await page.click('.editor-toolbar button:has-text("Redo")');
 await expectCount(SEL.bracket, bracketsBeforeDisconnect - 1, 'redo removed it again');
 await expectCount(SEL.rootDot, rootsBeforeDisconnect + 1, 'redo restored the root count');

@@ -27,6 +27,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -79,6 +80,25 @@ USE_TZ = True
 
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATIC_URL = "/static/"
+# WhiteNoise warns on every request when STATIC_ROOT is absent (it only
+# exists after collectstatic, i.e. in the deployment image) — keep dev quiet.
+STATIC_ROOT.mkdir(exist_ok=True)
+
+# Single-app deployment (docs/DEPLOY.md): WhiteNoise serves the BUILT frontend
+# at the URL root — /index.html, /assets/* — from the same origin as the API,
+# and config.urls adds the SPA catch-all for client-side routes. In local dev
+# the Vite server (:5173) is used instead and none of this is exercised.
+FRONTEND_DIST = BASE_DIR / "frontend" / "dist"
+WHITENOISE_ROOT = FRONTEND_DIST if FRONTEND_DIST.exists() else None
+WHITENOISE_INDEX_FILE = True
+
+# e.g. "https://datool.fly.dev" — needed by the admin's login form in
+# production; the JSON API itself is CSRF-exempt (no session auth).
+CSRF_TRUSTED_ORIGINS = [
+    origin
+    for origin in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
+    if origin
+]
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

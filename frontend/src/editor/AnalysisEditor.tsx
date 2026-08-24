@@ -59,7 +59,7 @@ import {
 } from './commands';
 import { COL_W, STUB_W, computeColumns, layoutBrackets, layoutDots } from './layout';
 import type { DotGeom, RowBox } from './layout';
-import { canSplitAfter, clampPopover, parseDotId } from './interaction';
+import { canSplitAfter, clampPopover, mainPointRefs, parseDotId } from './interaction';
 import type { Point } from './interaction';
 import BracketLayer from './BracketLayer';
 import type { PositionedBracket, ShakeState } from './BracketLayer';
@@ -84,6 +84,12 @@ interface RowContextValue {
   words: ReadonlyMap<number, CorpusWord>;
   /** The last proposition in the document — the one with nothing to merge. */
   lastPid: string | null;
+  /**
+   * The MAIN POINT's pids — where the star walk from the top lands — set only
+   * when the analysis is complete (one tree holding every proposition).
+   * These rows render red.
+   */
+  mainPids: ReadonlySet<string>;
   /** A single click on a word: offer "Split after" beside it. */
   onWordClick: (pid: string, ordinal: number, word: string, target: HTMLElement) => void;
   onMergeBelow: (pid: string) => void;
@@ -113,14 +119,23 @@ function rowTokens(
     .map((t, i) => ({ key: i, display: t }));
 }
 
+/** The main point's red — wins over any stored per-proposition color. */
+const MAIN_POINT_COLOR = '#b91c1c';
+
 function PropositionRow({ node }: ReactNodeViewProps) {
   const ctx = useContext(RowContext);
   const pid = String(node.attrs.pid);
-  const color = typeof node.attrs.color === 'string' ? node.attrs.color : undefined;
+  const stored = typeof node.attrs.color === 'string' ? node.attrs.color : undefined;
+  const isMain = ctx !== null && ctx.mainPids.has(pid);
+  const color = isMain ? MAIN_POINT_COLOR : stored;
   const tokens = ctx !== null ? rowTokens(node, ctx.words) : [];
 
   return (
-    <NodeViewWrapper as="div" className="prop-row" data-pid={pid}>
+    <NodeViewWrapper
+      as="div"
+      className={isMain ? 'prop-row main-point' : 'prop-row'}
+      data-pid={pid}
+    >
       <span className="verse-label">{String(node.attrs.label)}</span>
       <span className="prop-text greek" style={color !== undefined ? { color } : undefined}>
         {ctx !== null
@@ -395,6 +410,13 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, docTick]);
 
+  /** The completed analysis's main point (empty while the forest is loose). */
+  const mainPids = useMemo<ReadonlySet<string>>(() => {
+    if (editor === null) return new Set<string>();
+    return new Set(mainPointRefs(nodeToDocument(editor.state.doc, baseDoc).forest));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, docTick, baseDoc]);
+
   // ---- Geometry -----------------------------------------------------------
   // Measure every row, then lay the whole FOREST out; layout brackets
   // (pre-order) zip index-for-index with the PM bracket positions.
@@ -447,6 +469,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     () => ({
       words,
       lastPid: pids.length > 0 ? (pids[pids.length - 1] ?? null) : null,
+      mainPids,
       onWordClick: (pid, ordinal, word, target) => {
         const shell = shellRef.current;
         if (shell === null) return;
@@ -466,7 +489,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
         mergeBelow(editor, pid, words);
       },
     }),
-    [words, pids, editor],
+    [words, pids, mainPids, editor],
   );
 
   if (editor === null) return null;

@@ -399,7 +399,7 @@ describe('flipStar', () => {
 });
 
 describe('splitProposition', () => {
-  it('splits a root proposition into two roots, priming only the second label', () => {
+  it('splits a root proposition into two roots and re-letters the verse labels', () => {
     const doc = disconnectedDoc(); // [ a, Ser[b,c], d, e ]
     const ed = open(doc);
     // d = τῷ σκότει περιπατῶμεν, ψευδόμεθα (124780–124783): 2 words in the first half.
@@ -410,11 +410,38 @@ describe('splitProposition', () => {
     expect(out.forest).toHaveLength(5); // one more root than before
     expect(out.forest[2]).toEqual(prop('d'));
     expect(out.forest[3]).toMatchObject({ kind: 'prop' });
-    expect(out.propositions.map((p) => p.label)).toEqual(['6a', '6b', '6c', '6d', '6d′', '6e']);
+    // Five corpus propositions now sit in verse 6, so the letters re-derive
+    // a–e; the raw proposition keeps its own label.
+    expect(out.propositions.map((p) => p.label)).toEqual(['6a', '6b', '6c', '6d', '6e', '6e']);
     expect(out.propositions[3]?.source).toEqual({ kind: 'corpus', start: 124780, end: 124781 });
     expect(out.propositions[4]?.source).toEqual({ kind: 'corpus', start: 124782, end: 124783 });
     expect(out.propositions[3]?.id).toBe('d'); // first half keeps the pid
     expect(new Set(out.propositions.map((p) => p.id)).size).toBe(6); // second is fresh
+  });
+
+  it('labels single-verse propositions with letters and cross-verse ones with spans', () => {
+    const doc: AnalysisDocument = {
+      schemaVersion: 2,
+      propositions: [{
+        id: 'x', label: '6–7',
+        source: { kind: 'corpus', start: 124771, end: 124791 }, // spans 1:6–1:7
+      }],
+      forest: [{ kind: 'prop', ref: 'x' }],
+    };
+    const ed = open(doc);
+
+    // First split: the head sits in verse 6 alone (unlettered), the rest
+    // still spans into verse 7.
+    expect(splitProposition(ed, propPos(ed, 'x'), 2, WORD_MAP)).toBe(true);
+    let out = nodeToDocument(ed.state.doc, doc);
+    expect(out.propositions.map((p) => p.label)).toEqual(['6', '6–7']);
+
+    // Second split, still inside verse 6: the two verse-6 propositions
+    // letter up while the tail keeps its span.
+    const rest = out.propositions[1]!.id;
+    expect(splitProposition(ed, propPos(ed, rest), 4, WORD_MAP)).toBe(true);
+    out = nodeToDocument(ed.state.doc, doc);
+    expect(out.propositions.map((p) => p.label)).toEqual(['6a', '6b', '6–7']);
   });
 
   it('unzips a nested proposition first: its ancestors dissolve, both halves are roots', () => {
@@ -435,13 +462,14 @@ describe('splitProposition', () => {
       prop('p3'),
     ]);
     expect(out.forest[4]).toMatchObject({ kind: 'bracket', rel: 'Ser', flag: 'review' });
-    // Only the new half is labelled; nothing else is relabeled.
+    // The five corpus propositions re-letter a–e; the raw one keeps '6e'.
     expect(out.propositions.map((p) => p.label)).toEqual([
-      '6a', '6b', '6b′', '6c', '6d', '6e',
+      '6a', '6b', '6c', '6d', '6e', '6e',
     ]);
     expect(out.propositions[1]?.source).toEqual({ kind: 'corpus', start: 124773, end: 124774 });
     expect(out.propositions[2]?.source).toEqual({ kind: 'corpus', start: 124775, end: 124777 });
-    expect(out.propositions[3]).toEqual(doc.propositions[2]); // p3 untouched, colour and all
+    // p3 keeps its identity, source and colour — only its letter moved on.
+    expect(out.propositions[3]).toEqual({ ...doc.propositions[2], label: '6d' });
   });
 
   it('splits a raw proposition by whitespace tokens', () => {

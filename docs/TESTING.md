@@ -51,8 +51,9 @@ analysis. Everything is built by hand:
 
 1. **Create**: paste the passage → **Locate** (should read
    `1 John 1:5–7 — 70/70 tokens matched (exact)`) → **Create**.
-2. **Split**: click any word → **Split after**. The lower half gets the same
-   label with a prime (′). Split the block into clauses.
+2. **Split**: click any word → **Split after**. Labels re-derive from the
+   corpus verses (11a, 11b, …; spans like 10–12 for units crossing verses;
+   only raw non-NT text takes a prime ′). Split the block into clauses.
 3. **Connect**: click a unit's dot (the small circle left of it), then click
    an adjacent unit's dot. The pair joins and the relationship menu opens.
    Clicking a selected dot unselects it. Only adjacent units connect — an
@@ -64,10 +65,14 @@ analysis. Everything is built by hand:
 6. **Star**: click a `*` to move prominence to the other member (the letter
    labels follow the star).
 7. **Merge**: hover a row — **Merge below** appears after its last word.
-8. **Undo/Redo**: toolbar buttons or Ctrl/Cmd-Z, Ctrl/Cmd-Shift-Z. Each
+8. **Main point**: once every proposition is connected into ONE tree, the
+   proposition the star walk lands on (from the top of the tree, following
+   the stars) turns red — the passage's main point. It follows the stars as
+   you flip them, and clears if you disconnect anything.
+9. **Undo/Redo**: toolbar buttons or Ctrl/Cmd-Z, Ctrl/Cmd-Shift-Z. Each
    gesture is exactly one undo step.
-9. **Save / reload**: Save in the top bar, reload the page, reopen from the
-   home list — the analysis must come back exactly as left.
+10. **Save / reload**: Save in the top bar, reload the page, reopen from the
+    home list — the analysis must come back exactly as left.
 
 Word tooltips (hover a word) show the SBLGNT lemma and morphology.
 

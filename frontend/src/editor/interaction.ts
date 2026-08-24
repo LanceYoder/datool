@@ -7,7 +7,7 @@
 // for the relationship menu, reading a dot id back apart, and keeping a
 // popover on screen.
 
-import type { TaxonomyEntry } from '../types';
+import type { TaxonomyEntry, TreeNode } from '../types';
 
 /** Display names for the taxonomy's four families. */
 export const FAMILY_NAMES: Record<string, string> = {
@@ -63,6 +63,37 @@ export function parseDotId(id: string): DotRef | null {
     return { kind: 'bracket', index };
   }
   return null;
+}
+
+/**
+ * The pids of the analysis's MAIN POINT — where the star walk from the top of
+ * the tree lands — but only when the analysis is COMPLETE: exactly one forest
+ * root, and that root a bracket (every proposition connected into one tree).
+ * Otherwise empty.
+ *
+ * The walk follows the prominent (starred) child through subordinate
+ * brackets and fans out across a coordinate bracket's whole packet.
+ */
+export function mainPointRefs(forest: readonly TreeNode[]): string[] {
+  const root = forest.length === 1 ? forest[0] : undefined;
+  if (root === undefined || root.kind !== 'bracket') return [];
+  const out: string[] = [];
+  const walk = (node: TreeNode): void => {
+    if (node.kind === 'prop') {
+      out.push(node.ref);
+      return;
+    }
+    const prom = node.prominent;
+    const target =
+      prom !== null && prom !== undefined ? node.children[prom] : undefined;
+    if (target !== undefined) {
+      walk(target);
+    } else {
+      for (const child of node.children) walk(child); // coordinate: whole packet
+    }
+  };
+  walk(root);
+  return out;
 }
 
 export interface Point {

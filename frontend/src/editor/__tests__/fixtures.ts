@@ -50,8 +50,10 @@ export const TAXONOMY: TaxonomyEntry[] = [
   entry('SR', 'Situation–Response', 'contrary', 'S/R', ['S', 'R'], 1, false),
 ];
 
-// 1 John 1:6 in SBLGNT, words 124771–124783 of the corpus (real indexes).
-const VERSE: Array<[number, string]> = [
+// 1 John 1:6 in SBLGNT, words 124771–124783 of the corpus (real indexes),
+// plus the opening of 1:7 (124789–124791) so verse-span labeling has a
+// second verse to cross into.
+const VERSE_6: Array<[number, string]> = [
   [124771, 'ἐὰν'],
   [124772, 'εἴπωμεν'],
   [124773, 'ὅτι'],
@@ -67,7 +69,13 @@ const VERSE: Array<[number, string]> = [
   [124783, 'ψευδόμεθα'],
 ];
 
-export const CORPUS_WORDS: CorpusWord[] = VERSE.map(([index, text]) => ({
+const VERSE_7: Array<[number, string]> = [
+  [124789, 'ἐὰν'],
+  [124790, 'δὲ'],
+  [124791, 'ἐν'],
+];
+
+const corpusWord = (index: number, text: string, verse: number): CorpusWord => ({
   index,
   text,
   word: text.replace(/[,·.;·’]/g, ''),
@@ -78,8 +86,13 @@ export const CORPUS_WORDS: CorpusWord[] = VERSE.map(([index, text]) => ({
   book: 23,
   bookName: '1 John',
   chapter: 1,
-  verse: 6,
-}));
+  verse,
+});
+
+export const CORPUS_WORDS: CorpusWord[] = [
+  ...VERSE_6.map(([index, text]) => corpusWord(index, text, 6)),
+  ...VERSE_7.map(([index, text]) => corpusWord(index, text, 7)),
+];
 
 export const WORD_MAP: ReadonlyMap<number, CorpusWord> = new Map(
   CORPUS_WORDS.map((w) => [w.index, w]),
