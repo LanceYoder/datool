@@ -1,13 +1,20 @@
-// The interactive bracketing editor: Tiptap editor state + React node views
-// for proposition rows + a clickable SVG margin overlay drawn from layout.ts.
+// The bracketing editor's current shell: Tiptap editor state + React node
+// views for proposition rows + an SVG margin overlay drawn from layout.ts.
 //
-// Interaction model:
-//  - click a proposition row  -> select that unit; shift-click extends the
-//    selection to the minimal contiguous run of siblings covering both;
-//  - pick a relationship in the toolbar -> wrap the selected run;
-//  - click a bracket's line/label in the margin -> select the bracket; the
-//    toolbar then offers re-label / star side / reverse / confirm / dissolve;
-//  - Mod-z / Mod-Shift-z (and toolbar buttons) undo/redo.
+// NOTE: this file is a holding pattern. The editor CORE (forest model,
+// commands, layout geometry) has moved to the new interaction design —
+// documents are a forest, brackets are built by connecting adjacent roots,
+// and the dot geometry in layout.ts is the handle set the new UI will hang
+// its interactions off. That UI is not built here yet. What this file does
+// today:
+//   - renders the rows and the read-only bracket display (spines, ticks,
+//     stars, labels, and the dots, drawn but inert);
+//   - clicking a bracket selects it and offers the local bracket operations
+//     that survived: relabel, flip the star, confirm a review flag,
+//     disconnect a root bracket;
+//   - double-clicking a word splits its proposition (unzipping it to a root
+//     first, per the new split semantics);
+//   - Mod-z / Mod-Shift-z (and toolbar buttons) undo/redo.
 
 import {
   createContext,
@@ -36,20 +43,15 @@ import { buildTextById, displayWordText, documentToNode, nodeToDocument } from '
 import { editorExtensions } from './editor';
 import { EditorProposition } from './schema';
 import {
-  canWrapUnits,
   confirmFlag,
+  disconnectRoot,
   findBrackets,
-  liftBracket,
-  mergeWithNext,
-  setProminent,
+  flipStar,
   setRelationship,
   splitProposition,
-  toggleReversed,
-  wrapUnits,
 } from './commands';
-import { COL_W, REVIEW_COLOR, computeColumns, layoutBrackets } from './layout';
-import type { BracketGeom } from './layout';
-import { unitRangeInfo } from './selection';
+import { COL_W, REVIEW_COLOR, STUB_W, computeColumns, layoutBrackets, layoutDots } from './layout';
+import type { BracketGeom, DotGeom, RowBox } from './layout';
 
 const LABEL_GUTTER = 46; // px between the bracket columns and the row gutter
 
@@ -58,10 +60,8 @@ const LABEL_GUTTER = 46; // px between the bracket columns and the row gutter
 
 interface RowContextValue {
   words: ReadonlyMap<number, CorpusWord>;
-  selectedPids: ReadonlySet<string>;
-  onUnitMouseDown: (pos: number, shiftKey: boolean) => void;
-  /** Split the proposition at `pos` before its `ordinal`-th word (1-based). */
-  onSplitAt: (pos: number, ordinal: number) => void;
+  /** Split the proposition at `pos` after its `ordinal`-th word (0-based). */
+  onSplitAfter: (pos: number, ordinal: number) => void;
 }
 
 const RowContext = createContext<RowContextValue | null>(null);
@@ -91,23 +91,12 @@ function rowTokens(
 function PropositionRow({ node, getPos }: ReactNodeViewProps) {
   const ctx = useContext(RowContext);
   const pid = String(node.attrs.pid);
-  const selected = ctx?.selectedPids.has(pid) ?? false;
   const color = typeof node.attrs.color === 'string' ? node.attrs.color : undefined;
   const tokens = ctx !== null ? rowTokens(node, ctx.words) : [];
+  const last = tokens.length - 1;
 
   return (
-    <NodeViewWrapper
-      as="div"
-      className={selected ? 'prop-row selected' : 'prop-row'}
-      data-pid={pid}
-      onMouseDown={(event: React.MouseEvent) => {
-        event.preventDefault();
-        const pos = typeof getPos === 'function' ? getPos() : undefined;
-        if (pos !== undefined && ctx !== null) {
-          ctx.onUnitMouseDown(pos, event.shiftKey);
-        }
-      }}
-    >
+    <NodeViewWrapper as="div" className="prop-row" data-pid={pid}>
       <span className="verse-label">{String(node.attrs.label)}</span>
       <span className="prop-text greek" style={color !== undefined ? { color } : undefined}>
         {ctx !== null
@@ -117,14 +106,14 @@ function PropositionRow({ node, getPos }: ReactNodeViewProps) {
                 className="word"
                 title={
                   (t.hover !== undefined ? `${t.hover}\n` : '') +
-                  (ordinal > 0 ? 'double-click: split before this word' : '')
+                  (ordinal < last ? 'double-click: split after this word' : '')
                 }
                 onDoubleClick={
-                  ordinal > 0
+                  ordinal < last
                     ? (event) => {
                         event.preventDefault();
                         const pos = typeof getPos === 'function' ? getPos() : undefined;
-                        if (pos !== undefined) ctx.onSplitAt(pos, ordinal);
+                        if (pos !== undefined) ctx.onSplitAfter(pos, ordinal);
                       }
                     : undefined
                 }
@@ -145,17 +134,9 @@ const PropositionWithView = EditorProposition.extend({
 });
 
 // ---------------------------------------------------------------------------
-// Selection state
-
-type Selection =
-  | { kind: 'units'; anchor: number; head: number }
-  | { kind: 'bracket'; pos: number }
-  | null;
-
-// ---------------------------------------------------------------------------
 
 export interface AnalysisEditorProps {
-  /** The loaded document; sources/labels are carried through edits by pid. */
+  /** The loaded document (v1 or v2); the editor always emits v2. */
   document: AnalysisDocument;
   /** Fired after every edit with the document rebuilt from the editor. */
   onChange: (doc: AnalysisDocument) => void;
@@ -219,7 +200,7 @@ interface InnerProps {
 }
 
 function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
-  const [selection, setSelection] = useState<Selection>(null);
+  const [selectedBracketPos, setSelectedBracketPos] = useState<number | null>(null);
   const [layoutTick, setLayoutTick] = useState(0);
   const shellRef = useRef<HTMLDivElement | null>(null);
 
@@ -240,7 +221,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
       editable: false,
       injectCSS: false,
       onUpdate: ({ editor: ed }) => {
-        setSelection(null);
+        setSelectedBracketPos(null);
         onChange(nodeToDocument(ed.state.doc, baseDoc));
         setLayoutTick((t) => t + 1);
       },
@@ -291,45 +272,25 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     };
   }, [editor]);
 
-  const onUnitMouseDown = useCallback(
-    (pos: number, shiftKey: boolean) => {
-      setSelection((prev) =>
-        shiftKey && prev !== null && prev.kind === 'units'
-          ? { kind: 'units', anchor: prev.anchor, head: pos }
-          : { kind: 'units', anchor: pos, head: pos },
-      );
-    },
-    [],
-  );
-
-  const onSplitAt = useCallback(
+  const onSplitAfter = useCallback(
     (pos: number, ordinal: number) => {
-      if (editor !== null) splitProposition(editor, pos, ordinal, words);
+      // `firstCount` counts the words that stay in the first half.
+      if (editor !== null) splitProposition(editor, pos, ordinal + 1, words);
     },
     [editor, words],
   );
 
-  // Derived selection info.
-  const unitInfo =
-    editor !== null && selection?.kind === 'units'
-      ? unitRangeInfo(editor.state.doc, selection.anchor, selection.head)
-      : null;
-  const selectedPids = useMemo(
-    () => new Set(unitInfo?.pids ?? []),
-    [unitInfo?.pids.join(',')],
-  );
-  const selectedBracketPos = selection?.kind === 'bracket' ? selection.pos : null;
-
   const rowCtx = useMemo<RowContextValue>(
-    () => ({ words, selectedPids, onUnitMouseDown, onSplitAt }),
-    [words, selectedPids, onUnitMouseDown, onSplitAt],
+    () => ({ words, onSplitAfter }),
+    [words, onSplitAfter],
   );
 
   // ---- Geometry -----------------------------------------------------------
-  // Rebuild the display tree + measure row centers; zip layout brackets
-  // (pre-order) with PM bracket positions (also pre-order).
+  // Measure every row, then lay the whole FOREST out; layout brackets
+  // (pre-order) zip index-for-index with the PM bracket positions.
   interface Overlay {
     brackets: (BracketGeom & { pos: number })[];
+    dots: DotGeom[];
     margin: number;
     height: number;
   }
@@ -338,70 +299,53 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     const shell = shellRef.current;
     if (shell === null) return null;
     const shellRect = shell.getBoundingClientRect();
-    const rowYs = new Map<string, number>();
+    const rows = new Map<string, RowBox>();
     for (const el of shell.querySelectorAll<HTMLElement>('[data-pid]')) {
       const pid = el.dataset.pid;
       if (pid === undefined) continue;
       const rect = el.getBoundingClientRect();
-      rowYs.set(pid, rect.top - shellRect.top + rect.height / 2);
+      const top = rect.top - shellRect.top;
+      rows.set(pid, { y: top + rect.height / 2, top, bottom: top + rect.height });
     }
-    if (rowYs.size === 0) return null;
+    if (rows.size === 0) return null;
 
     const current = nodeToDocument(editor.state.doc, baseDoc);
-    const { maxColumn } = computeColumns(current.tree);
-    const margin = maxColumn * COL_W + LABEL_GUTTER;
+    const { maxColumn } = computeColumns(current.forest);
+    const margin = Math.max(maxColumn * COL_W, STUB_W) + LABEL_GUTTER;
     const layout = layoutBrackets(
-      current.tree,
-      rowYs,
+      current.forest,
+      rows,
       margin,
       (rel) => taxonomyByCode.get(rel)?.labels,
     );
     const pmBrackets = findBrackets(editor.state.doc);
-    const brackets = layout.brackets.map((geom, i) => ({
+    const brackets = layout.brackets.map((geom) => ({
       ...geom,
-      pos: pmBrackets[i]?.pos ?? -1,
+      pos: pmBrackets[geom.preorderIndex]?.pos ?? -1,
     }));
-    return { brackets, margin, height: shellRect.height };
+    return {
+      brackets,
+      dots: layoutDots(current.forest, rows, margin),
+      margin,
+      height: shellRect.height,
+    };
     // layoutTick + the editor doc drive re-measurement.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, editor?.state.doc, layoutTick, baseDoc, taxonomyByCode]);
 
   if (editor === null) return null;
 
-  const wrapEnabled =
-    unitInfo !== null && unitInfo.count >= 2 && canWrapUnits(editor.state, unitInfo.from, unitInfo.to);
   const selectedBracket =
     selectedBracketPos !== null ? editor.state.doc.nodeAt(selectedBracketPos) : null;
-
-  // The selection covers exactly two adjacent sibling propositions → offer
-  // Merge (the command re-checks arity and contiguity itself).
-  const mergeFrom = (() => {
-    if (unitInfo === null || unitInfo.count !== 2) return null;
-    const $from = editor.state.doc.resolve(unitInfo.from);
-    const parent = $from.parent;
-    const index = $from.index();
-    if (index + 1 >= parent.childCount) return null;
-    const a = parent.child(index);
-    const b = parent.child(index + 1);
-    if (a.type.name !== 'proposition' || b.type.name !== 'proposition') return null;
-    if (parent.type.name === 'bracket' && parent.childCount <= 2) return null;
-    return unitInfo.from;
-  })();
 
   return (
     <RowContext.Provider value={rowCtx}>
       <Toolbar
         editor={editor}
         taxonomy={taxonomy}
-        wrapEnabled={wrapEnabled}
-        onWrap={(rel) => {
-          if (unitInfo !== null) wrapUnits(editor, unitInfo.from, unitInfo.to, rel, taxonomy);
-        }}
-        mergeFrom={mergeFrom}
-        onMerge={(from) => mergeWithNext(editor, from, words)}
         bracketPos={selectedBracketPos}
         bracket={selectedBracket?.type.name === 'bracket' ? selectedBracket : null}
-        clearSelection={() => setSelection(null)}
+        clearSelection={() => setSelectedBracketPos(null)}
       />
       <div
         ref={shellRef}
@@ -425,15 +369,15 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
                   data-rel={b.rel}
                   onMouseDown={(e) => {
                     e.preventDefault();
-                    setSelection({ kind: 'bracket', pos: b.pos });
+                    setSelectedBracketPos(b.pos);
                   }}
                 >
-                  {/* invisible widened hit area along the bracket's spine */}
+                  {/* Full hit rect: inner brackets paint later, so they win. */}
                   <rect
-                    x={b.x - 7}
-                    y={Math.min(b.top, b.bottom) - 10}
-                    width={14}
-                    height={Math.abs(b.bottom - b.top) + 20}
+                    x={b.rect.x}
+                    y={b.rect.y}
+                    width={b.rect.width}
+                    height={b.rect.height}
                     fill="transparent"
                   />
                   <line x1={b.x} y1={b.top} x2={b.x} y2={b.bottom} stroke={stroke} strokeWidth={isSelected ? 2.5 : 1.5} />
@@ -459,10 +403,25 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
                       {l.text}
                     </text>
                   ))}
-                  {b.review && <circle cx={b.x} cy={b.top - 8} r={3} fill={REVIEW_COLOR} />}
                 </g>
               );
             })}
+            {/* Dots: drawn for orientation; the interactions land in the rewrite. */}
+            <g className="dot-layer" pointerEvents="none">
+              {overlay.dots.map((d) => (
+                <g key={d.id}>
+                  {d.stubX1 !== undefined && d.stubX2 !== undefined && (
+                    <line x1={d.stubX1} y1={d.y} x2={d.stubX2} y2={d.y} stroke="#9ca3af" strokeWidth={1} />
+                  )}
+                  <circle
+                    cx={d.x}
+                    cy={d.y}
+                    r={d.connectable ? 3.5 : 2}
+                    fill={d.connectable ? '#374151' : '#9ca3af'}
+                  />
+                </g>
+              ))}
+            </g>
           </svg>
         )}
         <EditorContent editor={editor} />
@@ -484,11 +443,6 @@ const FAMILY_NAMES: Record<string, string> = {
 interface ToolbarProps {
   editor: Editor;
   taxonomy: TaxonomyEntry[];
-  wrapEnabled: boolean;
-  onWrap: (rel: string) => void;
-  /** Position of the first of two mergeable sibling propositions, or null. */
-  mergeFrom: number | null;
-  onMerge: (from: number) => void;
   bracketPos: number | null;
   bracket: ReturnType<Editor['state']['doc']['nodeAt']>;
   clearSelection: () => void;
@@ -498,13 +452,11 @@ function RelationshipSelect({
   taxonomy,
   value,
   placeholder,
-  disabled,
   onPick,
 }: {
   taxonomy: TaxonomyEntry[];
   value: string;
   placeholder: string;
-  disabled?: boolean;
   onPick: (rel: string) => void;
 }) {
   const families = useMemo(() => {
@@ -521,7 +473,6 @@ function RelationshipSelect({
     <select
       className="rel-select"
       value={value}
-      disabled={disabled === true}
       onChange={(e) => {
         if (e.target.value !== '') onPick(e.target.value);
       }}
@@ -542,39 +493,15 @@ function RelationshipSelect({
   );
 }
 
-function Toolbar({
-  editor,
-  taxonomy,
-  wrapEnabled,
-  onWrap,
-  mergeFrom,
-  onMerge,
-  bracketPos,
-  bracket,
-  clearSelection,
-}: ToolbarProps) {
+function Toolbar({ editor, taxonomy, bracketPos, bracket, clearSelection }: ToolbarProps) {
   const bracketAttrs = bracket?.type.name === 'bracket' ? bracket.attrs : null;
-  const childCount = bracket?.childCount ?? 0;
+  const binary = bracket?.childCount === 2;
+  const isRoot =
+    bracketPos !== null && editor.state.doc.resolve(bracketPos).depth === 0;
 
   return (
     <div className="editor-toolbar">
-      <RelationshipSelect
-        taxonomy={taxonomy}
-        value=""
-        placeholder={wrapEnabled ? 'Relate selection as…' : 'Select 2+ adjacent units'}
-        disabled={!wrapEnabled}
-        onPick={onWrap}
-      />
-      {mergeFrom !== null && (
-        <button
-          title="Merge the two selected propositions into one"
-          onClick={() => onMerge(mergeFrom)}
-        >
-          Merge
-        </button>
-      )}
-
-      {bracketPos !== null && bracketAttrs !== null && (
+      {bracketPos !== null && bracketAttrs !== null ? (
         <span className="bracket-controls">
           <RelationshipSelect
             taxonomy={taxonomy}
@@ -582,20 +509,12 @@ function Toolbar({
             placeholder="Relationship"
             onPick={(rel) => setRelationship(editor, bracketPos, rel, taxonomy)}
           />
-          {bracketAttrs.prominent !== null &&
-            Array.from({ length: childCount }, (_, i) => (
-              <button
-                key={i}
-                className={bracketAttrs.prominent === i ? 'star-btn active' : 'star-btn'}
-                title={`Star child ${i + 1}`}
-                onClick={() => setProminent(editor, bracketPos, i)}
-              >
-                *{i + 1}
-              </button>
-            ))}
-          {bracketAttrs.prominent !== null && (
-            <button title="Swap which label sits at which end" onClick={() => toggleReversed(editor, bracketPos)}>
-              Reverse
+          {bracketAttrs.prominent !== null && binary && (
+            <button
+              title="Move the star to the other side (the labels follow it)"
+              onClick={() => flipStar(editor, bracketPos, taxonomy)}
+            >
+              Flip star
             </button>
           )}
           {bracketAttrs.flag === 'review' && (
@@ -603,16 +522,20 @@ function Toolbar({
               Confirm
             </button>
           )}
-          <button
-            title="Dissolve this bracket (children join its parent)"
-            onClick={() => {
-              liftBracket(editor, bracketPos);
-              clearSelection();
-            }}
-          >
-            Dissolve
-          </button>
+          {isRoot && (
+            <button
+              title="Disconnect this bracket (its parts become separate roots)"
+              onClick={() => {
+                disconnectRoot(editor, bracketPos);
+                clearSelection();
+              }}
+            >
+              Disconnect
+            </button>
+          )}
         </span>
+      ) : (
+        <span className="muted">Click a bracket to edit it</span>
       )}
 
       <span className="toolbar-spacer" />

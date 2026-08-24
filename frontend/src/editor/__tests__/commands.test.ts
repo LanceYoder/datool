@@ -2,21 +2,34 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Editor } from '@tiptap/core';
-import type { Document as AnalysisDocument } from '../../types';
+import type { BracketNode, Document as AnalysisDocument, TreeNode } from '../../types';
 import { buildTextById, documentToNode, nodeToDocument } from '../convert';
 import { buildEditor } from '../editor';
 import {
   confirmFlag,
+  connectUnits,
+  disconnectRoot,
   findBrackets,
   findPropositionPos,
-  liftBracket,
+  flipStar,
+  mergeBelow,
   setFlag,
-  setProminent,
   setRelationship,
-  toggleReversed,
-  wrapUnits,
+  splitProposition,
+  unzipToRoot,
 } from '../commands';
-import { CORPUS_WORDS, TAXONOMY, firstJohn16, flatDoc, nestedDoc } from './fixtures';
+import {
+  CORPUS_WORDS,
+  RAW_1JOHN_1_6E,
+  TAXONOMY,
+  WORD_MAP,
+  disconnectedDoc,
+  firstJohn16,
+  flatDoc,
+  looseDoc,
+  nestedDoc,
+  pairDoc,
+} from './fixtures';
 
 let editor: Editor | null = null;
 
@@ -43,197 +56,241 @@ function bracketPos(ed: Editor, rel: string, nth = 0): number {
   return hit.pos;
 }
 
-/** [from, to] covering the props from pidStart through pidEnd inclusive. */
-function propRange(ed: Editor, pidStart: string, pidEnd: string): [number, number] {
-  return [propPos(ed, pidStart), propPos(ed, pidEnd) + 1];
+/** Position of the `index`-th top-level doc child (forest root). */
+function rootPos(ed: Editor, index: number): number {
+  let pos = 0;
+  for (let i = 0; i < index; i += 1) pos += ed.state.doc.child(i).nodeSize;
+  return pos;
 }
 
-describe('wrapUnits', () => {
-  it('wraps two adjacent props with the taxonomy default prominent (subordinate)', () => {
-    const doc = flatDoc('Ser');
+function forestOf(ed: Editor, prior: AnalysisDocument): TreeNode[] {
+  return nodeToDocument(ed.state.doc, prior).forest;
+}
+
+function labelsOf(ed: Editor, prior: AnalysisDocument): string[] {
+  return nodeToDocument(ed.state.doc, prior).propositions.map((p) => p.label);
+}
+
+const prop = (ref: string): TreeNode => ({ kind: 'prop', ref });
+
+// ---------------------------------------------------------------------------
+
+describe('connectUnits', () => {
+  it('wraps two adjacent roots in one binary coordinate bracket by default', () => {
+    const doc = disconnectedDoc(); // [ a, Ser[b,c], d, e ]
     const ed = open(doc);
-    const [from, to] = propRange(ed, 'a', 'b');
 
-    expect(wrapUnits(ed, from, to, 'CndE', TAXONOMY)).toBe(true);
+    const pos = connectUnits(ed, rootPos(ed, 0), rootPos(ed, 1), TAXONOMY);
+    expect(pos).toBe(0);
     ed.state.doc.check();
+    expect(ed.state.doc.nodeAt(pos!)?.type.name).toBe('bracket');
 
-    const out = nodeToDocument(ed.state.doc, doc);
-    expect(out.tree).toEqual({
+    const forest = forestOf(ed, doc);
+    expect(forest).toHaveLength(3);
+    expect(forest[0]).toEqual({
       kind: 'bracket',
-      rel: 'Ser',
-      prominent: null,
+      rel: 'Ser', // the default relationship
+      prominent: null, // coordinate → no star
       children: [
+        prop('a'),
         {
           kind: 'bracket',
-          rel: 'CndE',
-          prominent: 1, // CndE starredLabel = 1
-          children: [
-            { kind: 'prop', ref: 'a' },
-            { kind: 'prop', ref: 'b' },
-          ],
+          rel: 'Ser',
+          prominent: null,
+          children: [prop('b'), prop('c')],
         },
-        { kind: 'prop', ref: 'c' },
       ],
     });
+    expect(forest[1]).toEqual(prop('d'));
+    expect(forest[2]).toEqual(prop('e'));
+    // No flag, no reversed key on a fresh coordinate bracket.
+    expect(forest[0]).not.toHaveProperty('flag');
+    expect(forest[0]).not.toHaveProperty('reversed');
   });
 
-  it('uses starredLabel 0 defaults and null for coordinate relationships', () => {
-    const doc = flatDoc('Ser');
-    let ed = open(doc);
-    let [from, to] = propRange(ed, 'b', 'c');
-    expect(wrapUnits(ed, from, to, 'Grnd', TAXONOMY)).toBe(true); // starredLabel 0
-    let out = nodeToDocument(ed.state.doc, doc);
-    expect(out.tree).toMatchObject({
-      children: [
-        { kind: 'prop', ref: 'a' },
-        { kind: 'bracket', rel: 'Grnd', prominent: 0 },
-      ],
-    });
-    ed.destroy();
-
-    ed = open(doc);
-    [from, to] = propRange(ed, 'b', 'c');
-    expect(wrapUnits(ed, from, to, 'Alt', TAXONOMY)).toBe(true); // coordinate
-    out = nodeToDocument(ed.state.doc, doc);
-    expect(out.tree).toMatchObject({
-      children: [
-        { kind: 'prop', ref: 'a' },
-        { kind: 'bracket', rel: 'Alt', prominent: null },
-      ],
-    });
-  });
-
-  it('expands to the covering siblings across nested brackets', () => {
-    const doc = firstJohn16();
+  it('accepts either argument order and always wraps in document order', () => {
+    const doc = looseDoc();
     const ed = open(doc);
-    // p3 sits inside the FtIn packet, p4 in the flagged Ser: the covering
-    // siblings are ALL children of the root CndE → rejected (root would be
-    // left with a single child).
-    const [from, to] = propRange(ed, 'p3', 'p4');
-    expect(wrapUnits(ed, from, to, 'Adv', TAXONOMY)).toBe(false);
-
-    // p1..p3 covers p1 + the Adv bracket — ALL children of FtIn → rejected.
-    const [f2, t2] = propRange(ed, 'p1', 'p3');
-    expect(wrapUnits(ed, f2, t2, 'Grnd', TAXONOMY)).toBe(false);
-    const out = nodeToDocument(ed.state.doc, doc);
-    expect(out).toEqual(doc); // nothing changed
+    // Pass the LATER root first: the bracket still reads a, b.
+    const pos = connectUnits(ed, rootPos(ed, 1), rootPos(ed, 0), TAXONOMY, 'CndE');
+    expect(pos).toBe(0);
+    expect(forestOf(ed, doc)[0]).toMatchObject({
+      rel: 'CndE',
+      children: [prop('a'), prop('b')],
+    });
   });
 
-  it('re-indexes the parent star around the wrapped run', () => {
-    // Star past the run shifts left: CndE[a, b, c*] → CndE[Grnd[a,b], c*].
-    let doc = flatDoc('CndE', 2);
+  it('applies the taxonomy default star and derives reversed for the new bracket', () => {
+    let doc = looseDoc();
     let ed = open(doc);
-    let [from, to] = propRange(ed, 'a', 'b');
-    expect(wrapUnits(ed, from, to, 'Grnd', TAXONOMY)).toBe(true);
-    ed.state.doc.check();
-    expect(ed.state.doc.child(0).attrs.prominent).toBe(1);
+    expect(connectUnits(ed, rootPos(ed, 0), rootPos(ed, 1), TAXONOMY, 'CndE')).toBe(0);
+    // CndE starredLabel 1 → star on child 1, so the labels sit unreversed.
+    expect(forestOf(ed, doc)[0]).toMatchObject({ prominent: 1 });
+    expect(forestOf(ed, doc)[0]).not.toHaveProperty('reversed');
     ed.destroy();
 
-    // Star inside the run moves to the new packet: CndE[a, b*, c] → packet at 0.
-    doc = flatDoc('CndE', 1);
+    doc = looseDoc();
     ed = open(doc);
-    [from, to] = propRange(ed, 'a', 'b');
-    expect(wrapUnits(ed, from, to, 'Grnd', TAXONOMY)).toBe(true);
-    expect(ed.state.doc.child(0).attrs.prominent).toBe(0);
-    ed.destroy();
-
-    // Star before the run is untouched: CndE[a*, b, c] wrap b..c.
-    doc = flatDoc('CndE', 0);
-    ed = open(doc);
-    [from, to] = propRange(ed, 'b', 'c');
-    expect(wrapUnits(ed, from, to, 'Grnd', TAXONOMY)).toBe(true);
-    expect(ed.state.doc.child(0).attrs.prominent).toBe(0);
+    expect(connectUnits(ed, rootPos(ed, 0), rootPos(ed, 1), TAXONOMY, 'Grnd')).toBe(0);
+    expect(forestOf(ed, doc)[0]).toMatchObject({ rel: 'Grnd', prominent: 0 }); // starredLabel 0
+    expect(forestOf(ed, doc)[0]).not.toHaveProperty('reversed');
   });
 
-  it('rejects single, empty, inverted, unknown-rel, and whole-bracket selections', () => {
-    const doc = flatDoc('Ser');
+  it('rejects non-adjacent roots, the same root twice, nested units and unknown rels', () => {
+    const doc = disconnectedDoc(); // [ a, Ser[b,c], d, e ]
     const ed = open(doc);
     const before = ed.getJSON();
-    const [fromA, toA] = propRange(ed, 'a', 'a');
 
-    expect(wrapUnits(ed, fromA, toA, 'CndE', TAXONOMY)).toBe(false); // single prop
-    expect(wrapUnits(ed, fromA, fromA, 'CndE', TAXONOMY)).toBe(false); // empty
-    expect(wrapUnits(ed, toA, fromA, 'CndE', TAXONOMY)).toBe(false); // inverted
-    expect(wrapUnits(ed, fromA, toA + 1, 'Nope', TAXONOMY)).toBe(false); // unknown rel
-    const [f, t] = propRange(ed, 'a', 'c');
-    expect(wrapUnits(ed, f, t, 'CndE', TAXONOMY)).toBe(false); // all children → parent left with 1
-    expect(wrapUnits(ed, -1, 2, 'CndE', TAXONOMY)).toBe(false); // out of range
+    expect(connectUnits(ed, rootPos(ed, 0), rootPos(ed, 2), TAXONOMY)).toBeNull(); // gap of 1
+    expect(connectUnits(ed, rootPos(ed, 0), rootPos(ed, 3), TAXONOMY)).toBeNull(); // gap of 2
+    expect(connectUnits(ed, rootPos(ed, 2), rootPos(ed, 2), TAXONOMY)).toBeNull(); // same root
+    expect(connectUnits(ed, propPos(ed, 'b'), propPos(ed, 'c'), TAXONOMY)).toBeNull(); // nested
+    expect(connectUnits(ed, propPos(ed, 'b'), rootPos(ed, 2), TAXONOMY)).toBeNull(); // one nested
+    expect(connectUnits(ed, rootPos(ed, 0), rootPos(ed, 1), TAXONOMY, 'Nope')).toBeNull();
+    expect(connectUnits(ed, -1, rootPos(ed, 1), TAXONOMY)).toBeNull(); // out of range
 
     expect(ed.getJSON()).toEqual(before); // nothing dispatched
   });
-});
 
-describe('liftBracket', () => {
-  it('splices children into the parent and re-indexes prominent past the splice', () => {
-    const doc = nestedDoc('Ser', null, 1); // CndE*[ Ser(a,b), c ], prominent = c
+  it('can rebuild a whole tree from loose roots, one adjacent pair at a time', () => {
+    const doc = looseDoc();
     const ed = open(doc);
-    expect(liftBracket(ed, bracketPos(ed, 'Ser'))).toBe(true);
+    expect(connectUnits(ed, rootPos(ed, 1), rootPos(ed, 2), TAXONOMY, 'CndE')).toBe(1);
+    ed.state.doc.check();
+    expect(ed.state.doc.childCount).toBe(2);
+    expect(connectUnits(ed, rootPos(ed, 0), rootPos(ed, 1), TAXONOMY, 'Grnd')).toBe(0);
     ed.state.doc.check();
 
-    const out = nodeToDocument(ed.state.doc, doc);
-    expect(out.tree).toEqual({
-      kind: 'bracket',
-      rel: 'CndE',
-      prominent: 2, // still points at c after the 2-for-1 splice
-      children: [
-        { kind: 'prop', ref: 'a' },
-        { kind: 'prop', ref: 'b' },
-        { kind: 'prop', ref: 'c' },
-      ],
-    });
-    expect(out.propositions).toEqual(doc.propositions);
+    expect(forestOf(ed, doc)).toEqual([
+      {
+        kind: 'bracket',
+        rel: 'Grnd',
+        prominent: 0,
+        children: [
+          prop('a'),
+          { kind: 'bracket', rel: 'CndE', prominent: 1, children: [prop('b'), prop('c')] },
+        ],
+      },
+    ]);
   });
+});
 
-  it('moves the star to the lifted bracket own prominent child when it was prominent', () => {
-    const doc = nestedDoc('FtIn', 1, 0); // CndE[ FtIn(a, b*)…, c ], outer prominent = the FtIn bracket
+describe('disconnectRoot', () => {
+  it('replaces a root bracket with its children as adjacent roots', () => {
+    const doc = disconnectedDoc();
     const ed = open(doc);
-    expect(liftBracket(ed, bracketPos(ed, 'FtIn'))).toBe(true);
-    const out = nodeToDocument(ed.state.doc, doc);
-    expect(out.tree).toMatchObject({ rel: 'CndE', prominent: 1 }); // 0 + inner prominent 1
+    expect(disconnectRoot(ed, rootPos(ed, 1))).toBe(true);
+    ed.state.doc.check();
+
+    expect(forestOf(ed, doc)).toEqual([
+      prop('a'),
+      prop('b'),
+      prop('c'),
+      prop('d'),
+      prop('e'),
+    ]);
   });
 
-  it('keeps prominent when a coordinate bracket in first position was prominent', () => {
-    const doc = nestedDoc('Ser', null, 0);
+  it('dissolves only the outermost level, leaving inner brackets intact', () => {
+    const doc = nestedDoc('Ser', null, 1); // CndE[ Ser[a,b], c ]
     const ed = open(doc);
-    expect(liftBracket(ed, bracketPos(ed, 'Ser'))).toBe(true);
-    const out = nodeToDocument(ed.state.doc, doc);
-    expect(out.tree).toMatchObject({ rel: 'CndE', prominent: 0 });
+    expect(disconnectRoot(ed, rootPos(ed, 0))).toBe(true);
+    expect(forestOf(ed, doc)).toEqual([
+      { kind: 'bracket', rel: 'Ser', prominent: null, children: [prop('a'), prop('b')] },
+      prop('c'),
+    ]);
   });
 
-  it('refuses to lift the root bracket or a non-bracket position', () => {
-    const doc = flatDoc('Ser');
+  it('refuses nested brackets and non-bracket positions', () => {
+    const doc = firstJohn16();
     const ed = open(doc);
     const before = ed.getJSON();
-    expect(liftBracket(ed, 0)).toBe(false); // root bracket → >1 top-level units
-    expect(liftBracket(ed, propPos(ed, 'a'))).toBe(false); // a proposition
+    expect(disconnectRoot(ed, bracketPos(ed, 'FtIn'))).toBe(false); // nested
+    expect(disconnectRoot(ed, bracketPos(ed, 'Adv'))).toBe(false); // deeper still
+    expect(disconnectRoot(ed, propPos(ed, 'p1'))).toBe(false); // a proposition
     expect(ed.getJSON()).toEqual(before);
   });
 });
 
-describe('setRelationship / setProminent / toggleReversed / flags', () => {
-  it('fixes prominent across coordinate↔subordinate changes', () => {
-    const doc = flatDoc('Ser');
+describe('unzipToRoot', () => {
+  it('dissolves every bracket above a proposition, in one undoable step', () => {
+    const doc = firstJohn16();
+    const ed = open(doc);
+    const before = ed.getJSON();
+
+    expect(unzipToRoot(ed, 'p2')).toBe(true);
+    ed.state.doc.check();
+    // CndE, FtIn and Adv are gone; the Ser packet never contained p2.
+    expect(forestOf(ed, doc)).toEqual([
+      prop('p1'),
+      prop('p2'),
+      prop('p3'),
+      {
+        kind: 'bracket',
+        rel: 'Ser',
+        prominent: null,
+        flag: 'review',
+        children: [prop('p4'), prop('p5')],
+      },
+    ]);
+    expect(labelsOf(ed, doc)).toEqual(['6a', '6b', '6c', '6d', '6e']); // nothing relabeled
+
+    expect(ed.commands.undo()).toBe(true);
+    expect(ed.getJSON()).toEqual(before);
+  });
+
+  it('is a no-op on a proposition that is already a root, and false for unknown pids', () => {
+    const doc = disconnectedDoc();
+    const ed = open(doc);
+    const before = ed.getJSON();
+    expect(unzipToRoot(ed, 'a')).toBe(true);
+    expect(ed.getJSON()).toEqual(before);
+    expect(ed.can().undo()).toBe(false); // nothing dispatched
+    expect(unzipToRoot(ed, 'nope')).toBe(false);
+  });
+});
+
+describe('setRelationship', () => {
+  it('derives reversed from the star and the taxonomy starred end', () => {
+    const doc = pairDoc('Ser'); // coordinate
     const ed = open(doc);
 
+    // Grnd stars label 0: the default star lands there → not reversed.
+    expect(setRelationship(ed, 0, 'Grnd', TAXONOMY)).toBe(true);
+    expect(ed.state.doc.child(0).attrs).toMatchObject({ prominent: 0, reversed: false });
+
+    // CndE stars label 1 but the existing star (0) is kept → reversed.
     expect(setRelationship(ed, 0, 'CndE', TAXONOMY)).toBe(true);
-    let root = ed.state.doc.child(0);
-    expect(root.attrs.rel).toBe('CndE');
-    expect(root.attrs.prominent).toBe(1); // default from starredLabel
+    expect(ed.state.doc.child(0).attrs).toMatchObject({ prominent: 0, reversed: true });
+    expect(forestOf(ed, doc)[0]).toMatchObject({ reversed: true });
 
-    expect(setProminent(ed, 0, 2)).toBe(true);
-    expect(setRelationship(ed, 0, 'CE', TAXONOMY)).toBe(true);
-    root = ed.state.doc.child(0);
-    expect(root.attrs.prominent).toBe(2); // subordinate→subordinate keeps it
-
+    // Back to coordinate: no star, never reversed.
     expect(setRelationship(ed, 0, 'Ser', TAXONOMY)).toBe(true);
-    root = ed.state.doc.child(0);
-    expect(root.attrs.prominent).toBeNull(); // coordinate → null
+    expect(ed.state.doc.child(0).attrs).toMatchObject({ prominent: null, reversed: false });
+    expect(forestOf(ed, doc)[0]).not.toHaveProperty('reversed');
 
     expect(setRelationship(ed, 0, 'Nope', TAXONOMY)).toBe(false);
   });
 
-  it('keeps the flag through relationship changes', () => {
-    const doc = flatDoc('Ser');
+  it('clears reversed when the new relationship stars the same end', () => {
+    const doc = pairDoc('Adv', 0); // Adv starredLabel 1, star on child 0 → reversed
+    const ed = open(doc);
+    expect(setRelationship(ed, 0, 'Grnd', TAXONOMY)).toBe(true); // starredLabel 0
+    expect(ed.state.doc.child(0).attrs).toMatchObject({ prominent: 0, reversed: false });
+  });
+
+  it('never reverses a legacy n-ary bracket', () => {
+    const doc = flatDoc('Ser'); // three children
+    const ed = open(doc);
+    expect(setRelationship(ed, 0, 'CndE', TAXONOMY)).toBe(true);
+    expect(ed.state.doc.child(0).attrs).toMatchObject({ prominent: 1, reversed: false });
+    // A star that is not the taxonomy's starred end still does not reverse.
+    expect(setRelationship(ed, 0, 'Grnd', TAXONOMY)).toBe(true);
+    expect(ed.state.doc.child(0).attrs).toMatchObject({ prominent: 1, reversed: false });
+  });
+
+  it('keeps the review flag through relationship changes', () => {
+    const doc = pairDoc('Ser');
     const ed = open(doc);
     expect(setFlag(ed, 0)).toBe(true);
     expect(setRelationship(ed, 0, 'CndE', TAXONOMY)).toBe(true);
@@ -241,191 +298,268 @@ describe('setRelationship / setProminent / toggleReversed / flags', () => {
     expect(confirmFlag(ed, 0)).toBe(true);
     expect(ed.state.doc.child(0).attrs.flag).toBeNull();
   });
-
-  it('setProminent validates coordinate-ness and range', () => {
-    const doc = flatDoc('Ser'); // coordinate root
-    const ed = open(doc);
-    expect(setProminent(ed, 0, 1)).toBe(false); // coordinate: no star allowed
-
-    expect(setRelationship(ed, 0, 'CndE', TAXONOMY)).toBe(true);
-    expect(setProminent(ed, 0, 3)).toBe(false); // out of range
-    expect(setProminent(ed, 0, -1)).toBe(false);
-    expect(setProminent(ed, 0, 0)).toBe(true);
-    expect(ed.state.doc.child(0).attrs.prominent).toBe(0);
-  });
-
-  it('toggleReversed flips and survives conversion', () => {
-    const doc = flatDoc('CndE', 1);
-    const ed = open(doc);
-    expect(toggleReversed(ed, 0)).toBe(true);
-    expect(nodeToDocument(ed.state.doc, doc).tree).toMatchObject({ reversed: true });
-    expect(toggleReversed(ed, 0)).toBe(true);
-    expect((nodeToDocument(ed.state.doc, doc).tree as { reversed?: boolean }).reversed).toBeUndefined();
-  });
 });
 
-describe('history', () => {
-  it('undo after wrap restores the prior doc; redo re-applies it', () => {
-    const doc = flatDoc('Ser');
+describe('flipStar', () => {
+  it('moves the star to the other child and re-derives reversed', () => {
+    const doc = pairDoc('CndE', 1); // starredLabel 1, star there → not reversed
     const ed = open(doc);
-    const before = ed.getJSON();
 
-    const [from, to] = propRange(ed, 'a', 'b');
-    expect(wrapUnits(ed, from, to, 'CndE', TAXONOMY)).toBe(true);
-    const after = ed.getJSON();
-    expect(after).not.toEqual(before);
+    expect(flipStar(ed, 0, TAXONOMY)).toBe(true);
+    expect(ed.state.doc.child(0).attrs).toMatchObject({ prominent: 0, reversed: true });
+    expect(forestOf(ed, doc)[0]).toMatchObject({ prominent: 0, reversed: true });
 
-    expect(ed.commands.undo()).toBe(true);
-    expect(ed.getJSON()).toEqual(before);
-
-    expect(ed.commands.redo()).toBe(true);
-    expect(ed.getJSON()).toEqual(after);
+    expect(flipStar(ed, 0, TAXONOMY)).toBe(true);
+    expect(ed.state.doc.child(0).attrs).toMatchObject({ prominent: 1, reversed: false });
+    expect(forestOf(ed, doc)[0]).not.toHaveProperty('reversed');
   });
-});
 
-describe('nodeToDocument after editing', () => {
-  it('preserves sources, labels, and colors via pids through a lift + wrap', () => {
+  it('unreverses the fixture Adv bracket when the star returns to its starred end', () => {
     const doc = firstJohn16();
     const ed = open(doc);
-    const [from, to] = propRange(ed, 'p4', 'p5');
-    // p4..p5 are the two children of the review-flagged Ser: wrapping ALL of
-    // them is rejected (their parent would be left with one child).
-    expect(wrapUnits(ed, from, to, 'NegPos', TAXONOMY)).toBe(false);
+    const adv = bracketPos(ed, 'Adv');
+    expect(ed.state.doc.nodeAt(adv)?.attrs).toMatchObject({ prominent: 0, reversed: true });
+    expect(flipStar(ed, adv, TAXONOMY)).toBe(true);
+    expect(ed.state.doc.nodeAt(adv)?.attrs).toMatchObject({ prominent: 1, reversed: false });
+  });
 
-    // Restructure the protasis: dissolve the Adv bracket (FtIn becomes
-    // p1,p2,p3 with the star following Adv's own prominent child p2)…
-    expect(liftBracket(ed, bracketPos(ed, 'Adv'))).toBe(true);
-    expect(ed.state.doc.child(0).child(0).attrs.prominent).toBe(1); // 1 + inner 0
+  it('refuses coordinate brackets, legacy n-ary brackets, props and unknown rels', () => {
+    const coord = open(pairDoc('Ser'));
+    expect(flipStar(coord, 0, TAXONOMY)).toBe(false); // coordinate: no star
+    expect(flipStar(coord, propPos(coord, 'a'), TAXONOMY)).toBe(false); // a proposition
+    coord.destroy();
 
-    // …then wrap p2..p3 as Temporal (two of FtIn's three children → wraps).
-    const [f2, t2] = propRange(ed, 'p2', 'p3');
-    expect(wrapUnits(ed, f2, t2, 'Tmp', TAXONOMY)).toBe(true);
+    const nary = open(flatDoc('CndE', 1)); // three children
+    const before = nary.getJSON();
+    expect(flipStar(nary, 0, TAXONOMY)).toBe(false);
+    expect(nary.getJSON()).toEqual(before);
+    nary.destroy();
+
+    const unknown = open(pairDoc('Nope', 1));
+    expect(flipStar(unknown, 0, TAXONOMY)).toBe(false);
+  });
+});
+
+describe('splitProposition', () => {
+  it('splits a root proposition into two roots, priming only the second label', () => {
+    const doc = disconnectedDoc(); // [ a, Ser[b,c], d, e ]
+    const ed = open(doc);
+    // d = τῷ σκότει περιπατῶμεν, ψευδόμεθα (124780–124783): 2 words in the first half.
+    expect(splitProposition(ed, propPos(ed, 'd'), 2, WORD_MAP)).toBe(true);
     ed.state.doc.check();
 
     const out = nodeToDocument(ed.state.doc, doc);
-    expect(out.propositions).toEqual(doc.propositions); // carried over untouched
-    expect(out.tree).toMatchObject({
-      rel: 'CndE',
-      prominent: 1,
-      children: [
-        {
-          rel: 'FtIn',
-          children: [
-            { kind: 'prop', ref: 'p1' },
-            {
-              kind: 'bracket',
-              rel: 'Tmp',
-              prominent: 1, // Tmp starredLabel = 1
-              children: [
-                { kind: 'prop', ref: 'p2' },
-                { kind: 'prop', ref: 'p3' },
-              ],
-            },
-          ],
-        },
-        { rel: 'Ser', flag: 'review' },
-      ],
-    });
+    expect(out.forest).toHaveLength(5); // one more root than before
+    expect(out.forest[2]).toEqual(prop('d'));
+    expect(out.forest[3]).toMatchObject({ kind: 'prop' });
+    expect(out.propositions.map((p) => p.label)).toEqual(['6a', '6b', '6c', '6d', '6d′', '6e']);
+    expect(out.propositions[3]?.source).toEqual({ kind: 'corpus', start: 124780, end: 124781 });
+    expect(out.propositions[4]?.source).toEqual({ kind: 'corpus', start: 124782, end: 124783 });
+    expect(out.propositions[3]?.id).toBe('d'); // first half keeps the pid
+    expect(new Set(out.propositions.map((p) => p.id)).size).toBe(6); // second is fresh
   });
-});
 
-import { mergeWithNext, splitProposition } from '../commands';
-import { CORPUS_WORDS as WORDS } from './fixtures';
-
-const WORD_MAP = new Map(WORDS.map((w) => [w.index, w]));
-
-describe('splitProposition / mergeWithNext', () => {
-  it('splits a corpus proposition, recomputing sources, labels, and text', () => {
+  it('unzips a nested proposition first: its ancestors dissolve, both halves are roots', () => {
     const doc = firstJohn16();
     const ed = open(doc);
-    // p2 = ὅτι κοινωνίαν ἔχομεν μετ’ αὐτοῦ (124773–124777): split after 2 words.
+    // p2 = ὅτι κοινωνίαν ἔχομεν μετ’ αὐτοῦ (124773–124777), buried under
+    // CndE > FtIn > Adv.
     expect(splitProposition(ed, propPos(ed, 'p2'), 2, WORD_MAP)).toBe(true);
     ed.state.doc.check();
 
     const out = nodeToDocument(ed.state.doc, doc);
-    expect(out.propositions).toHaveLength(6);
+    // CndE, FtIn and Adv are gone; the untouched Ser packet survives.
+    expect(out.forest).toHaveLength(5);
+    expect(out.forest.slice(0, 4)).toEqual([
+      prop('p1'),
+      prop('p2'),
+      { kind: 'prop', ref: out.propositions[2]!.id },
+      prop('p3'),
+    ]);
+    expect(out.forest[4]).toMatchObject({ kind: 'bracket', rel: 'Ser', flag: 'review' });
+    // Only the new half is labelled; nothing else is relabeled.
+    expect(out.propositions.map((p) => p.label)).toEqual([
+      '6a', '6b', '6b′', '6c', '6d', '6e',
+    ]);
     expect(out.propositions[1]?.source).toEqual({ kind: 'corpus', start: 124773, end: 124774 });
     expect(out.propositions[2]?.source).toEqual({ kind: 'corpus', start: 124775, end: 124777 });
-    // New pid is fresh; labels recomputed across the verse (6 props → 6a..6f).
-    expect(out.propositions.map((p) => p.label)).toEqual(['6a', '6b', '6c', '6d', '6e', '6f']);
-    expect(new Set(out.propositions.map((p) => p.id)).size).toBe(6);
-    // The Adv bracket's star pointed at p2 (index 0) and stays there.
-    expect(out.tree).toMatchObject({
-      children: [
-        { rel: 'FtIn', children: [{ kind: 'prop' }, { rel: 'Adv', prominent: 0 }] },
-        { rel: 'Ser' },
-      ],
-    });
+    expect(out.propositions[3]).toEqual(doc.propositions[2]); // p3 untouched, colour and all
   });
 
-  it('splits a raw proposition by tokens', () => {
+  it('splits a raw proposition by whitespace tokens', () => {
     const doc = firstJohn16();
     const ed = open(doc);
-    // p5 raw: καὶ οὐ ποιοῦμεν τὴν ἀλήθειαν· → split after 2 tokens.
+    // p5 raw: καὶ οὐ ποιοῦμεν τὴν ἀλήθειαν· → 2 tokens in the first half.
     expect(splitProposition(ed, propPos(ed, 'p5'), 2, WORD_MAP)).toBe(true);
     const out = nodeToDocument(ed.state.doc, doc);
     expect(out.propositions).toHaveLength(6);
     expect(out.propositions[4]?.source).toEqual({ kind: 'raw', text: 'καὶ οὐ' });
     expect(out.propositions[5]?.source).toEqual({ kind: 'raw', text: 'ποιοῦμεν τὴν ἀλήθειαν·' });
+    expect(out.propositions[5]?.label).toBe('6e′');
+    // Only the Ser packet holding p5 (and the root above it) came apart.
+    expect(out.forest).toHaveLength(4);
+    expect(out.forest[0]).toMatchObject({ kind: 'bracket', rel: 'FtIn' });
   });
 
-  it('rejects out-of-range split points and non-propositions', () => {
+  it('rejects out-of-range split points and non-propositions, dispatching nothing', () => {
     const doc = firstJohn16();
     const ed = open(doc);
     const before = ed.getJSON();
     expect(splitProposition(ed, propPos(ed, 'p4'), 1, WORD_MAP)).toBe(false); // single word
     expect(splitProposition(ed, propPos(ed, 'p2'), 0, WORD_MAP)).toBe(false);
-    expect(splitProposition(ed, propPos(ed, 'p2'), 5, WORD_MAP)).toBe(false);
+    expect(splitProposition(ed, propPos(ed, 'p2'), 5, WORD_MAP)).toBe(false); // == total
+    expect(splitProposition(ed, propPos(ed, 'p2'), 2, null)).toBe(false); // corpus needs words
     expect(splitProposition(ed, 0, 1, WORD_MAP)).toBe(false); // a bracket
     expect(ed.getJSON()).toEqual(before);
   });
+});
 
-  it('shifts the parent star when splitting before it', () => {
-    const doc = flatDoc('CndE', 2);
-    // Make prop 'a' corpus-backed so it can split on words.
-    doc.propositions[0]!.source = { kind: 'corpus', start: 124771, end: 124772 };
-    const ed = open(doc);
-    expect(splitProposition(ed, propPos(ed, 'a'), 1, WORD_MAP)).toBe(true);
-    expect(ed.state.doc.child(0).childCount).toBe(4);
-    expect(ed.state.doc.child(0).attrs.prominent).toBe(3);
-  });
-
-  it('merges contiguous corpus propositions back together', () => {
+describe('mergeBelow', () => {
+  it('merges across two trees, unzipping both and re-joining contiguous ranges', () => {
     const doc = firstJohn16();
     const ed = open(doc);
-    expect(splitProposition(ed, propPos(ed, 'p2'), 2, WORD_MAP)).toBe(true);
-    // The two halves are adjacent siblings inside the (now 3-child) Adv.
-    expect(mergeWithNext(ed, propPos(ed, 'p2'), WORD_MAP)).toBe(true);
+    // p3 sits under CndE > FtIn > Adv; p4 under CndE > Ser. Their corpus
+    // ranges are contiguous (…124782 | 124783…).
+    expect(mergeBelow(ed, 'p3', WORD_MAP)).toBe(true);
     ed.state.doc.check();
+
     const out = nodeToDocument(ed.state.doc, doc);
-    expect(out.propositions).toHaveLength(5);
-    expect(out.propositions[1]?.source).toEqual({ kind: 'corpus', start: 124773, end: 124777 });
-    expect(out.propositions.map((p) => p.label)).toEqual(['6a', '6b', '6c', '6d', '6e']);
+    expect(out.forest).toEqual([prop('p1'), prop('p2'), prop('p3'), prop('p5')]);
+    expect(out.propositions).toHaveLength(4);
+    expect(out.propositions[2]).toMatchObject({
+      id: 'p3', // the first proposition's identity survives
+      label: '6c',
+      color: '#1d4ed8',
+      source: { kind: 'corpus', start: 124778, end: 124783 },
+    });
+    expect(out.propositions.map((p) => p.label)).toEqual(['6a', '6b', '6c', '6e']);
   });
 
-  it('refuses to merge the only two children of a bracket', () => {
+  it('unzips only what needs it when one side is already a root', () => {
+    const doc = disconnectedDoc(); // [ a, Ser[b,c], d, e ]
+    const ed = open(doc);
+    expect(mergeBelow(ed, 'a', WORD_MAP)).toBe(true);
+    const out = nodeToDocument(ed.state.doc, doc);
+    expect(out.forest).toEqual([prop('a'), prop('c'), prop('d'), prop('e')]);
+    expect(out.propositions[0]?.source).toEqual({ kind: 'corpus', start: 124771, end: 124777 });
+  });
+
+  it('degrades to a raw source when the two sources are not contiguous', () => {
     const doc = firstJohn16();
     const ed = open(doc);
-    // p4/p5 are the flagged Ser's only children.
-    expect(mergeWithNext(ed, propPos(ed, 'p4'), WORD_MAP)).toBe(false);
-  });
-
-  it('merge of non-contiguous sources degrades to a raw source', () => {
-    const doc = flatDoc('Ser');
-    doc.propositions[0]!.source = { kind: 'corpus', start: 124771, end: 124772 };
-    doc.propositions[1]!.source = { kind: 'corpus', start: 124778, end: 124780 };
-    const ed = open(doc);
-    expect(mergeWithNext(ed, propPos(ed, 'a'), WORD_MAP)).toBe(true);
+    // p4 is corpus, p5 is raw → no range to join.
+    expect(mergeBelow(ed, 'p4', WORD_MAP)).toBe(true);
     const out = nodeToDocument(ed.state.doc, doc);
-    expect(out.propositions[0]?.source.kind).toBe('raw');
+    expect(out.propositions).toHaveLength(4);
+    expect(out.propositions[3]).toMatchObject({
+      id: 'p4',
+      label: '6d',
+      source: { kind: 'raw', text: `ψευδόμεθα ${RAW_1JOHN_1_6E}` },
+    });
   });
 
-  it('undo restores the document after a split', () => {
+  it('degrades when corpus ranges leave a gap', () => {
+    const doc = disconnectedDoc();
+    doc.propositions[0]!.source = { kind: 'corpus', start: 124771, end: 124772 };
+    doc.propositions[1]!.source = { kind: 'corpus', start: 124778, end: 124779 };
+    const ed = open(doc);
+    expect(mergeBelow(ed, 'a', WORD_MAP)).toBe(true);
+    expect(nodeToDocument(ed.state.doc, doc).propositions[0]?.source.kind).toBe('raw');
+  });
+
+  it('refuses the last proposition and unknown pids', () => {
+    const doc = firstJohn16();
+    const ed = open(doc);
+    const before = ed.getJSON();
+    expect(mergeBelow(ed, 'p5', WORD_MAP)).toBe(false); // last in document order
+    expect(mergeBelow(ed, 'nope', WORD_MAP)).toBe(false);
+    expect(ed.getJSON()).toEqual(before);
+  });
+});
+
+describe('history', () => {
+  it('undoes a connect in one step and redoes it', () => {
+    const doc = looseDoc();
+    const ed = open(doc);
+    const before = ed.getJSON();
+
+    expect(connectUnits(ed, rootPos(ed, 0), rootPos(ed, 1), TAXONOMY, 'CndE')).toBe(0);
+    const after = ed.getJSON();
+    expect(after).not.toEqual(before);
+
+    expect(ed.commands.undo()).toBe(true);
+    expect(ed.getJSON()).toEqual(before);
+    expect(ed.commands.redo()).toBe(true);
+    expect(ed.getJSON()).toEqual(after);
+  });
+
+  it('undoes a split (unzip included) in one step', () => {
     const doc = firstJohn16();
     const ed = open(doc);
     const before = ed.getJSON();
     expect(splitProposition(ed, propPos(ed, 'p2'), 2, WORD_MAP)).toBe(true);
     expect(ed.commands.undo()).toBe(true);
     expect(ed.getJSON()).toEqual(before);
+    expect(nodeToDocument(ed.state.doc, doc)).toEqual(doc);
+  });
+
+  it('undoes a merge (both unzips included) in one step', () => {
+    const doc = firstJohn16();
+    const ed = open(doc);
+    const before = ed.getJSON();
+    expect(mergeBelow(ed, 'p3', WORD_MAP)).toBe(true);
+    expect(ed.commands.undo()).toBe(true);
+    expect(ed.getJSON()).toEqual(before);
+    expect(nodeToDocument(ed.state.doc, doc)).toEqual(doc);
+  });
+
+  it('undoes a disconnect', () => {
+    const doc = disconnectedDoc();
+    const ed = open(doc);
+    const before = ed.getJSON();
+    expect(disconnectRoot(ed, rootPos(ed, 1))).toBe(true);
+    expect(ed.commands.undo()).toBe(true);
+    expect(ed.getJSON()).toEqual(before);
+  });
+});
+
+describe('nodeToDocument after editing', () => {
+  it('carries sources, labels and colors through connect + disconnect by pid', () => {
+    const doc = firstJohn16();
+    const ed = open(doc);
+
+    // Take the passage apart down to loose propositions…
+    expect(unzipToRoot(ed, 'p5')).toBe(true);
+    expect(unzipToRoot(ed, 'p2')).toBe(true);
+    expect(ed.state.doc.childCount).toBe(5);
+
+    // …then reconnect two of them under a new relationship.
+    const pos = connectUnits(ed, rootPos(ed, 3), rootPos(ed, 4), TAXONOMY, 'NegPos');
+    expect(pos).not.toBeNull();
+    ed.state.doc.check();
+
+    const out = nodeToDocument(ed.state.doc, doc);
+    expect(out.propositions).toEqual(doc.propositions); // untouched
+    expect(out.schemaVersion).toBe(2);
+    expect(out.forest).toEqual([
+      prop('p1'),
+      prop('p2'),
+      prop('p3'),
+      {
+        kind: 'bracket',
+        rel: 'NegPos',
+        prominent: 1, // NegPos starredLabel = 1
+        children: [prop('p4'), prop('p5')],
+      },
+    ]);
+  });
+
+  it('keeps a legacy n-ary bracket intact through unrelated edits', () => {
+    const doc = flatDoc('CndE', 2);
+    const ed = open(doc);
+    expect(setFlag(ed, 0)).toBe(true);
+    const out = nodeToDocument(ed.state.doc, doc);
+    expect((out.forest[0] as BracketNode).children).toHaveLength(3);
+    expect(out.forest[0]).toMatchObject({ prominent: 2, flag: 'review' });
   });
 });

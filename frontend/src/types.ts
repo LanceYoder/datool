@@ -1,5 +1,12 @@
 // Shared domain types for datool. The Document shape mirrors the server's
-// schema (schemaVersion 1) and is the single source of truth for analyses.
+// schema and is the single source of truth for analyses.
+//
+// Two schema versions exist:
+//   v1 — a single connected `tree`; every proposition hangs off one root.
+//   v2 — a `forest` of ordered roots; disconnected propositions are legal and
+//        are simply roots of their own.
+// v1 documents still LOAD (normalizeDocument turns them into a forest of one);
+// the editor always SAVES v2.
 
 export interface CorpusSource {
   kind: 'corpus';
@@ -39,20 +46,40 @@ export interface BracketNode {
    * subordinate; null iff the relationship is coordinate.
    */
   prominent: number | null;
-  /** Swap which label sits at which end. */
+  /**
+   * DERIVED, never user-set: true when the starred end is the one that would
+   * otherwise carry labels[1 - starredLabel]. Commands recompute it; the
+   * geometry only reads it. Absent/false on coordinate and n-ary brackets.
+   */
   reversed?: boolean;
   /** 'review' renders the bracket in amber. */
   flag?: 'review';
-  /** At least two children; in-order leaves match propositions list order. */
+  /**
+   * Newly created brackets are BINARY (exactly two children). Legacy n-ary
+   * brackets still load and display. In-order leaves across the whole forest
+   * match the propositions list order.
+   */
   children: TreeNode[];
 }
 
 export type TreeNode = PropRefNode | BracketNode;
 
 export interface Document {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   propositions: Proposition[];
-  tree: TreeNode;
+  /** v1 only: the single connected root. Absent in v2. */
+  tree?: TreeNode;
+  /** v2: ordered forest roots. Absent in v1. */
+  forest?: TreeNode[];
+}
+
+/**
+ * A v2 document with its forest materialized — what normalizeDocument returns
+ * and what the editor writes back.
+ */
+export interface DocumentV2 extends Document {
+  schemaVersion: 2;
+  forest: TreeNode[];
 }
 
 export interface AnalysisSummary {

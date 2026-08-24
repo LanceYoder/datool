@@ -2,9 +2,13 @@
 // document. Pure functions — no editor instance required.
 //
 // Invariants:
-//  - documentToNode . nodeToDocument is the identity for valid documents
+//  - documentToNode . nodeToDocument is the identity for valid v2 documents
 //    (propositions rebuilt in leaf order, which equals list order by the
 //    server invariant; sources/labels/colors carried over by pid).
+//  - The editor's ProseMirror doc holds one child per FOREST ROOT, so
+//    disconnected propositions round-trip as roots of their own.
+//  - Legacy v1 documents load through normalizeDocument (tree -> forest of
+//    one); nodeToDocument always writes v2.
 //  - Optional bracket keys are normalized: `reversed` appears in the output
 //    Document only when true, `flag` only when 'review' — matching how valid
 //    documents are written.
@@ -17,9 +21,31 @@ import type {
   BracketNode as BracketTreeNode,
   CorpusWord,
   Document as AnalysisDocument,
+  DocumentV2,
   Proposition,
   TreeNode,
 } from '../types';
+
+/**
+ * Bring any stored document to the v2 shape: `forest` is the list of ordered
+ * roots. A v1 `tree` becomes a forest of one; a document carrying neither
+ * degrades to one root per proposition (all disconnected — legal in v2).
+ * The returned wrapper object is always fresh (so `tree` never leaks through);
+ * the propositions and forest arrays are shared with the input, which is safe
+ * because nothing here mutates a document in place.
+ */
+export function normalizeDocument(document: AnalysisDocument): DocumentV2 {
+  const propositions = document.propositions;
+  let forest: TreeNode[];
+  if (Array.isArray(document.forest)) {
+    forest = document.forest;
+  } else if (document.tree !== undefined) {
+    forest = [document.tree];
+  } else {
+    forest = propositions.map((p) => ({ kind: 'prop', ref: p.id }) as TreeNode);
+  }
+  return { schemaVersion: 2, propositions, forest };
+}
 
 /**
  * The SBLGNT text column carries critical-apparatus sigla (⸀ ⸂ ⸃ …) inline —
@@ -60,20 +86,23 @@ export function buildTextById(
 }
 
 /**
- * Document -> ProseMirror doc JSON (feed to buildEditor / setContent).
- * Throws if the tree references an unknown proposition id.
+ * Document -> ProseMirror doc JSON (feed to buildEditor / setContent): one doc
+ * child per forest root. v1 documents are normalized on the way in. Throws if
+ * the forest references an unknown proposition id, or if it is empty (the
+ * schema requires at least one root).
  */
 export function documentToNode(
   document: AnalysisDocument,
   textById: ReadonlyMap<string, string>,
 ): JSONContent {
-  const propsById = new Map(document.propositions.map((p) => [p.id, p]));
+  const normalized = normalizeDocument(document);
+  const propsById = new Map(normalized.propositions.map((p) => [p.id, p]));
 
   const build = (node: TreeNode): JSONContent => {
     if (node.kind === 'prop') {
       const prop = propsById.get(node.ref);
       if (prop === undefined) {
-        throw new Error(`tree references unknown proposition '${node.ref}'`);
+        throw new Error(`forest references unknown proposition '${node.ref}'`);
       }
       const fallback = prop.source.kind === 'raw' ? prop.source.text : '';
       return {
@@ -101,20 +130,24 @@ export function documentToNode(
     };
   };
 
-  return { type: 'doc', content: [build(document.tree)] };
+  if (normalized.forest.length === 0) {
+    throw new Error('document has no forest roots');
+  }
+  return { type: 'doc', content: normalized.forest.map(build) };
 }
 
 /**
- * ProseMirror doc node -> Document. Propositions are rebuilt in leaf order,
- * with source/color/label read from the node attrs (which documentToNode
- * populates and structural edits like splits maintain). `priorDocument` is
- * the fallback for nodes lacking source attrs, and lastly the node degrades
- * to a raw source from its display text.
+ * ProseMirror doc node -> Document (always v2). Each doc child becomes one
+ * forest root; propositions are rebuilt in leaf order, with source/color/label
+ * read from the node attrs (which documentToNode populates and structural
+ * edits like splits maintain). `priorDocument` is the fallback for nodes
+ * lacking source attrs, and lastly the node degrades to a raw source from its
+ * display text.
  */
 export function nodeToDocument(
   pmDoc: PMNode,
   priorDocument: AnalysisDocument,
-): AnalysisDocument {
+): DocumentV2 {
   const priorById = new Map(priorDocument.propositions.map((p) => [p.id, p]));
   const propositions: Proposition[] = [];
 
@@ -171,9 +204,12 @@ export function nodeToDocument(
     throw new Error(`unexpected node '${node.type.name}' in editor document`);
   };
 
-  if (pmDoc.childCount !== 1) {
-    throw new Error('editor document must contain exactly one root unit');
+  if (pmDoc.childCount < 1) {
+    throw new Error('editor document must contain at least one root unit');
   }
-  const tree = build(pmDoc.child(0));
-  return { schemaVersion: 1, propositions, tree };
+  const forest: TreeNode[] = [];
+  pmDoc.forEach((root) => {
+    forest.push(build(root));
+  });
+  return { schemaVersion: 2, propositions, forest };
 }

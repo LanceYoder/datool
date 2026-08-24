@@ -2,8 +2,17 @@
 // API shape (GET /api/taxonomy — MUST mirror da/taxonomy.py as_json), corpus
 // words for 1 John 1:6 with their real word indexes, and Document builders
 // used across the editor-core tests.
+//
+// All builders return schemaVersion 2 documents (a `forest` of ordered roots).
+// A v1 builder is kept alongside firstJohn16 so the legacy-load path stays
+// covered.
 
-import type { CorpusWord, Document as AnalysisDocument, TaxonomyEntry } from '../../types';
+import type {
+  CorpusWord,
+  Document as AnalysisDocument,
+  DocumentV2,
+  TaxonomyEntry,
+} from '../../types';
 
 const entry = (
   code: string,
@@ -72,144 +81,222 @@ export const CORPUS_WORDS: CorpusWord[] = VERSE.map(([index, text]) => ({
   verse: 6,
 }));
 
+export const WORD_MAP: ReadonlyMap<number, CorpusWord> = new Map(
+  CORPUS_WORDS.map((w) => [w.index, w]),
+);
+
 export const RAW_1JOHN_1_6E = 'καὶ οὐ ποιοῦμεν τὴν ἀλήθειαν·';
+
+const JOHN_PROPS = (): AnalysisDocument['propositions'] => [
+  { id: 'p1', label: '6a', source: { kind: 'corpus', start: 124771, end: 124772 } },
+  { id: 'p2', label: '6b', source: { kind: 'corpus', start: 124773, end: 124777 } },
+  { id: 'p3', label: '6c', source: { kind: 'corpus', start: 124778, end: 124782 }, color: '#1d4ed8' },
+  { id: 'p4', label: '6d', source: { kind: 'corpus', start: 124783, end: 124783 } },
+  { id: 'p5', label: '6e', source: { kind: 'raw', text: RAW_1JOHN_1_6E } },
+];
 
 /**
  * The worked 1 John 1:6 document (docs/DESIGN.md §3, from the course's
  * example analysis), with two fixture-only twists to exercise edge paths:
- * a color on 1:6c and a raw-source final proposition.
+ * a color on 1:6c and a raw-source final proposition. A v2 forest of one
+ * root — the whole passage is connected.
  *
  *   CndE (E* = apodosis) [
  *     FtIn (In*) [ p1 "ἐὰν εἴπωμεν",
  *                  Adv reversed (p2* stands despite p3) [ p2, p3 ] ],
  *     Ser flag=review [ p4, p5(raw) ] ]
  *
- * Adv is `reversed` because its labels are ('Adv','') and the concessive
- * clause is the SECOND child (p3) — the star stays on p2 (prominent 0).
+ * Adv is `reversed` because its labels are ('Adv','') with starredLabel 1 and
+ * the star sits on the FIRST child (prominent 0) — exactly the derivation the
+ * commands maintain.
  */
-export function firstJohn16(): AnalysisDocument {
+export function firstJohn16(): DocumentV2 {
   return {
-    schemaVersion: 1,
-    propositions: [
-      { id: 'p1', label: '6a', source: { kind: 'corpus', start: 124771, end: 124772 } },
-      { id: 'p2', label: '6b', source: { kind: 'corpus', start: 124773, end: 124777 } },
-      { id: 'p3', label: '6c', source: { kind: 'corpus', start: 124778, end: 124782 }, color: '#1d4ed8' },
-      { id: 'p4', label: '6d', source: { kind: 'corpus', start: 124783, end: 124783 } },
-      { id: 'p5', label: '6e', source: { kind: 'raw', text: RAW_1JOHN_1_6E } },
+    schemaVersion: 2,
+    propositions: JOHN_PROPS(),
+    forest: [
+      {
+        kind: 'bracket',
+        rel: 'CndE',
+        prominent: 1,
+        children: [
+          {
+            kind: 'bracket',
+            rel: 'FtIn',
+            prominent: 1,
+            children: [
+              { kind: 'prop', ref: 'p1' },
+              {
+                kind: 'bracket',
+                rel: 'Adv',
+                prominent: 0,
+                reversed: true,
+                children: [
+                  { kind: 'prop', ref: 'p2' },
+                  { kind: 'prop', ref: 'p3' },
+                ],
+              },
+            ],
+          },
+          {
+            kind: 'bracket',
+            rel: 'Ser',
+            prominent: null,
+            flag: 'review',
+            children: [
+              { kind: 'prop', ref: 'p4' },
+              { kind: 'prop', ref: 'p5' },
+            ],
+          },
+        ],
+      },
     ],
-    tree: {
-      kind: 'bracket',
-      rel: 'CndE',
-      prominent: 1,
-      children: [
-        {
-          kind: 'bracket',
-          rel: 'FtIn',
-          prominent: 1,
-          children: [
-            { kind: 'prop', ref: 'p1' },
-            {
-              kind: 'bracket',
-              rel: 'Adv',
-              prominent: 0,
-              reversed: true,
-              children: [
-                { kind: 'prop', ref: 'p2' },
-                { kind: 'prop', ref: 'p3' },
-              ],
-            },
-          ],
-        },
-        {
-          kind: 'bracket',
-          rel: 'Ser',
-          prominent: null,
-          flag: 'review',
-          children: [
-            { kind: 'prop', ref: 'p4' },
-            { kind: 'prop', ref: 'p5' },
-          ],
-        },
-      ],
-    },
   };
 }
 
-/** Flat bracket over three raw props a/b/c. */
-export function flatDoc(rel = 'Ser', prominent: number | null = null): AnalysisDocument {
+/** The same analysis in the legacy v1 shape (single `tree`, no forest). */
+export function firstJohn16V1(): AnalysisDocument {
+  const v2 = firstJohn16();
   return {
     schemaVersion: 1,
+    propositions: v2.propositions,
+    tree: v2.forest[0]!,
+  };
+}
+
+/**
+ * A partly-analysed passage: four disconnected root propositions with one
+ * connected pair among them.
+ *
+ *   forest = [ a, Ser[b, c], d, e ]
+ *
+ * a/b/c/d carry contiguous corpus ranges (so merges can re-join them); e is
+ * raw. This is the shape connectUnits/disconnectRoot work on.
+ */
+export function disconnectedDoc(): DocumentV2 {
+  return {
+    schemaVersion: 2,
+    propositions: [
+      { id: 'a', label: '6a', source: { kind: 'corpus', start: 124771, end: 124772 } },
+      { id: 'b', label: '6b', source: { kind: 'corpus', start: 124773, end: 124777 } },
+      { id: 'c', label: '6c', source: { kind: 'corpus', start: 124778, end: 124779 } },
+      { id: 'd', label: '6d', source: { kind: 'corpus', start: 124780, end: 124783 } },
+      { id: 'e', label: '6e', source: { kind: 'raw', text: RAW_1JOHN_1_6E } },
+    ],
+    forest: [
+      { kind: 'prop', ref: 'a' },
+      {
+        kind: 'bracket',
+        rel: 'Ser',
+        prominent: null,
+        children: [
+          { kind: 'prop', ref: 'b' },
+          { kind: 'prop', ref: 'c' },
+        ],
+      },
+      { kind: 'prop', ref: 'd' },
+      { kind: 'prop', ref: 'e' },
+    ],
+  };
+}
+
+/** A forest of nothing but roots: three unconnected raw propositions. */
+export function looseDoc(): DocumentV2 {
+  return {
+    schemaVersion: 2,
+    propositions: [
+      { id: 'a', label: '1:1a', source: { kind: 'raw', text: 'alpha one' } },
+      { id: 'b', label: '1:1b', source: { kind: 'raw', text: 'beta two' } },
+      { id: 'c', label: '1:1c', source: { kind: 'raw', text: 'gamma three' } },
+    ],
+    forest: [
+      { kind: 'prop', ref: 'a' },
+      { kind: 'prop', ref: 'b' },
+      { kind: 'prop', ref: 'c' },
+    ],
+  };
+}
+
+/** One binary bracket over two raw props a/b. */
+export function pairDoc(rel = 'Ser', prominent: number | null = null): DocumentV2 {
+  return {
+    schemaVersion: 2,
+    propositions: [
+      { id: 'a', label: '1:1a', source: { kind: 'raw', text: 'alpha' } },
+      { id: 'b', label: '1:1b', source: { kind: 'raw', text: 'beta' } },
+    ],
+    forest: [
+      {
+        kind: 'bracket',
+        rel,
+        prominent,
+        children: [
+          { kind: 'prop', ref: 'a' },
+          { kind: 'prop', ref: 'b' },
+        ],
+      },
+    ],
+  };
+}
+
+/**
+ * A LEGACY n-ary bracket over three raw props — new brackets are binary, but
+ * documents written before that rule must still load and display.
+ */
+export function flatDoc(rel = 'Ser', prominent: number | null = null): DocumentV2 {
+  return {
+    schemaVersion: 2,
     propositions: [
       { id: 'a', label: '1:1a', source: { kind: 'raw', text: 'alpha' } },
       { id: 'b', label: '1:1b', source: { kind: 'raw', text: 'beta' } },
       { id: 'c', label: '1:1c', source: { kind: 'raw', text: 'gamma' } },
     ],
-    tree: {
-      kind: 'bracket',
-      rel,
-      prominent,
-      children: [
-        { kind: 'prop', ref: 'a' },
-        { kind: 'prop', ref: 'b' },
-        { kind: 'prop', ref: 'c' },
-      ],
-    },
-  };
-}
-
-/** Flat bracket over four raw props a/b/c/d. */
-export function flatDoc4(rel = 'Ser', prominent: number | null = null): AnalysisDocument {
-  return {
-    schemaVersion: 1,
-    propositions: [
-      { id: 'a', label: '1:1a', source: { kind: 'raw', text: 'alpha' } },
-      { id: 'b', label: '1:1b', source: { kind: 'raw', text: 'beta' } },
-      { id: 'c', label: '1:1c', source: { kind: 'raw', text: 'gamma' } },
-      { id: 'd', label: '1:1d', source: { kind: 'raw', text: 'delta' } },
+    forest: [
+      {
+        kind: 'bracket',
+        rel,
+        prominent,
+        children: [
+          { kind: 'prop', ref: 'a' },
+          { kind: 'prop', ref: 'b' },
+          { kind: 'prop', ref: 'c' },
+        ],
+      },
     ],
-    tree: {
-      kind: 'bracket',
-      rel,
-      prominent,
-      children: [
-        { kind: 'prop', ref: 'a' },
-        { kind: 'prop', ref: 'b' },
-        { kind: 'prop', ref: 'c' },
-        { kind: 'prop', ref: 'd' },
-      ],
-    },
   };
 }
 
-/** CndE[ inner(a, b), c ] with configurable prominences. */
+/** CndE[ inner(a, b), c ] with configurable prominences — one root. */
 export function nestedDoc(
   innerRel = 'Ser',
   innerProminent: number | null = null,
   outerProminent = 1,
-): AnalysisDocument {
+): DocumentV2 {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     propositions: [
       { id: 'a', label: '1:1a', source: { kind: 'raw', text: 'alpha' } },
       { id: 'b', label: '1:1b', source: { kind: 'raw', text: 'beta' } },
       { id: 'c', label: '1:1c', source: { kind: 'raw', text: 'gamma' } },
     ],
-    tree: {
-      kind: 'bracket',
-      rel: 'CndE',
-      prominent: outerProminent,
-      children: [
-        {
-          kind: 'bracket',
-          rel: innerRel,
-          prominent: innerProminent,
-          children: [
-            { kind: 'prop', ref: 'a' },
-            { kind: 'prop', ref: 'b' },
-          ],
-        },
-        { kind: 'prop', ref: 'c' },
-      ],
-    },
+    forest: [
+      {
+        kind: 'bracket',
+        rel: 'CndE',
+        prominent: outerProminent,
+        children: [
+          {
+            kind: 'bracket',
+            rel: innerRel,
+            prominent: innerProminent,
+            children: [
+              { kind: 'prop', ref: 'a' },
+              { kind: 'prop', ref: 'b' },
+            ],
+          },
+          { kind: 'prop', ref: 'c' },
+        ],
+      },
+    ],
   };
 }

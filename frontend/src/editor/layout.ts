@@ -1,17 +1,62 @@
-// Deterministic bracket layout for discourse-analysis trees.
+// Deterministic bracket layout for discourse-analysis forests.
 //
-// Pure functions only — no DOM. The caller measures a y-center for each
-// proposition row and supplies the text column's left edge (x0); this module
-// turns the tree into drawable geometry. Shared by the read-only viewer and
-// the editor overlay so both always agree.
+// Pure functions only — no DOM. The caller measures each proposition row (its
+// y-center, and optionally its top/bottom edges) and supplies the text
+// column's left edge (x0); this module turns the FOREST into drawable
+// geometry. Shared by the read-only viewer and the editor overlay so both
+// always agree.
+//
+// A document is a forest of ordered roots: geometry is computed per root
+// exactly as it always was for a single tree, and the results are concatenated
+// in root order (so brackets come out in document pre-order, matching
+// findBrackets on the ProseMirror doc).
 
 import type { BracketNode, TreeNode } from '../types';
 
 /** Horizontal distance between adjacent bracket columns, in px. */
 export const COL_W = 34;
 
-/** Amber used for brackets flagged for review. */
+/** Length of the stub drawn to the left of a root proposition's row. */
+export const STUB_W = 26;
+
+/** How far right of a bracket's spine a child proposition's dot sits. */
+export const DOT_INSET = 6;
+
+/** Amber used for brackets flagged for review (color only — no marker). */
 export const REVIEW_COLOR = '#b45309';
+
+/** A measured proposition row: its center y plus its top and bottom edges. */
+export interface RowBox {
+  /** Row center y — the connection point for ticks and dots. */
+  y: number;
+  /** Row top edge y. */
+  top: number;
+  /** Row bottom edge y. */
+  bottom: number;
+}
+
+/**
+ * Measured rows, keyed by proposition id. A bare number is shorthand for a
+ * zero-height row centered at that y — enough for spines, ticks, labels and
+ * dots; hit rectangles then collapse to the span between row centers.
+ */
+export type RowInput = ReadonlyMap<string, number | RowBox>;
+
+const ZERO: RowBox = { y: 0, top: 0, bottom: 0 };
+
+/** The measured box for a proposition id (zero-height fallback). */
+export function rowBox(rows: RowInput, ref: string): RowBox {
+  const entry = rows.get(ref);
+  if (entry === undefined) return ZERO;
+  return typeof entry === 'number' ? { y: entry, top: entry, bottom: entry } : entry;
+}
+
+/** The measured center y for a proposition id (0 when unmeasured). */
+export function rowY(rows: RowInput, ref: string): number {
+  const entry = rows.get(ref);
+  if (entry === undefined) return 0;
+  return typeof entry === 'number' ? entry : entry.y;
+}
 
 /**
  * Whether a bracket is coordinate. Per the document invariant, `prominent`
@@ -22,18 +67,30 @@ export function isCoordinate(node: BracketNode): boolean {
   return node.prominent === null || node.prominent === undefined;
 }
 
+/** Proposition refs under `node`, in order. */
+export function leafRefs(node: TreeNode, out: string[] = []): string[] {
+  if (node.kind === 'prop') {
+    out.push(node.ref);
+    return out;
+  }
+  for (const child of node.children) leafRefs(child, out);
+  return out;
+}
+
 export interface ColumnResult {
   /** Column per bracket node (keyed by node object identity). */
   columns: Map<BracketNode, number>;
-  /** Deepest column in the tree; 0 when the tree is a bare proposition. */
+  /** Deepest column across the whole forest; 0 when it holds no brackets. */
   maxColumn: number;
 }
 
 /**
  * column(bracket) = its height above the leaves: brackets whose children are
- * all props get column 1; otherwise 1 + max(child columns).
+ * all props get column 1; otherwise 1 + max(child columns). Computed per root;
+ * maxColumn is the deepest across all roots (roots share one column grid, so
+ * their spines line up).
  */
-export function computeColumns(tree: TreeNode): ColumnResult {
+export function computeColumns(forest: readonly TreeNode[]): ColumnResult {
   const columns = new Map<BracketNode, number>();
   let maxColumn = 0;
 
@@ -49,7 +106,7 @@ export function computeColumns(tree: TreeNode): ColumnResult {
     return col;
   };
 
-  visit(tree);
+  for (const root of forest) visit(root);
   return { columns, maxColumn };
 }
 
@@ -59,9 +116,9 @@ export function computeColumns(tree: TreeNode): ColumnResult {
  *  - coordinate bracket: midpoint of first/last child connection points;
  *  - subordinate bracket: the prominent child's connection point.
  */
-export function connectY(node: TreeNode, rowYs: ReadonlyMap<string, number>): number {
+export function connectY(node: TreeNode, rows: RowInput): number {
   if (node.kind === 'prop') {
-    return rowYs.get(node.ref) ?? 0;
+    return rowY(rows, node.ref);
   }
   const first = node.children[0];
   const last = node.children[node.children.length - 1];
@@ -70,10 +127,10 @@ export function connectY(node: TreeNode, rowYs: ReadonlyMap<string, number>): nu
     const idx = node.prominent;
     if (idx !== null && idx !== undefined) {
       const target = node.children[idx];
-      if (target !== undefined) return connectY(target, rowYs);
+      if (target !== undefined) return connectY(target, rows);
     }
   }
-  return (connectY(first, rowYs) + connectY(last, rowYs)) / 2;
+  return (connectY(first, rows) + connectY(last, rows)) / 2;
 }
 
 /** One horizontal tick from a child's connection point to the bracket's line. */
@@ -98,9 +155,23 @@ export interface LabelAnchor {
   placement: 'start' | 'end' | 'mid';
 }
 
+/** Axis-aligned rectangle, in the same coordinate space as the geometry. */
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface BracketGeom {
   node: BracketNode;
   rel: string;
+  /** Position in document pre-order across the forest (matches findBrackets). */
+  preorderIndex: number;
+  /** Index of the forest root this bracket belongs to. */
+  rootIndex: number;
+  /** True when this bracket IS a forest root (its parent is the document). */
+  root: boolean;
   column: number;
   /** x of the vertical line: x0 - column * colW. */
   x: number;
@@ -114,6 +185,13 @@ export interface BracketGeom {
   labels: LabelAnchor[];
   /** Index of the prominent child, or null for coordinate brackets. */
   starChildIndex: number | null;
+  /**
+   * Full hit rectangle: from the spine x rightwards to x0, spanning from the
+   * top of its first proposition row to the bottom of its last. Nested
+   * brackets are strictly inside their ancestors' rects, so painting them
+   * later (they come later in pre-order) lets the innermost win a click.
+   */
+  rect: Rect;
   /** True when flag === 'review' — render line + labels in REVIEW_COLOR. */
   review: boolean;
 }
@@ -125,33 +203,34 @@ export interface BracketLayout {
 }
 
 /**
- * Full geometry for every bracket in the tree.
+ * Full geometry for every bracket in the forest.
  *
- * @param rowYs     measured y-center per proposition id
+ * @param forest    the document's ordered roots
+ * @param rows      measured row per proposition id (center, or full box)
  * @param x0        left edge of the text column
  * @param getLabels taxonomy label lookup per relationship code; when missing,
  *                  the code itself is used as the sole label
  */
 export function layoutBrackets(
-  tree: TreeNode,
-  rowYs: ReadonlyMap<string, number>,
+  forest: readonly TreeNode[],
+  rows: RowInput,
   x0: number,
   getLabels?: (rel: string) => string[] | undefined,
   colW: number = COL_W,
 ): BracketLayout {
-  const { columns, maxColumn } = computeColumns(tree);
+  const { columns, maxColumn } = computeColumns(forest);
   const brackets: BracketGeom[] = [];
 
   const xOf = (node: TreeNode): number =>
     node.kind === 'prop' ? x0 : x0 - (columns.get(node) ?? 1) * colW;
 
-  const visit = (node: TreeNode): void => {
+  const visit = (node: TreeNode, rootIndex: number, isRoot: boolean): void => {
     if (node.kind === 'prop') return;
 
     const column = columns.get(node) ?? 1;
     const x = x0 - column * colW;
     const coordinate = isCoordinate(node);
-    const childYs = node.children.map((child) => connectY(child, rowYs));
+    const childYs = node.children.map((child) => connectY(child, rows));
     const top = childYs[0] ?? 0;
     const bottom = childYs[childYs.length - 1] ?? 0;
 
@@ -179,8 +258,8 @@ export function layoutBrackets(
       }
     } else {
       // labels[0] at children[0]'s end unless reversed; empty renders nothing.
-      const startText = node.reversed ? rawLabels[1] : rawLabels[0];
-      const endText = node.reversed ? rawLabels[0] : rawLabels[1];
+      const startText = node.reversed === true ? rawLabels[1] : rawLabels[0];
+      const endText = node.reversed === true ? rawLabels[0] : rawLabels[1];
       if (startText !== undefined && startText !== '') {
         labels.push({ text: startText, y: top, placement: 'start' });
       }
@@ -189,23 +268,137 @@ export function layoutBrackets(
       }
     }
 
+    const refs = leafRefs(node);
+    const firstBox = rowBox(rows, refs[0] ?? '');
+    const lastBox = rowBox(rows, refs[refs.length - 1] ?? '');
+
     brackets.push({
       node,
       rel: node.rel,
+      preorderIndex: brackets.length,
+      rootIndex,
+      root: isRoot,
       column,
       x,
       top,
       bottom,
-      connectY: connectY(node, rowYs),
+      connectY: connectY(node, rows),
       ticks,
       labels,
       starChildIndex,
+      rect: {
+        x,
+        y: firstBox.top,
+        width: x0 - x,
+        height: lastBox.bottom - firstBox.top,
+      },
       review: node.flag === 'review',
     });
 
-    for (const child of node.children) visit(child);
+    for (const child of node.children) visit(child, rootIndex, false);
   };
 
-  visit(tree);
+  forest.forEach((root, i) => {
+    visit(root, i, true);
+  });
   return { brackets, maxColumn };
+}
+
+// ---------------------------------------------------------------------------
+// Dots — the handles the UI hangs interaction off.
+
+export interface DotGeom {
+  /** Stable across a layout pass: 'prop:<pid>' or 'bracket:<preorderIndex>'. */
+  id: string;
+  kind: 'prop' | 'bracket';
+  x: number;
+  y: number;
+  /**
+   * Whether this dot may start/receive a connection: root propositions and
+   * root brackets can be connected to an adjacent root; anything nested is
+   * already spoken for (clicking it selects its bracket instead).
+   */
+  connectable: boolean;
+  /** Root propositions only: the stub drawn from stubX1 to stubX2 at y. */
+  stubX1?: number;
+  stubX2?: number;
+}
+
+/**
+ * A dot for every proposition and every bracket in the forest, emitted in
+ * document pre-order (bracket dots numbered to match layoutBrackets and
+ * findBrackets).
+ *
+ *  - Root proposition (a root of the forest, in no bracket): a stub runs from
+ *    x0 - STUB_W to x0 along its row, with the dot at the stub's left end.
+ *    Connectable.
+ *  - Proposition inside a bracket: the dot sits on its own tick line, just
+ *    right of the parent's spine (parentX + DOT_INSET). Not connectable.
+ *  - Root bracket: connectable. Nested bracket: not.
+ *  - Bracket dot position: the spine's midpoint when the bracket is
+ *    coordinate or otherwise unstarred, else the starred end's corner.
+ */
+export function layoutDots(
+  forest: readonly TreeNode[],
+  rows: RowInput,
+  x0: number,
+  colW: number = COL_W,
+): DotGeom[] {
+  const { columns } = computeColumns(forest);
+  const dots: DotGeom[] = [];
+  let bracketIndex = 0;
+
+  const xOfBracket = (node: BracketNode): number =>
+    x0 - (columns.get(node) ?? 1) * colW;
+
+  const visit = (node: TreeNode, parent: BracketNode | null): void => {
+    if (node.kind === 'prop') {
+      const y = rowY(rows, node.ref);
+      if (parent === null) {
+        dots.push({
+          id: `prop:${node.ref}`,
+          kind: 'prop',
+          x: x0 - STUB_W,
+          y,
+          connectable: true,
+          stubX1: x0 - STUB_W,
+          stubX2: x0,
+        });
+      } else {
+        dots.push({
+          id: `prop:${node.ref}`,
+          kind: 'prop',
+          x: xOfBracket(parent) + DOT_INSET,
+          y,
+          connectable: false,
+        });
+      }
+      return;
+    }
+
+    const index = bracketIndex;
+    bracketIndex += 1;
+    const x = xOfBracket(node);
+    const childYs = node.children.map((child) => connectY(child, rows));
+    const top = childYs[0] ?? 0;
+    const bottom = childYs[childYs.length - 1] ?? 0;
+    const prom = node.prominent;
+    const starred =
+      !isCoordinate(node) && prom !== null && prom !== undefined
+        ? childYs[prom]
+        : undefined;
+
+    dots.push({
+      id: `bracket:${index}`,
+      kind: 'bracket',
+      x,
+      y: starred ?? (top + bottom) / 2,
+      connectable: parent === null,
+    });
+
+    for (const child of node.children) visit(child, node);
+  };
+
+  for (const root of forest) visit(root, null);
+  return dots;
 }

@@ -1,8 +1,11 @@
 // Tiptap/ProseMirror schema for the bracketing editor.
 //
 // The content expressions make invalid trees unrepresentable by construction:
-//   doc         content 'unit'       -> exactly one root unit, always
+//   doc         content 'unit+'      -> a FOREST of roots (>= 1); disconnected
+//                                       propositions are legal roots
 //   bracket     content 'unit unit+' -> every bracket has >= 2 children
+//                                       (new brackets are made binary by the
+//                                       commands; legacy n-ary still loads)
 //   proposition atom leaf            -> no text nodes anywhere, so no typing
 //
 // `prominent` semantics (valid child index iff subordinate, null iff
@@ -41,6 +44,7 @@ export interface BracketAttrs {
   rel: string;
   /** Valid child index iff subordinate; null iff coordinate. */
   prominent: number | null;
+  /** DERIVED from (prominent, taxonomy.starredLabel) — never user-toggled. */
   reversed: boolean;
   /** 'review' or null. */
   flag: string | null;
@@ -49,7 +53,7 @@ export interface BracketAttrs {
 export const EditorDoc = Node.create({
   name: 'doc',
   topNode: true,
-  content: 'unit',
+  content: 'unit+',
 });
 
 /**

@@ -12,7 +12,7 @@ import {
 } from '@tiptap/core';
 import { Plugin } from '@tiptap/pm/state';
 import { UndoRedo } from '@tiptap/extensions';
-import type { Document as AnalysisDocument } from '../types';
+import type { Document as AnalysisDocument, DocumentV2 } from '../types';
 import { documentToNode, nodeToDocument } from './convert';
 import { editorNodes } from './schema';
 
@@ -76,10 +76,10 @@ export function setDocument(
   editor.chain().setMeta('addToHistory', false).setContent(json).run();
 }
 
-/** Read the editor state back out as a Document (see nodeToDocument). */
+/** Read the editor state back out as a v2 Document (see nodeToDocument). */
 export function getDocument(
   editor: Editor,
   priorDocument: AnalysisDocument,
-): AnalysisDocument {
+): DocumentV2 {
   return nodeToDocument(editor.state.doc, priorDocument);
 }
