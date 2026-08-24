@@ -698,17 +698,8 @@ function EditorInner({ baseDoc, words, verses, taxonomy, onChange }: InnerProps)
           style={{ left: at.x, top: at.y }}
           role="menu"
         >
-          <div className="word-head greek">{popover.word}</div>
-          {info !== undefined && (
-            <div className="word-info">
-              <div className="word-lemma">
-                <span className="greek">{info.lemma}</span>
-                {info.translit !== null && <span className="muted"> ({info.translit})</span>}
-              </div>
-              {info.gloss !== null && <div className="word-gloss">{info.gloss}</div>}
-              <div className="word-parse muted">{describeParsing(info.pos, info.parsing)}</div>
-            </div>
-          )}
+          {/* The action first: the popover opens right under the clicked
+              word, so the top edge is the easiest thing to hit. */}
           {popover.splittable && (
             <button
               type="button"
@@ -719,6 +710,17 @@ function EditorInner({ baseDoc, words, verses, taxonomy, onChange }: InnerProps)
             >
               Split after
             </button>
+          )}
+          <div className="word-head greek">{popover.word}</div>
+          {info !== undefined && (
+            <div className="word-info">
+              <div className="word-lemma">
+                <span className="greek">{info.lemma}</span>
+                {info.translit !== null && <span className="muted"> ({info.translit})</span>}
+              </div>
+              {info.gloss !== null && <div className="word-gloss">{info.gloss}</div>}
+              <div className="word-parse muted">{describeParsing(info.pos, info.parsing)}</div>
+            </div>
           )}
         </div>
       );

@@ -431,7 +431,7 @@ div.error-box {
 .word-popover {
   min-width: 15rem;
   max-width: 22rem;
-  padding: 0.5rem 0.6rem 0.4rem;
+  padding: 0.35rem 0.6rem 0.5rem;
 }
 
 .word-head {
@@ -442,7 +442,6 @@ div.error-box {
 .word-info {
   font-size: 0.9rem;
   line-height: 1.45;
-  margin-bottom: 0.35rem;
 }
 
 .word-lemma .greek {
@@ -453,9 +452,12 @@ div.error-box {
   font-weight: 600;
 }
 
+/* Split after sits FIRST — the popover opens just under the clicked word,
+   so the top edge is the closest, easiest target. */
 .word-popover .popover-item {
-  border-top: 1px solid var(--border);
-  border-radius: 0 0 5px 5px;
+  border-bottom: 1px solid var(--border);
+  border-radius: 5px 5px 0 0;
+  margin-bottom: 0.35rem;
   font-weight: 600;
 }
 
