@@ -3,7 +3,11 @@
 The four example spreadsheets carry the students' full bracket analyses:
 relationship symbols with stars, nested by grid column. Those trees are
 hand-encoded below (cell coordinates in comments) over 0-based proposition
-ROW indexes, and scored against ``build_document`` bracket by bracket:
+ROW indexes, and scored against ``build_document`` bracket by bracket.
+Further worked examples exist only as photographed hand-drawn trees over an
+English translation; those are encoded the same way, except the row → Greek
+span mapping is hand-transcribed (see IMAGE_CASES) instead of derived from
+a spreadsheet. Scoring is identical:
 
   EXACT     the tool has a bracket with the same child word-spans (grouping),
             the same relationship, and the same starred child;
@@ -11,10 +15,10 @@ ROW indexes, and scored against ``build_document`` bracket by bracket:
   missed    no bracket with that grouping at all.
 
 The pinned expectations ARE the current scorecard — DA1 8/13, DA2 1/5,
-DA3 6/6 (the connective-driven chain), DA4 1/6 — so any classifier change
-that loses a currently-correct call fails loudly, and any improvement shows
-up as a deliberate expectation update. The known divergences, in comments,
-are the discussion list for improving stage 2.
+DA3 6/6 (the connective-driven chain), DA4 1/6, Acts 2:37–41 3/15 — so any
+classifier change that loses a currently-correct call fails loudly, and any
+improvement shows up as a deliberate expectation update. The known
+divergences, in comments, are the discussion list for improving stage 2.
 
 DA3's verses 9d-10b interior is NOT pinned: the student's bare purpose
 infinitives (δουλεύειν / ἀναμένειν) are not first-pass splits (an OPEN
@@ -89,6 +93,69 @@ STUDENT_TREES = {
     "1 Thessalonians 1:6–10": DA3,
     "Ephesians 1:13–14": DA4,
 }
+
+# --- Image-sourced cases (hand-drawn trees over an English translation) ------
+#
+# Each case hand-transcribes the drawing: the English rows are mapped to the
+# corpus span of the SAME clause in the SBLGNT (contiguous, tiling the
+# passage in order), and the bracket tree is encoded with B() exactly as for
+# the spreadsheets. Where the translation reorders words, a row's span is the
+# Greek words whose content it carries.
+
+# Acts 2:37–41 (photo). 16 rows; labels in the drawing quoted in comments.
+ACTS_ROWS = [
+    (65642, 65643),  # 0  37a Ἀκούσαντες δὲ            "Now when they heard this,"
+    (65644, 65646),  # 1  37b κατενύγησαν τὴν καρδίαν  "they were cut to the heart"
+    (65647, 65655),  # 2  37c εἶπόν τε πρὸς …          "and they said to Peter …,"
+    (65656, 65659),  # 3  37d Τί ποιήσωμεν …           "What shall we do, brothers?"
+    (65660, 65663),  # 4  38a Πέτρος δὲ πρὸς αὐτούς·   "And Peter said to them,"
+    (65664, 65664),  # 5  38b Μετανοήσατε,             "Repent
+    (65665, 65678),  # 6  38c καὶ βαπτισθήτω …         "and be baptized … your sins"
+    (65679, 65685),  # 7  38d καὶ λήμψεσθε …           "and you will receive …"
+    (65686, 65699),  # 8  39a ὑμῖν γάρ ἐστιν …         "For the promise is …far off"
+    (65700, 65706),  # 9  39b ὅσους ἂν προσκαλέσηται … "as many as the Lord … calls"
+    (65707, 65711),  # 10 40a ἑτέροις τε λόγοις …      "…other words he testified"
+    (65712, 65714),  # 11 40b καὶ παρεκάλει αὐτοὺς     "and was exhorting them"
+    (65715, 65715),  # 12 40c λέγων·                   "saying,"
+    (65716, 65722),  # 13 40d Σώθητε ἀπὸ …             "Be saved from …"
+    (65723, 65730),  # 14 41a οἱ μὲν οὖν ἀποδεξάμενοι… "So those who received …"
+    (65731, 65739),  # 15 41b καὶ προσετέθησαν …       "and there were added …"
+]
+
+ACTS = B("top-sr", "SR", 1,                           # far-left 'S' / 'R*'
+         B("sr-37", "SR", 1,                          # 's' / 'R*' inside v37
+           B("tmp-37", "Tmp", 1, 0,                   # 'T' on 37a, '*' on pair
+             B("ser-37bc", "Ser", None, 1, 2)),       # 'S'
+           3),
+         B("ser-38-41", "Ser", None,                  # 'S' at the fold
+           B("ftin-38", "FtIn", 1, 4,                 # 'Ft' / 'In*'
+             B("grnd-38", "Grnd", 0,                  # '*' / 'G' (γάρ v39)
+               B("prog-38", "Prog", None,             # 'P'
+                 B("ser-38bc", "Ser", None, 5, 6), 7),  # 'S'
+               B("ftin-39", "FtIn", 1, 8, 9))),       # 'Ft' / 'In*'
+           B("ce-40-41", "CE", 1,                     # 'C' / 'E*'
+             B("ftin-40", "FtIn", 1,                  # 'Ft' / 'In*'
+               B("wed-40", "WEd", 0,                  # 'Ed*' / 'W' (λέγων)
+                 B("ser-40ab", "Ser", None, 10, 11), 12),  # 'S'
+               13),
+             B("prog-41", "Prog", None, 14, 15))))    # 'P'
+
+# The pinned Acts scorecard: narrative is the classifier's weak suit. What
+# matches is again the connective/participle-driven tail of v40 — the λέγων
+# W/Ed exactly (reversed, star on the Ed side) and both v40/v37 series; the
+# drawing's Tmp on Ἀκούσαντες comes out grouped (the tool reads the aorist
+# participle as W/Ed). Everything else is missed: the S/R speech frames have
+# no morphological signal, τε/δέ/asyndeton narrative folds to flat n-ary
+# Ser (so sr-37, prog-38, ser-38bc and the packet edges around 38a never
+# form), the tool splits v39 at τοῖς εἰς μακράν rather than ὅσους, reads
+# οὖν (v41) as Inf where the student draws C/E, and over-splits ὡσεὶ
+# τρισχίλιαι in v41.
+IMAGE_CASES = [
+    ("Acts 2:37–41", ACTS_ROWS, ACTS, {
+        "exact": {"ser-37bc", "wed-40", "ser-40ab"},
+        "grouped": {"tmp-37"},
+    }),
+]
 
 # The pinned scorecard. EXACT entries must stay exact; GROUPED entries must
 # keep at least their grouping (they name the current relationship/star
@@ -176,6 +243,27 @@ def _tool_brackets(doc):
     return out
 
 
+def _assert_scorecard(tree, row_spans, start, end, expected):
+    student = _student_brackets(tree, row_spans, [])
+    doc = build_document(segment(start, end))
+    tool = _tool_brackets(doc)
+    tool_exact = {(b["rel"], b["star"], b["kids"]) for b in tool}
+    tool_groupings = {b["kids"] for b in tool}
+
+    exact = {b["name"] for b in student
+             if (b["rel"], b["star"], b["kids"]) in tool_exact}
+    grouped = {b["name"] for b in student
+               if b["name"] not in exact and b["kids"] in tool_groupings}
+
+    assert exact == expected["exact"], (
+        f"exact-match set changed: gained {sorted(exact - expected['exact'])}, "
+        f"lost {sorted(expected['exact'] - exact)}"
+    )
+    assert grouped >= expected["grouped"], (
+        f"grouping lost for {sorted(expected['grouped'] - grouped)}"
+    )
+
+
 @pytest.mark.parametrize(
     "filename,ref", [(c[0], c[1]) for c in CASES], ids=[c[0][:21] for c in CASES]
 )
@@ -191,22 +279,16 @@ def test_relationing_scorecard(filename, ref):
     ))
     assert len(row_spans) == len(rows)
 
-    student = _student_brackets(STUDENT_TREES[ref], row_spans, [])
-    doc = build_document(segment(alignment.start, alignment.end))
-    tool = _tool_brackets(doc)
-    tool_exact = {(b["rel"], b["star"], b["kids"]) for b in tool}
-    tool_groupings = {b["kids"] for b in tool}
+    _assert_scorecard(STUDENT_TREES[ref], row_spans, alignment.start,
+                      alignment.end, EXPECTED[ref])
 
-    exact = {b["name"] for b in student
-             if (b["rel"], b["star"], b["kids"]) in tool_exact}
-    grouped = {b["name"] for b in student
-               if b["name"] not in exact and b["kids"] in tool_groupings}
 
-    expected = EXPECTED[ref]
-    assert exact == expected["exact"], (
-        f"exact-match set changed: gained {sorted(exact - expected['exact'])}, "
-        f"lost {sorted(expected['exact'] - exact)}"
-    )
-    assert grouped >= expected["grouped"], (
-        f"grouping lost for {sorted(expected['grouped'] - grouped)}"
-    )
+@pytest.mark.parametrize(
+    "ref,row_spans,tree,expected", IMAGE_CASES, ids=[c[0] for c in IMAGE_CASES]
+)
+def test_relationing_scorecard_image(ref, row_spans, tree, expected):
+    # The hand-transcribed rows must tile their passage contiguously.
+    for (_, a_end), (b_start, _) in zip(row_spans, row_spans[1:]):
+        assert a_end + 1 == b_start
+    _assert_scorecard(tree, row_spans, row_spans[0][0], row_spans[-1][1],
+                      expected)
