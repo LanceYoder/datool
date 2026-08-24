@@ -1,30 +1,37 @@
-// The bracketing editor's current shell: Tiptap editor state + React node
-// views for proposition rows + an SVG margin overlay drawn from layout.ts.
+// The bracketing editor's UI: Tiptap state + React node views for the
+// proposition rows + the SVG margin overlay (BracketLayer) drawn from
+// layout.ts, wired to the editor CORE in commands.ts.
 //
-// NOTE: this file is a holding pattern. The editor CORE (forest model,
-// commands, layout geometry) has moved to the new interaction design —
-// documents are a forest, brackets are built by connecting adjacent roots,
-// and the dot geometry in layout.ts is the handle set the new UI will hang
-// its interactions off. That UI is not built here yet. What this file does
-// today:
-//   - renders the rows and the read-only bracket display (spines, ticks,
-//     stars, labels, and the dots, drawn but inert);
-//   - clicking a bracket selects it and offers the local bracket operations
-//     that survived: relabel, flip the star, confirm a review flag,
-//     disconnect a root bracket;
-//   - double-clicking a word splits its proposition (unzipping it to a root
-//     first, per the new split semantics);
-//   - Mod-z / Mod-Shift-z (and toolbar buttons) undo/redo.
+// Every gesture is exactly ONE core command — nothing here recomputes labels,
+// re-indexes propositions or repairs structure:
+//
+//   click a word          "Split after" popover -> splitProposition
+//   click a dot           select that (connectable) dot
+//   shift-click a dot     connectUnits(first, second) -> the relationship menu
+//                         opens on the new bracket; a rejected pair shakes and
+//                         keeps the first selection
+//   click a bracket box   select the bracket (inner rects paint last, so the
+//                         innermost bracket under the pointer wins)
+//   click a label         the relationship menu: all 18 relationships grouped
+//                         by family, plus Confirm (review-flagged brackets) and
+//                         Disconnect (root brackets only)
+//   click a star          flipStar (the labels follow the star)
+//   hover a row           "Merge below" on every proposition but the last
+//   toolbar               Undo / Redo, and nothing else
+//
+// Selection state: one popover at a time (Escape and an outside click close
+// it); the selected dot survives re-renders but is dropped whenever the
+// document changes, because every position in the overlay has moved.
 
 import {
   createContext,
-  useCallback,
   useContext,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
+import type { ReactNode } from 'react';
 import {
   EditorContent,
   NodeViewWrapper,
@@ -32,7 +39,6 @@ import {
   useEditor,
 } from '@tiptap/react';
 import type { ReactNodeViewProps } from '@tiptap/react';
-import type { Editor } from '@tiptap/core';
 import type {
   CorpusWord,
   Document as AnalysisDocument,
@@ -44,24 +50,42 @@ import { editorExtensions } from './editor';
 import { EditorProposition } from './schema';
 import {
   confirmFlag,
+  connectUnits,
   disconnectRoot,
   findBrackets,
+  findPropositionPos,
   flipStar,
+  mergeBelow,
   setRelationship,
   splitProposition,
 } from './commands';
-import { COL_W, REVIEW_COLOR, STUB_W, computeColumns, layoutBrackets, layoutDots } from './layout';
-import type { BracketGeom, DotGeom, RowBox } from './layout';
+import { COL_W, STUB_W, computeColumns, layoutBrackets, layoutDots } from './layout';
+import type { DotGeom, RowBox } from './layout';
+import { canSplitAfter, clampPopover, dotOwners, parseDotId } from './interaction';
+import type { Point } from './interaction';
+import BracketLayer from './BracketLayer';
+import type { PositionedBracket, ShakeState } from './BracketLayer';
+import RelationshipMenu from './RelationshipMenu';
 
 const LABEL_GUTTER = 46; // px between the bracket columns and the row gutter
+
+/** Nominal popover boxes, used to keep them inside the shell. */
+const SPLIT_SIZE = { width: 132, height: 44 };
+const MENU_SIZE = { width: 232, height: 360 };
+
+/** How long a rejected connection shakes / the message stays up. */
+const FLASH_MS = 1600;
 
 // ---------------------------------------------------------------------------
 // Row rendering (React node view)
 
 interface RowContextValue {
   words: ReadonlyMap<number, CorpusWord>;
-  /** Split the proposition at `pos` after its `ordinal`-th word (0-based). */
-  onSplitAfter: (pos: number, ordinal: number) => void;
+  /** The last proposition in the document — the one with nothing to merge. */
+  lastPid: string | null;
+  /** A single click on a word: offer "Split after" beside it. */
+  onWordClick: (pid: string, ordinal: number, word: string, target: HTMLElement) => void;
+  onMergeBelow: (pid: string) => void;
 }
 
 const RowContext = createContext<RowContextValue | null>(null);
@@ -88,41 +112,60 @@ function rowTokens(
     .map((t, i) => ({ key: i, display: t }));
 }
 
-function PropositionRow({ node, getPos }: ReactNodeViewProps) {
+function PropositionRow({ node }: ReactNodeViewProps) {
   const ctx = useContext(RowContext);
   const pid = String(node.attrs.pid);
   const color = typeof node.attrs.color === 'string' ? node.attrs.color : undefined;
   const tokens = ctx !== null ? rowTokens(node, ctx.words) : [];
-  const last = tokens.length - 1;
 
   return (
     <NodeViewWrapper as="div" className="prop-row" data-pid={pid}>
       <span className="verse-label">{String(node.attrs.label)}</span>
       <span className="prop-text greek" style={color !== undefined ? { color } : undefined}>
         {ctx !== null
-          ? tokens.map((t, ordinal) => (
-              <span
-                key={t.key}
-                className="word"
-                title={
-                  (t.hover !== undefined ? `${t.hover}\n` : '') +
-                  (ordinal < last ? 'double-click: split after this word' : '')
-                }
-                onDoubleClick={
-                  ordinal < last
-                    ? (event) => {
-                        event.preventDefault();
-                        const pos = typeof getPos === 'function' ? getPos() : undefined;
-                        if (pos !== undefined) ctx.onSplitAfter(pos, ordinal);
-                      }
-                    : undefined
-                }
-              >
-                {t.display}{' '}
-              </span>
-            ))
+          ? tokens.map((t, ordinal) => {
+              const splittable = canSplitAfter(ordinal, tokens.length);
+              // Morphology stays on the tooltip; the split hint joins it.
+              const title =
+                (t.hover !== undefined ? t.hover : '') +
+                (splittable ? `${t.hover !== undefined ? '\n' : ''}click: split after this word` : '');
+              return (
+                <span
+                  key={t.key}
+                  className={splittable ? 'word splittable' : 'word'}
+                  title={title === '' ? undefined : title}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={
+                    splittable
+                      ? (event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          ctx.onWordClick(pid, ordinal, t.display, event.currentTarget);
+                        }
+                      : undefined
+                  }
+                >
+                  {t.display}{' '}
+                </span>
+              );
+            })
           : String(node.attrs.text)}
       </span>
+      {ctx !== null && ctx.lastPid !== pid && (
+        <button
+          type="button"
+          className="merge-below"
+          title="Merge this proposition with the one below it"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            ctx.onMergeBelow(pid);
+          }}
+        >
+          Merge below
+        </button>
+      )}
     </NodeViewWrapper>
   );
 }
@@ -199,10 +242,34 @@ interface InnerProps {
   onChange: (doc: AnalysisDocument) => void;
 }
 
+/** The one floating thing on screen, if any. */
+type PopoverState =
+  | { kind: 'split'; pid: string; ordinal: number; word: string; at: Point }
+  | { kind: 'menu'; pos: number; at: Point | null };
+
+interface Overlay {
+  brackets: PositionedBracket[];
+  dots: DotGeom[];
+  /** Dot id -> pre-order index of the bracket a click on it selects. */
+  owners: Map<string, number>;
+  margin: number;
+  height: number;
+}
+
 function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
   const [selectedBracketPos, setSelectedBracketPos] = useState<number | null>(null);
+  const [selectedDotId, setSelectedDotId] = useState<string | null>(null);
+  const [popover, setPopover] = useState<PopoverState | null>(null);
+  const [flash, setFlash] = useState<string | null>(null);
+  const [shake, setShake] = useState<ShakeState | null>(null);
+  // docTick advances on every document change, layoutTick on every measurement
+  // (they are separate so re-observing rows can never feed itself).
+  const [docTick, setDocTick] = useState(0);
   const [layoutTick, setLayoutTick] = useState(0);
   const shellRef = useRef<HTMLDivElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+  const flashTimer = useRef<number | null>(null);
+  const shakeSeq = useRef(0);
 
   const taxonomyByCode = useMemo(
     () => new Map(taxonomy.map((t) => [t.code, t])),
@@ -221,15 +288,25 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
       editable: false,
       injectCSS: false,
       onUpdate: ({ editor: ed }) => {
+        // Positions have moved: drop every position-keyed piece of UI state.
+        // Commands that want to keep (or move) the selection set it again
+        // right after they run — those setState calls land in the same batch
+        // and win.
+        setSelectedDotId(null);
         setSelectedBracketPos(null);
+        setPopover(null);
         onChange(nodeToDocument(ed.state.doc, baseDoc));
+        setDocTick((t) => t + 1);
         setLayoutTick((t) => t + 1);
       },
     },
     [content],
   );
 
-  // Re-measure rows when anything moves.
+  // Re-measure when the shell or any row changes size. Observing fires the
+  // callback once per target immediately, which is what first paints the
+  // overlay; the effect itself must NOT depend on layoutTick or that initial
+  // callback would re-arm itself forever.
   useEffect(() => {
     const shell = shellRef.current;
     if (shell === null) return;
@@ -237,17 +314,27 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
       setLayoutTick((t) => t + 1);
     });
     observer.observe(shell);
+    for (const row of shell.querySelectorAll<HTMLElement>('[data-pid]')) {
+      observer.observe(row);
+    }
     return () => {
       observer.disconnect();
     };
-  }, []);
+  }, [editor, docTick]);
 
-  // Undo/redo keyboard shortcuts (the editor is not contenteditable).
+  // Escape closes the popover and clears every selection; Mod-z / Mod-Shift-z
+  // undo/redo (the editor is not contenteditable, so the shortcuts are ours),
+  // with native undo left alone inside text fields.
   useEffect(() => {
     if (editor === null) return;
     const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setPopover(null);
+        setSelectedDotId(null);
+        setSelectedBracketPos(null);
+        return;
+      }
       if (!(event.ctrlKey || event.metaKey)) return;
-      // Leave native undo alone in text fields (e.g. the title input).
       const target = event.target;
       if (
         target instanceof HTMLInputElement ||
@@ -272,28 +359,48 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     };
   }, [editor]);
 
-  const onSplitAfter = useCallback(
-    (pos: number, ordinal: number) => {
-      // `firstCount` counts the words that stay in the first half.
-      if (editor !== null) splitProposition(editor, pos, ordinal + 1, words);
+  // Outside click closes the popover. The listener is added after the click
+  // that opened it (popovers open on click, this listens for mousedown), so it
+  // can never close its own opening gesture.
+  useEffect(() => {
+    if (popover === null) return;
+    const onDown = (event: MouseEvent) => {
+      const el = popoverRef.current;
+      if (el !== null && event.target instanceof Node && el.contains(event.target)) return;
+      setPopover(null);
+    };
+    window.document.addEventListener('mousedown', onDown, true);
+    return () => {
+      window.document.removeEventListener('mousedown', onDown, true);
+    };
+  }, [popover]);
+
+  useEffect(
+    () => () => {
+      if (flashTimer.current !== null) window.clearTimeout(flashTimer.current);
     },
-    [editor, words],
+    [],
   );
 
-  const rowCtx = useMemo<RowContextValue>(
-    () => ({ words, onSplitAfter }),
-    [words, onSplitAfter],
-  );
+  /** Proposition ids in document order (the last one has no "Merge below"). */
+  const pids = useMemo(() => {
+    const out: string[] = [];
+    if (editor !== null) {
+      editor.state.doc.descendants((node) => {
+        if (node.type.name === 'proposition') {
+          out.push(String(node.attrs.pid));
+          return false;
+        }
+        return true;
+      });
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, docTick]);
 
   // ---- Geometry -----------------------------------------------------------
   // Measure every row, then lay the whole FOREST out; layout brackets
   // (pre-order) zip index-for-index with the PM bracket positions.
-  interface Overlay {
-    brackets: (BracketGeom & { pos: number })[];
-    dots: DotGeom[];
-    margin: number;
-    height: number;
-  }
   const overlay: Overlay | null = useMemo(() => {
     if (editor === null) return null;
     const shell = shellRef.current;
@@ -326,225 +433,250 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     return {
       brackets,
       dots: layoutDots(current.forest, rows, margin),
+      owners: dotOwners(current.forest),
       margin,
       height: shellRect.height,
     };
-    // layoutTick + the editor doc drive re-measurement.
+    // docTick + layoutTick drive re-measurement.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor, editor?.state.doc, layoutTick, baseDoc, taxonomyByCode]);
+  }, [editor, docTick, layoutTick, baseDoc, taxonomyByCode]);
+
+  const rowCtx = useMemo<RowContextValue>(
+    () => ({
+      words,
+      lastPid: pids.length > 0 ? (pids[pids.length - 1] ?? null) : null,
+      onWordClick: (pid, ordinal, word, target) => {
+        const shell = shellRef.current;
+        if (shell === null) return;
+        const shellRect = shell.getBoundingClientRect();
+        const rect = target.getBoundingClientRect();
+        const at = { x: rect.left - shellRect.left, y: rect.bottom - shellRect.top + 4 };
+        setSelectedDotId(null);
+        setPopover((prev) =>
+          prev !== null && prev.kind === 'split' && prev.pid === pid && prev.ordinal === ordinal
+            ? null // clicking the same word again dismisses the offer
+            : { kind: 'split', pid, ordinal, word, at },
+        );
+      },
+      onMergeBelow: (pid) => {
+        if (editor === null) return;
+        setPopover(null);
+        mergeBelow(editor, pid, words);
+      },
+    }),
+    [words, pids, editor],
+  );
 
   if (editor === null) return null;
 
-  const selectedBracket =
-    selectedBracketPos !== null ? editor.state.doc.nodeAt(selectedBracketPos) : null;
+  // ---- Gestures -----------------------------------------------------------
+  // Each one runs a single core command; the state set afterwards is what
+  // survives the reset onUpdate did while the command was dispatching.
+
+  const bracketPosAt = (index: number): number | null =>
+    findBrackets(editor.state.doc)[index]?.pos ?? null;
+
+  const dotPos = (id: string): number | null => {
+    const ref = parseDotId(id);
+    if (ref === null) return null;
+    return ref.kind === 'prop'
+      ? findPropositionPos(editor.state.doc, ref.pid)
+      : bracketPosAt(ref.index);
+  };
+
+  const rejectConnection = (dotId: string, message: string) => {
+    shakeSeq.current += 1;
+    setShake({ dotId, seq: shakeSeq.current });
+    setFlash(message);
+    if (flashTimer.current !== null) window.clearTimeout(flashTimer.current);
+    flashTimer.current = window.setTimeout(() => {
+      flashTimer.current = null;
+      setShake(null);
+      setFlash(null);
+    }, FLASH_MS);
+  };
+
+  const selectBracket = (pos: number) => {
+    setSelectedBracketPos(pos);
+    setSelectedDotId(null);
+    setPopover(null);
+  };
+
+  const onDotClick = (dot: DotGeom, shiftKey: boolean) => {
+    setPopover(null);
+    if (!dot.connectable) {
+      if (shiftKey && selectedDotId !== null) {
+        // A connect gesture aimed at a unit that is already spoken for.
+        rejectConnection(dot.id, 'That unit is already connected.');
+        return;
+      }
+      // Otherwise the dot is just another handle on its bracket.
+      const owner = overlay?.owners.get(dot.id);
+      const pos = owner === undefined ? null : bracketPosAt(owner);
+      if (pos !== null) selectBracket(pos);
+      return;
+    }
+    if (!shiftKey || selectedDotId === null || selectedDotId === dot.id) {
+      setSelectedDotId(dot.id);
+      setSelectedBracketPos(null);
+      return;
+    }
+    const posA = dotPos(selectedDotId);
+    const posB = dotPos(dot.id);
+    if (posA === null || posB === null) {
+      rejectConnection(dot.id, 'That unit is no longer there.');
+      return;
+    }
+    // connectUnits itself is the judge of what may connect (adjacent roots).
+    const newPos = connectUnits(editor, posA, posB, taxonomy);
+    if (newPos === null) {
+      rejectConnection(dot.id, 'Only two adjacent units can be connected.');
+      return; // nothing dispatched: the first selection stands
+    }
+    setSelectedDotId(null);
+    setSelectedBracketPos(newPos);
+    // Label the fresh connection straight away (it defaults to Series).
+    setPopover({ kind: 'menu', pos: newPos, at: null });
+  };
+
+  const onLabelClick = (pos: number, at: Point) => {
+    setSelectedBracketPos(pos);
+    setSelectedDotId(null);
+    setPopover((prev) =>
+      prev !== null && prev.kind === 'menu' && prev.pos === pos ? null : { kind: 'menu', pos, at },
+    );
+  };
+
+  const onStarClick = (pos: number) => {
+    setPopover(null);
+    flipStar(editor, pos, taxonomy);
+    setSelectedBracketPos(pos);
+    setSelectedDotId(null);
+  };
+
+  const onSplit = (pid: string, ordinal: number) => {
+    const pos = findPropositionPos(editor.state.doc, pid);
+    setPopover(null);
+    if (pos === null) return;
+    splitProposition(editor, pos, ordinal + 1, words);
+  };
+
+  const onPickRelationship = (pos: number, rel: string) => {
+    setRelationship(editor, pos, rel, taxonomy);
+    setSelectedBracketPos(pos);
+  };
+
+  const onConfirm = (pos: number) => {
+    confirmFlag(editor, pos);
+    setSelectedBracketPos(pos);
+  };
+
+  const onDisconnect = (pos: number) => {
+    disconnectRoot(editor, pos);
+  };
+
+  // ---- Popovers -----------------------------------------------------------
+
+  let popoverNode: ReactNode = null;
+  if (popover !== null && overlay !== null) {
+    const bounds = {
+      width: shellRef.current?.clientWidth ?? overlay.margin,
+      height: overlay.height,
+    };
+    if (popover.kind === 'split') {
+      const at = clampPopover(popover.at, SPLIT_SIZE, bounds);
+      popoverNode = (
+        <div
+          ref={popoverRef}
+          className="popover split-popover"
+          style={{ left: at.x, top: at.y }}
+          role="menu"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            className="popover-item"
+            title={`Split this proposition after “${popover.word}”`}
+            onClick={() => onSplit(popover.pid, popover.ordinal)}
+          >
+            Split after
+          </button>
+        </div>
+      );
+    } else {
+      const geom = overlay.brackets.find((b) => b.pos === popover.pos);
+      const node = editor.state.doc.nodeAt(popover.pos);
+      if (geom !== undefined && node !== null && node.type.name === 'bracket') {
+        const at = clampPopover(
+          popover.at ?? { x: geom.x + 8, y: geom.connectY + 8 },
+          MENU_SIZE,
+          bounds,
+        );
+        const isRoot = editor.state.doc.resolve(popover.pos).depth === 0;
+        popoverNode = (
+          <div
+            ref={popoverRef}
+            className="popover menu-popover"
+            style={{ left: at.x, top: at.y }}
+          >
+            <RelationshipMenu
+              taxonomy={taxonomy}
+              current={String(node.attrs.rel)}
+              review={node.attrs.flag === 'review'}
+              root={isRoot}
+              onPick={(rel) => onPickRelationship(popover.pos, rel)}
+              onConfirm={() => onConfirm(popover.pos)}
+              onDisconnect={() => onDisconnect(popover.pos)}
+            />
+          </div>
+        );
+      }
+    }
+  }
 
   return (
     <RowContext.Provider value={rowCtx}>
-      <Toolbar
-        editor={editor}
-        taxonomy={taxonomy}
-        bracketPos={selectedBracketPos}
-        bracket={selectedBracket?.type.name === 'bracket' ? selectedBracket : null}
-        clearSelection={() => setSelectedBracketPos(null)}
-      />
+      <div className="editor-toolbar">
+        <button type="button" disabled={!editor.can().undo()} onClick={() => editor.commands.undo()}>
+          Undo
+        </button>
+        <button type="button" disabled={!editor.can().redo()} onClick={() => editor.commands.redo()}>
+          Redo
+        </button>
+        <span className="toolbar-spacer" />
+        {flash !== null ? (
+          <span className="toolbar-flash" role="status">
+            {flash}
+          </span>
+        ) : (
+          <span className="muted toolbar-hint">
+            Click a dot, then shift-click an adjacent one to connect
+          </span>
+        )}
+      </div>
       <div
         ref={shellRef}
         className="editor-shell"
         style={{ paddingLeft: overlay?.margin ?? 3 * COL_W + LABEL_GUTTER }}
       >
         {overlay !== null && (
-          <svg
-            className="bracket-layer interactive"
+          <BracketLayer
+            brackets={overlay.brackets}
+            dots={overlay.dots}
             width={overlay.margin}
             height={overlay.height}
-            style={{ left: 0 }}
-          >
-            {overlay.brackets.map((b) => {
-              const isSelected = b.pos === selectedBracketPos;
-              const stroke = b.review ? REVIEW_COLOR : isSelected ? '#1d4ed8' : '#374151';
-              return (
-                <g
-                  key={b.pos}
-                  className="bracket-hit"
-                  data-rel={b.rel}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    setSelectedBracketPos(b.pos);
-                  }}
-                >
-                  {/* Full hit rect: inner brackets paint later, so they win. */}
-                  <rect
-                    x={b.rect.x}
-                    y={b.rect.y}
-                    width={b.rect.width}
-                    height={b.rect.height}
-                    fill="transparent"
-                  />
-                  <line x1={b.x} y1={b.top} x2={b.x} y2={b.bottom} stroke={stroke} strokeWidth={isSelected ? 2.5 : 1.5} />
-                  {b.ticks.map((t) => (
-                    <line key={t.childIndex} x1={t.x1} y1={t.y} x2={t.x2} y2={t.y} stroke={stroke} strokeWidth={isSelected ? 2 : 1.2} />
-                  ))}
-                  {b.ticks
-                    .filter((t) => t.star)
-                    .map((t) => (
-                      <text key={`s${t.childIndex}`} className="bracket-star" x={(t.x1 + t.x2) / 2} y={t.y - 4} fill={stroke} textAnchor="middle">
-                        *
-                      </text>
-                    ))}
-                  {b.labels.map((l, i) => (
-                    <text
-                      key={i}
-                      className="bracket-label"
-                      x={l.placement === 'mid' ? b.x - 4 : b.x + 4}
-                      y={l.placement === 'mid' ? l.y : l.y - 4}
-                      fill={stroke}
-                      textAnchor={l.placement === 'mid' ? 'end' : 'start'}
-                    >
-                      {l.text}
-                    </text>
-                  ))}
-                </g>
-              );
-            })}
-            {/* Dots: drawn for orientation; the interactions land in the rewrite. */}
-            <g className="dot-layer" pointerEvents="none">
-              {overlay.dots.map((d) => (
-                <g key={d.id}>
-                  {d.stubX1 !== undefined && d.stubX2 !== undefined && (
-                    <line x1={d.stubX1} y1={d.y} x2={d.stubX2} y2={d.y} stroke="#9ca3af" strokeWidth={1} />
-                  )}
-                  <circle
-                    cx={d.x}
-                    cy={d.y}
-                    r={d.connectable ? 3.5 : 2}
-                    fill={d.connectable ? '#374151' : '#9ca3af'}
-                  />
-                </g>
-              ))}
-            </g>
-          </svg>
+            selectedBracketPos={selectedBracketPos}
+            selectedDotId={selectedDotId}
+            shake={shake}
+            onSelectBracket={selectBracket}
+            onDotClick={onDotClick}
+            onLabelClick={onLabelClick}
+            onStarClick={onStarClick}
+          />
         )}
         <EditorContent editor={editor} />
+        {popoverNode}
       </div>
     </RowContext.Provider>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Toolbar
-
-const FAMILY_NAMES: Record<string, string> = {
-  coordinate: 'Coordinate',
-  restatement: 'Restatement',
-  distinct: 'Distinct statement',
-  contrary: 'Contrary statement',
-};
-
-interface ToolbarProps {
-  editor: Editor;
-  taxonomy: TaxonomyEntry[];
-  bracketPos: number | null;
-  bracket: ReturnType<Editor['state']['doc']['nodeAt']>;
-  clearSelection: () => void;
-}
-
-function RelationshipSelect({
-  taxonomy,
-  value,
-  placeholder,
-  onPick,
-}: {
-  taxonomy: TaxonomyEntry[];
-  value: string;
-  placeholder: string;
-  onPick: (rel: string) => void;
-}) {
-  const families = useMemo(() => {
-    const out = new Map<string, TaxonomyEntry[]>();
-    for (const t of taxonomy) {
-      const group = out.get(t.family) ?? [];
-      group.push(t);
-      out.set(t.family, group);
-    }
-    return out;
-  }, [taxonomy]);
-
-  return (
-    <select
-      className="rel-select"
-      value={value}
-      onChange={(e) => {
-        if (e.target.value !== '') onPick(e.target.value);
-      }}
-    >
-      <option value="" disabled>
-        {placeholder}
-      </option>
-      {[...families.entries()].map(([family, entries]) => (
-        <optgroup key={family} label={FAMILY_NAMES[family] ?? family}>
-          {entries.map((t) => (
-            <option key={t.code} value={t.code}>
-              {t.symbol} — {t.name}
-            </option>
-          ))}
-        </optgroup>
-      ))}
-    </select>
-  );
-}
-
-function Toolbar({ editor, taxonomy, bracketPos, bracket, clearSelection }: ToolbarProps) {
-  const bracketAttrs = bracket?.type.name === 'bracket' ? bracket.attrs : null;
-  const binary = bracket?.childCount === 2;
-  const isRoot =
-    bracketPos !== null && editor.state.doc.resolve(bracketPos).depth === 0;
-
-  return (
-    <div className="editor-toolbar">
-      {bracketPos !== null && bracketAttrs !== null ? (
-        <span className="bracket-controls">
-          <RelationshipSelect
-            taxonomy={taxonomy}
-            value={String(bracketAttrs.rel)}
-            placeholder="Relationship"
-            onPick={(rel) => setRelationship(editor, bracketPos, rel, taxonomy)}
-          />
-          {bracketAttrs.prominent !== null && binary && (
-            <button
-              title="Move the star to the other side (the labels follow it)"
-              onClick={() => flipStar(editor, bracketPos, taxonomy)}
-            >
-              Flip star
-            </button>
-          )}
-          {bracketAttrs.flag === 'review' && (
-            <button className="confirm-btn" onClick={() => confirmFlag(editor, bracketPos)}>
-              Confirm
-            </button>
-          )}
-          {isRoot && (
-            <button
-              title="Disconnect this bracket (its parts become separate roots)"
-              onClick={() => {
-                disconnectRoot(editor, bracketPos);
-                clearSelection();
-              }}
-            >
-              Disconnect
-            </button>
-          )}
-        </span>
-      ) : (
-        <span className="muted">Click a bracket to edit it</span>
-      )}
-
-      <span className="toolbar-spacer" />
-      <button disabled={!editor.can().undo()} onClick={() => editor.commands.undo()}>
-        Undo
-      </button>
-      <button disabled={!editor.can().redo()} onClick={() => editor.commands.redo()}>
-        Redo
-      </button>
-    </div>
   );
 }

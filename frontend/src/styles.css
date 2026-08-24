@@ -254,7 +254,7 @@ div.error-box {
 .editor-toolbar {
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 3;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -269,38 +269,13 @@ div.error-box {
   flex: 1;
 }
 
-.rel-select {
-  font: inherit;
-  font-size: 0.85rem;
-  padding: 0.3rem 0.4rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: #fff;
-  max-width: 16rem;
-}
-
-.bracket-controls {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding-left: 0.6rem;
-  border-left: 1px solid var(--border);
-}
-
-.star-btn {
+.toolbar-hint,
+.toolbar-flash {
   font-size: 0.8rem;
-  padding: 0.25rem 0.5rem;
 }
 
-.star-btn.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-.confirm-btn {
-  color: var(--review);
-  border-color: var(--review);
+.toolbar-flash {
+  color: var(--danger);
 }
 
 .editor-shell {
@@ -313,21 +288,155 @@ div.error-box {
   pointer-events: none;
 }
 
-.editor-shell .bracket-hit {
+/* The overlay is inert except for its handles. */
+.editor-shell .bracket-hit,
+.editor-shell .dot-group,
+.editor-shell .label-hit,
+.editor-shell .star-hit {
   pointer-events: all;
   cursor: pointer;
 }
 
 .editor-shell .prop-row {
-  cursor: pointer;
   padding: 1px 0;
   border-radius: 4px;
 }
 
-.editor-shell .prop-row.selected {
-  background: #eef2ff;
+.editor-shell .word.splittable {
+  cursor: pointer;
 }
 
 .editor-shell .ProseMirror {
   outline: none;
+}
+
+/* ---- Dots ---- */
+
+.dot-group .dot {
+  transition: r 80ms ease-out;
+}
+
+.dot-group.connectable:hover .dot {
+  r: 5;
+}
+
+.dot-group.shake {
+  animation: dot-shake 360ms ease-in-out;
+}
+
+@keyframes dot-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-3px);
+  }
+  50% {
+    transform: translateX(3px);
+  }
+  80% {
+    transform: translateX(-2px);
+  }
+}
+
+/* ---- Merge below ---- */
+
+.merge-below {
+  flex: none;
+  align-self: center;
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.4rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  background: var(--bg-soft);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 90ms ease-out;
+}
+
+.prop-row:hover .merge-below,
+.merge-below:focus-visible {
+  opacity: 1;
+  pointer-events: all;
+}
+
+/* ---- Popovers ---- */
+
+.popover {
+  position: absolute;
+  z-index: 4;
+  min-width: 6rem;
+  padding: 0.2rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 6px 20px rgb(15 23 42 / 18%);
+}
+
+.popover-item,
+.menu-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.25rem 0.5rem;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  font-size: 0.85rem;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.popover-item:hover,
+.menu-item:hover {
+  background: #eef2ff;
+  border-color: transparent;
+}
+
+.menu-popover {
+  max-height: 22rem;
+  overflow-y: auto;
+  width: 14.5rem;
+}
+
+.menu-heading {
+  padding: 0.3rem 0.5rem 0.1rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.menu-symbol {
+  flex: none;
+  width: 2.6rem;
+  font-weight: 600;
+}
+
+.menu-name {
+  color: var(--muted);
+}
+
+.menu-item.current {
+  background: #eef2ff;
+}
+
+.menu-item.current .menu-name {
+  color: var(--text);
+}
+
+.menu-item.action {
+  font-weight: 600;
+}
+
+.menu-item.confirm {
+  color: var(--review);
+}
+
+.menu-sep {
+  margin: 0.25rem 0.3rem;
+  border-top: 1px solid var(--border);
 }
