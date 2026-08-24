@@ -288,8 +288,7 @@ div.error-box {
   pointer-events: none;
 }
 
-/* The overlay is inert except for its handles. */
-.editor-shell .bracket-hit,
+/* The overlay is inert except for its handles: dots, labels, stars. */
 .editor-shell .dot-group,
 .editor-shell .label-hit,
 .editor-shell .star-hit {

@@ -12,8 +12,6 @@
 //   click a second dot    connectUnits(first, second) -> the relationship menu
 //                         opens on the new bracket; a rejected pair shakes and
 //                         keeps the first selection
-//   click a bracket box   select the bracket (inner rects paint last, so the
-//                         innermost bracket under the pointer wins)
 //   click a label         the relationship menu: all 18 relationships grouped
 //                         by family, plus Confirm (review-flagged brackets) and
 //                         Disconnect (root brackets only)
@@ -70,6 +68,9 @@ import type { PositionedBracket, ShakeState } from './BracketLayer';
 import RelationshipMenu from './RelationshipMenu';
 
 const LABEL_GUTTER = 56; // px between the bracket columns and the row gutter
+
+/** Width of the .verse-label column (styles.css) — the layout's anchor. */
+const VERSE_LABEL_W = 72;
 
 /** Nominal popover boxes, used to keep them inside the shell. */
 const SPLIT_SIZE = { width: 150, height: 50 };
@@ -419,7 +420,13 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
 
     const current = nodeToDocument(editor.state.doc, baseDoc);
     const { maxColumn } = computeColumns(current.forest);
-    const margin = Math.max(maxColumn * COL_W, STUB_W) + LABEL_GUTTER;
+    // The verse-label column (13a, 13b, …) is the workflow's anchor: pin its
+    // center to the middle of the shell, so the tree has the whole left half
+    // to grow into without ever shifting the words. Only a tree too deep for
+    // that half pushes the text right (the Math.max arm).
+    const need = Math.max(maxColumn * COL_W, STUB_W) + LABEL_GUTTER;
+    const centered = Math.round(shellRect.width / 2 - VERSE_LABEL_W / 2);
+    const margin = Math.max(need, centered);
     const layout = layoutBrackets(
       current.forest,
       rows,
@@ -494,12 +501,6 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
       setShake(null);
       setFlash(null);
     }, FLASH_MS);
-  };
-
-  const selectBracket = (pos: number) => {
-    setSelectedBracketPos(pos);
-    setSelectedDotId(null);
-    setPopover(null);
   };
 
   const onDotClick = (dot: DotGeom) => {
@@ -654,7 +655,9 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
       <div
         ref={shellRef}
         className="editor-shell"
-        style={{ paddingLeft: overlay?.margin ?? 3 * COL_W + LABEL_GUTTER }}
+        style={{
+          paddingLeft: overlay?.margin ?? `calc(50% - ${VERSE_LABEL_W / 2}px)`,
+        }}
       >
         {overlay !== null && (
           <BracketLayer
@@ -665,7 +668,6 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
             selectedBracketPos={selectedBracketPos}
             selectedDotId={selectedDotId}
             shake={shake}
-            onSelectBracket={selectBracket}
             onDotClick={onDotClick}
             onLabelClick={onLabelClick}
             onStarClick={onStarClick}

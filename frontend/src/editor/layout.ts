@@ -13,8 +13,12 @@
 
 import type { BracketNode, TreeNode } from '../types';
 
-/** Horizontal distance between adjacent bracket columns, in px. */
-export const COL_W = 46;
+/**
+ * Horizontal distance between adjacent bracket columns, in px. Wide enough
+ * that a bracket's corner dot, its end label, and its star each get their own
+ * lane along the tick, with clear space before the proposition's dot.
+ */
+export const COL_W = 72;
 
 /**
  * How far left of the text column every PROPOSITION dot sits — a constant, so

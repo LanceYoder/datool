@@ -6,12 +6,14 @@
 // overlay or on a row. The overlay's structure (see BracketLayer.tsx) is
 //
 //   svg.bracket-layer.interactive
-//     g.hit-layer    rect.bracket-hit[data-bracket-pos][data-rel]
-//     g.spine-layer  g.bracket[.selected][data-rel] > line …
+//     g.spine-layer  g.bracket[.selected][data-rel] > line …   (inert)
 //     g.dot-layer    g.dot-group[data-dot][.root][.selected]  (every dot is a
 //                    live, same-sized handle; .root marks disconnected units)
-//     g.glyph-layer  g.star-hit > text.bracket-star
-//                    g.label-hit[data-label] > text.bracket-label
+//     g.glyph-layer  g.label-hit[data-label] > text.bracket-label
+//                    g.star-hit > text.bracket-star   (stars paint LAST)
+//
+// There are no bracket box hit areas: dots, labels and stars are the only
+// handles.
 //
 // Review state is carried by COLOR only (no marker): a bracket flagged for
 // review strokes its spine/labels amber (#b45309), a selected bracket strokes
@@ -32,12 +34,11 @@ const API = 'http://127.0.0.1:8000';
 
 // Colors from layout.ts / BracketLayer.tsx.
 const AMBER = '#b45309'; // REVIEW_COLOR
-const ACCENT = '#1d4ed8';
 
 // Selectors for the parts of the overlay this script drives.
 const SEL = {
   row: '.prop-row',
-  bracket: 'rect.bracket-hit',
+  bracket: 'g.spine-layer g.bracket',
   dot: 'g.dot-group',
   rootDot: 'g.dot-group.root',
   selectedDot: 'g.dot-group.selected',
@@ -45,7 +46,6 @@ const SEL = {
   label: 'g.label-hit',
   amberBracket: `g.bracket:has(line[stroke="${AMBER}"])`,
   amberLabel: `g.label-hit:has(text[fill="${AMBER}"])`,
-  accentLabel: `g.label-hit:has(text[fill="${ACCENT}"])`,
   splitPopover: '.popover.split-popover',
   menu: '.popover.menu-popover',
 };
@@ -250,7 +250,7 @@ for (const [sel, what] of [
   ['.confirm-btn', 'confirm button'],
   ['.bracket-controls', 'bracket controls bar'],
   ['.prop-row.selected', 'row selection mode'],
-  ['.bracket-hit circle', 'review circle marker'],
+  ['rect.bracket-hit', 'bracket box hit areas'],
   [`circle[fill="${AMBER}"]`, 'amber marker circle'],
   ['g.dot-group.fixed', 'fixed (dead) dots'],
   ['g.dot-group.connectable', 'connectable-only dot class'],
@@ -422,7 +422,15 @@ const starBefore = await page
   .first()
   .getAttribute('y');
 console.log(`  ${starCount} stars; first star y=${starBefore}`);
-await page.locator(SEL.star).first().dispatchEvent('click');
+// A REAL pointer click on the star glyph itself (not a dispatched event):
+// stars paint above every label hit, so this must flip the star — a mis-hit
+// that opened the relationship menu here is the regression this guards.
+const starPoint = await page.evaluate(() => {
+  const t = document.querySelector('g.star-hit text.bracket-star');
+  const r = t.getBoundingClientRect();
+  return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+});
+await page.mouse.click(starPoint.x, starPoint.y);
 await waitFor(
   (before) => {
     const t = document.querySelector('g.star-hit text.bracket-star');
@@ -431,6 +439,7 @@ await waitFor(
   starBefore,
   'the star moved to the other end of its bracket',
 );
+await expectNone(SEL.menu, 'the star click did NOT open the relationship menu');
 const starAfter = await page
   .locator(`${SEL.star} text.bracket-star`)
   .first()
@@ -461,15 +470,10 @@ await expectCount(SEL.amberBracket, amberBefore - 1, 'Confirm cleared one review
 step('(h) disconnect the outermost bracket');
 const rootsBeforeDisconnect = await countOf(SEL.rootDot);
 const bracketsBeforeDisconnect = await countOf(SEL.bracket);
-// Pre-order: the first hit rect is the outermost bracket of the first root.
-await page.locator(SEL.bracket).first().dispatchEvent('click');
-await waitFor(
-  (accent) => document.querySelectorAll(`g.bracket.selected line[stroke="${accent}"]`).length > 0,
-  ACCENT,
-  'the outermost bracket is selected by its box',
-);
-// Its labels now paint accent-blue, which is how we find its label menu.
-await page.locator(SEL.accentLabel).first().dispatchEvent('click');
+// Label groups render in document pre-order, so the FIRST label in the DOM
+// belongs to the first bracket — necessarily a ROOT bracket (its ancestors
+// would precede it). A root bracket's menu offers Disconnect.
+await page.locator(SEL.label).first().dispatchEvent('click');
 await page.waitForSelector(`${SEL.menu} .menu-item.action`);
 const actions = await page.locator(`${SEL.menu} .menu-item.action`).allTextContents();
 console.log('  menu actions:', JSON.stringify(actions));
