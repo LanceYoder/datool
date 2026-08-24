@@ -196,13 +196,15 @@ const blockLabel = (await page.locator(SEL.row).locator('.verse-label').textCont
 if (blockLabel !== '5–7') await fail(`block label should be "5–7", got "${blockLabel}"`);
 ok(`the block is labeled by its verse span (${blockLabel})`);
 
-// The English (WEB) reference line loads above the Greek — display only.
+// The English reference line — built word-by-word from THIS row's Greek
+// (TAGNT contextual renderings) — loads above the text. Display only.
 await page.waitForSelector('.prop-row .english-line');
 const english0 = (await page.textContent('.prop-row .english-line')) ?? '';
-if (!english0.includes('God is light') || !english0.includes('fellowship')) {
+if (!english0.includes('the message') || !english0.includes('fellowship')) {
   await fail(`English reference line looks wrong: "${english0.slice(0, 120)}…"`);
 }
-ok('English (WEB) reference line shows above the Greek');
+ok('word-matched English line shows above the Greek');
+await expectCount('.english-line .ev', 3, 'verse markers at each verse start (5, 6, 7)');
 
 // Confidence labeling is gone: nothing in the overlay is amber, and the
 // stored first pass carries no review flags.
@@ -303,8 +305,19 @@ console.log(`  labels after split: "${headLabel}" / "${newLabel}"`);
 if (headLabel !== '5') await fail(`head label should be "5", got "${headLabel}"`);
 if (newLabel !== '5–7') await fail(`tail label should be "5–7", got "${newLabel}"`);
 ok('labels re-derived from the verses (5 / 5–7 — no primes)');
-// The English lines re-attach: verse 5 on the head row, verses 6–7 on the tail.
-await expectCount('.prop-row .english-line', 2, 'English lines follow the verse starts');
+// Each half now shows exactly ITS OWN words' English (the DA2-example rule:
+// the English matches the proposition, not the verse).
+await expectCount('.prop-row .english-line', 2, 'both halves carry their own English');
+const headEnglish = (await page.locator('.prop-row .english-line').nth(0).textContent()) ?? '';
+const tailEnglish = (await page.locator('.prop-row .english-line').nth(1).textContent()) ?? '';
+// Head = καὶ ἔστιν → its own two words only; the rest belongs to the tail.
+if (headEnglish.includes('message')) {
+  await fail(`head English should stop at its own words: "${headEnglish}"`);
+}
+if (!tailEnglish.includes('message') || !tailEnglish.includes('fellowship')) {
+  await fail(`tail English missing its words: "${tailEnglish.slice(0, 100)}…"`);
+}
+ok('the English is divided exactly at the split point');
 
 // Both halves are now disconnected roots.
 for (const pid of [splitPid, newPid]) {

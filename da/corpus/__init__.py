@@ -9,9 +9,11 @@ Public API:
     align(text) -> Alignment | None      locate pasted text in the corpus
     verses_for_range(start, end)         English (WEB) verses over a word range
     gloss_for(lemma)                     (transliteration, gloss) or None
+    english_for(index)                   contextual English of one word (TAGNT)
 """
 
 from .align import Alignment, align
+from .interlinear import english_for
 from .lexicon import gloss_for
 from .loader import BOOK_NAMES, Word, format_ref, load_words
 from .translation import verses_for_range
@@ -21,6 +23,7 @@ __all__ = [
     "align",
     "BOOK_NAMES",
     "Word",
+    "english_for",
     "format_ref",
     "gloss_for",
     "load_words",

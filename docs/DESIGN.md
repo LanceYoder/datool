@@ -405,7 +405,8 @@ plain and functional).
 | ProseMirror, Tiptap core, Lexical | MIT | free incl. commercial; no watermark |
 | MorphGNT morphology | CC-BY-SA | attribution + share-alike on the data only |
 | SBLGNT text | SBLGNT EULA | attribution; re-verify terms before selling |
-| World English Bible (`da/corpus/data/web-nt.tsv`) | public domain | reference translation; "World English Bible" name is trademarked — credit politely |
+| World English Bible (`da/corpus/data/web-nt.tsv`) | public domain | verse-level reference (served by /api/corpus/verses); "World English Bible" name is trademarked — credit politely |
 | TBESG glosses (`da/corpus/data/glosses.tsv`) | CC BY 4.0 | attribution: STEPBible.org data by Tyndale House, Cambridge |
+| TAGNT word English (`da/corpus/data/word-english.tsv`) | CC BY 4.0 | per-word contextual English (the row reference line); same attribution |
 | Beale, *Interpretive Lexicon* | copyrighted | reference for humans; nothing ships |
 | Arborator, reactive-dep-tree | AGPL | ideas only — never copy code |

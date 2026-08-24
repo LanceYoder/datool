@@ -43,9 +43,8 @@ import type {
   CorpusWord,
   Document as AnalysisDocument,
   TaxonomyEntry,
-  VerseText,
 } from '../types';
-import { errorMessages, getCorpusVerses, getCorpusWords, getTaxonomy } from '../api';
+import { errorMessages, getCorpusWords, getTaxonomy } from '../api';
 import { buildTextById, displayWordText, documentToNode, nodeToDocument } from './convert';
 import { editorExtensions } from './editor';
 import { EditorProposition } from './schema';
@@ -62,13 +61,13 @@ import {
 import { COL_W, STUB_W, computeColumns, layoutBrackets, layoutDots } from './layout';
 import type { DotGeom, RowBox } from './layout';
 import {
-  attachVerses,
   canSplitAfter,
   clampPopover,
   mainPointRefs,
   parseDotId,
+  rowEnglish,
 } from './interaction';
-import type { Point, PropExtent } from './interaction';
+import type { Point } from './interaction';
 import { describeParsing } from './morph';
 import BracketLayer from './BracketLayer';
 import type { PositionedBracket, ShakeState } from './BracketLayer';
@@ -99,11 +98,6 @@ interface RowContextValue {
    * These rows render red.
    */
   mainPids: ReadonlySet<string>;
-  /**
-   * English (WEB) verses rendered above each row — a verse sits on the row
-   * holding its first analyzed word. Display only.
-   */
-  versesByPid: ReadonlyMap<string, VerseText[]>;
   /**
    * A single click on ANY word: the word-info popover (lemma, morphology,
    * gloss), plus "Split after" when the word is splittable. `index` is the
@@ -160,7 +154,13 @@ function PropositionRow({ node }: ReactNodeViewProps) {
   const color = isMain ? MAIN_POINT_COLOR : stored;
   const tokens = ctx !== null ? rowTokens(node, ctx.words) : [];
 
-  const verses = ctx?.versesByPid.get(pid);
+  // The English line is built from THIS row's own words, so it always
+  // matches the proposition exactly, however the verses were divided.
+  const { srcStart, srcEnd } = node.attrs as { srcStart: unknown; srcEnd: unknown };
+  const english =
+    ctx !== null && typeof srcStart === 'number' && typeof srcEnd === 'number'
+      ? rowEnglish(srcStart, srcEnd, ctx.words)
+      : [];
 
   return (
     <NodeViewWrapper
@@ -170,11 +170,11 @@ function PropositionRow({ node }: ReactNodeViewProps) {
     >
       <span className="verse-label">{String(node.attrs.label)}</span>
       <div className="prop-body">
-        {verses !== undefined && verses.length > 0 && (
+        {english.length > 0 && (
           <div className="english-line" contentEditable={false}>
-            {verses.map((v) => (
-              <span key={`${v.book}:${v.chapter}:${v.verse}`}>
-                <span className="ev">{v.verse}</span> {v.text}{' '}
+            {english.map((seg, i) => (
+              <span key={i}>
+                {seg.marker !== null && <span className="ev">{seg.marker}</span>} {seg.text}{' '}
               </span>
             ))}
           </div>
@@ -252,12 +252,12 @@ export interface AnalysisEditorProps {
 
 export default function AnalysisEditor({ document: baseDoc, onChange }: AnalysisEditorProps) {
   const [words, setWords] = useState<Map<number, CorpusWord> | null>(null);
-  const [verses, setVerses] = useState<VerseText[] | null>(null);
   const [taxonomy, setTaxonomy] = useState<TaxonomyEntry[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   // One batched corpus fetch covering every corpus-sourced proposition; the
-  // English reference verses ride the same range.
+  // words carry their contextual English, so nothing else is needed for the
+  // reference line.
   useEffect(() => {
     let cancelled = false;
     let min = Infinity;
@@ -270,7 +270,6 @@ export default function AnalysisEditor({ document: baseDoc, onChange }: Analysis
     }
     if (min > max) {
       setWords(new Map());
-      setVerses([]);
     } else {
       getCorpusWords(min, max)
         .then((ws) => {
@@ -278,14 +277,6 @@ export default function AnalysisEditor({ document: baseDoc, onChange }: Analysis
         })
         .catch((err: unknown) => {
           if (!cancelled) setLoadError(errorMessages(err).join('; '));
-        });
-      // The English line is a nicety: failing to load it never blocks editing.
-      getCorpusVerses(min, max)
-        .then((vs) => {
-          if (!cancelled) setVerses(vs);
-        })
-        .catch(() => {
-          if (!cancelled) setVerses([]);
         });
     }
     getTaxonomy()
@@ -303,24 +294,17 @@ export default function AnalysisEditor({ document: baseDoc, onChange }: Analysis
   if (loadError !== null) {
     return <div className="error-box">{loadError}</div>;
   }
-  if (words === null || verses === null || taxonomy === null) {
+  if (words === null || taxonomy === null) {
     return <p className="muted">Loading…</p>;
   }
   return (
-    <EditorInner
-      baseDoc={baseDoc}
-      words={words}
-      verses={verses}
-      taxonomy={taxonomy}
-      onChange={onChange}
-    />
+    <EditorInner baseDoc={baseDoc} words={words} taxonomy={taxonomy} onChange={onChange} />
   );
 }
 
 interface InnerProps {
   baseDoc: AnalysisDocument;
   words: Map<number, CorpusWord>;
-  verses: VerseText[];
   taxonomy: TaxonomyEntry[];
   onChange: (doc: AnalysisDocument) => void;
 }
@@ -346,7 +330,7 @@ interface Overlay {
   height: number;
 }
 
-function EditorInner({ baseDoc, words, verses, taxonomy, onChange }: InnerProps) {
+function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
   const [selectedDotId, setSelectedDotId] = useState<string | null>(null);
   const [popover, setPopover] = useState<PopoverState | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
@@ -492,25 +476,6 @@ function EditorInner({ baseDoc, words, verses, taxonomy, onChange }: InnerProps)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, docTick, baseDoc]);
 
-  /** Which row shows which English verse (re-attached after every edit). */
-  const versesByPid = useMemo(() => {
-    const extents: PropExtent[] = [];
-    if (editor !== null) {
-      editor.state.doc.descendants((node) => {
-        if (node.type.name === 'proposition') {
-          extents.push({
-            pid: String(node.attrs.pid),
-            srcStart: typeof node.attrs.srcStart === 'number' ? node.attrs.srcStart : null,
-            srcEnd: typeof node.attrs.srcEnd === 'number' ? node.attrs.srcEnd : null,
-          });
-          return false;
-        }
-        return true;
-      });
-    }
-    return attachVerses(extents, verses);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor, docTick, verses]);
 
   // ---- Geometry -----------------------------------------------------------
   // Measure every row, then lay the whole FOREST out; layout brackets
@@ -568,7 +533,6 @@ function EditorInner({ baseDoc, words, verses, taxonomy, onChange }: InnerProps)
       words,
       lastPid: pids.length > 0 ? (pids[pids.length - 1] ?? null) : null,
       mainPids,
-      versesByPid,
       onWordClick: (pid, ordinal, word, index, splittable, target) => {
         const shell = shellRef.current;
         if (shell === null) return;
@@ -588,7 +552,7 @@ function EditorInner({ baseDoc, words, verses, taxonomy, onChange }: InnerProps)
         mergeBelow(editor, pid, words);
       },
     }),
-    [words, pids, mainPids, versesByPid, editor],
+    [words, pids, mainPids, editor],
   );
 
   if (editor === null) return null;
@@ -720,6 +684,9 @@ function EditorInner({ baseDoc, words, verses, taxonomy, onChange }: InnerProps)
               </div>
               {info.gloss !== null && <div className="word-gloss">{info.gloss}</div>}
               <div className="word-parse muted">{describeParsing(info.pos, info.parsing)}</div>
+              {info.eng !== null && (
+                <div className="word-context muted">here: “{info.eng}”</div>
+              )}
             </div>
           )}
         </div>

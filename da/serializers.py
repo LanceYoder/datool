@@ -8,7 +8,7 @@ directly so the validator and the API can never disagree.
 
 from rest_framework import serializers
 
-from .corpus import Alignment, Word, gloss_for
+from .corpus import Alignment, Word, english_for, gloss_for
 from .models import Analysis
 
 
@@ -48,6 +48,9 @@ def word_json(word: Word) -> dict:
         # TBESG (STEPBible.org, CC BY 4.0): null when the lemma has no entry.
         "translit": entry[0] if entry is not None else None,
         "gloss": entry[1] if entry is not None else None,
+        # TAGNT contextual English (STEPBible.org, CC BY 4.0): null when the
+        # word did not align (≈2%).
+        "eng": english_for(word.index),
     }
 
 

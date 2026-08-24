@@ -7,7 +7,7 @@
 // for the relationship menu, reading a dot id back apart, and keeping a
 // popover on screen.
 
-import type { TaxonomyEntry, TreeNode, VerseText } from '../types';
+import type { CorpusWord, TaxonomyEntry, TreeNode } from '../types';
 
 /** Display names for the taxonomy's four families. */
 export const FAMILY_NAMES: Record<string, string> = {
@@ -96,45 +96,53 @@ export function mainPointRefs(forest: readonly TreeNode[]): string[] {
   return out;
 }
 
-/** A proposition's identity and corpus extent, for verse attachment. */
-export interface PropExtent {
-  pid: string;
-  srcStart: number | null;
-  srcEnd: number | null;
+/** One run of a row's English line: an optional verse marker, then text. */
+export interface EnglishSegment {
+  /** Verse number shown before the text — only where a verse BEGINS. */
+  marker: number | null;
+  text: string;
 }
 
 /**
- * Which proposition ROW each English verse renders above: the row holding the
- * verse's first word — clamped to the document's opening when the analyzed
- * range starts mid-verse, and pushed to the next corpus row when the exact
- * word fell into a gap (a degraded merge). Raw propositions never attract
- * verses. Returns pid -> verses, verses in corpus order.
+ * The English reference line for one proposition, built from ITS OWN words'
+ * contextual renderings (TAGNT `eng`), so the line matches the proposition
+ * exactly however the verses were divided. A verse-number marker opens a
+ * segment only where that verse's FIRST word sits in this row — a row
+ * continuing mid-verse gets bare text. Words without an aligned rendering
+ * are skipped; a row with none yields [].
  */
-export function attachVerses(
-  props: readonly PropExtent[],
-  verses: readonly VerseText[],
-): Map<string, VerseText[]> {
-  const corpus = props.filter(
-    (p): p is PropExtent & { srcStart: number; srcEnd: number } =>
-      typeof p.srcStart === 'number' && typeof p.srcEnd === 'number',
-  );
-  const out = new Map<string, VerseText[]>();
-  if (corpus.length === 0) return out;
-  const minStart = Math.min(...corpus.map((p) => p.srcStart));
+export function rowEnglish(
+  srcStart: number,
+  srcEnd: number,
+  words: ReadonlyMap<number, CorpusWord>,
+): EnglishSegment[] {
+  const out: EnglishSegment[] = [];
+  let current: { marker: number | null; parts: string[] } | null = null;
 
-  for (const verse of verses) {
-    const at = Math.max(verse.start, minStart);
-    const holder =
-      corpus.find((p) => p.srcStart <= at && at <= p.srcEnd) ??
-      corpus.find((p) => p.srcStart > at);
-    if (holder === undefined) continue;
-    const list = out.get(holder.pid);
-    if (list === undefined) {
-      out.set(holder.pid, [verse]);
-    } else {
-      list.push(verse);
+  const flush = (): void => {
+    if (current !== null && current.parts.length > 0) {
+      out.push({ marker: current.marker, text: current.parts.join(' ') });
     }
+  };
+
+  for (let i = srcStart; i <= srcEnd; i += 1) {
+    const w = words.get(i);
+    if (w === undefined) continue;
+    const prev = words.get(i - 1);
+    const verseInitial =
+      prev === undefined ||
+      prev.book !== w.book ||
+      prev.chapter !== w.chapter ||
+      prev.verse !== w.verse;
+    if (current === null) {
+      current = { marker: verseInitial ? w.verse : null, parts: [] };
+    } else if (verseInitial) {
+      flush();
+      current = { marker: w.verse, parts: [] };
+    }
+    if (w.eng !== null && w.eng !== '') current.parts.push(w.eng);
   }
+  flush();
   return out;
 }
 

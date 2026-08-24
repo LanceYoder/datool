@@ -110,6 +110,8 @@ export interface CorpusWord {
   translit: string | null;
   /** TBESG short English gloss, null when the lemma has no entry. */
   gloss: string | null;
+  /** TAGNT contextual English of THIS word in THIS verse (null ≈2%). */
+  eng: string | null;
 }
 
 /** One English (WEB) verse from GET /api/corpus/verses. */

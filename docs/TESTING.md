@@ -74,11 +74,13 @@ analysis. Everything is built by hand:
 10. **Save / reload**: Save in the top bar, reload the page, reopen from the
     home list — the analysis must come back exactly as left.
 
-Above each Greek row, a muted line shows the English of the verses starting
-there (World English Bible, public domain) — display only. Clicking a word
-opens its info card: lemma with transliteration, a short English gloss
-(TBESG, STEPBible.org data by Tyndale House, CC BY 4.0), readable
-morphology, and the Split after button.
+Above each Greek row, a muted line shows the English of EXACTLY that
+proposition's words — built word-by-word from the TAGNT contextual
+renderings (STEPBible.org data by Tyndale House, CC BY 4.0), with small
+verse numbers where a verse begins. It re-divides as you split and merge.
+Clicking a word opens its info card: Split after on top, then the lemma
+with transliteration, a short English gloss (TBESG, same source and
+license), readable morphology, and the word's rendering here.
 
 ## Resetting
 

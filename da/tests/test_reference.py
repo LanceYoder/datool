@@ -95,3 +95,20 @@ class TestVersesEndpoint:
         first = res.json()[0]  # ἐάν
         assert first["gloss"] is not None
         assert first["translit"]
+
+
+class TestWordEnglish:
+    def test_phil_1_9_reads_per_word(self):
+        from da.corpus import english_for
+        # Phil 1:9 opens καὶ τοῦτο προσεύχομαι — "And this I pray,"
+        words = load_words()
+        start = next(w.index for w in words
+                     if w.book == 11 and w.chapter == 1 and w.verse == 9)
+        joined = " ".join(
+            english_for(i) or "" for i in range(start, start + 3)
+        )
+        assert joined == "And this I pray,"
+
+    def test_coverage_is_high(self):
+        from da.corpus.interlinear import _table
+        assert len(_table()) / len(load_words()) > 0.95

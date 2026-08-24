@@ -3,14 +3,14 @@ import type { BracketNode, TaxonomyEntry, TreeNode } from '../../types';
 import { layoutDots } from '../layout';
 import type { RowBox } from '../layout';
 import {
-  attachVerses,
   canSplitAfter,
   clampPopover,
   groupByFamily,
   mainPointRefs,
   parseDotId,
+  rowEnglish,
 } from '../interaction';
-import type { VerseText } from '../../types';
+import { WORD_MAP } from './fixtures';
 import { TAXONOMY } from './fixtures';
 
 // The same forest layout.test.ts uses:
@@ -125,41 +125,35 @@ describe('mainPointRefs', () => {
   });
 });
 
-describe('attachVerses', () => {
-  const verse = (verse: number, start: number): VerseText => ({
-    book: 23, chapter: 1, verse, start, ref: `1 John 1:${verse}`, text: `v${verse} text`,
+describe('rowEnglish', () => {
+  // Fixture words: 124771–124783 verse 6 (124776 has eng: null), then a gap,
+  // then 124789–124791 verse 7; eng is 'e<index>' elsewhere.
+
+  it("joins the row's own words' contextual English, marking the verse start", () => {
+    expect(rowEnglish(124771, 124773, WORD_MAP)).toEqual([
+      { marker: 6, text: 'e124771 e124772 e124773' },
+    ]);
   });
 
-  it('puts each verse on the row holding its first word', () => {
-    const props = [
-      { pid: 'a', srcStart: 100, srcEnd: 119 },
-      { pid: 'b', srcStart: 120, srcEnd: 139 },
-    ];
-    const out = attachVerses(props, [verse(5, 100), verse(6, 125)]);
-    expect(out.get('a')?.map((v) => v.verse)).toEqual([5]);
-    expect(out.get('b')?.map((v) => v.verse)).toEqual([6]);
+  it('gives a mid-verse row bare text — no verse marker', () => {
+    expect(rowEnglish(124777, 124779, WORD_MAP)).toEqual([
+      { marker: null, text: 'e124777 e124778 e124779' },
+    ]);
   });
 
-  it('clamps a verse starting before the analyzed range to the first row', () => {
-    const props = [{ pid: 'a', srcStart: 110, srcEnd: 139 }];
-    const out = attachVerses(props, [verse(5, 100), verse(6, 125)]);
-    expect(out.get('a')?.map((v) => v.verse)).toEqual([5, 6]);
+  it('starts a marked segment where a new verse begins inside the row', () => {
+    expect(rowEnglish(124782, 124791, WORD_MAP)).toEqual([
+      { marker: null, text: 'e124782 e124783' },
+      { marker: 7, text: 'e124789 e124790 e124791' },
+    ]);
   });
 
-  it('pushes a verse landing in a source gap to the next corpus row', () => {
-    const props = [
-      { pid: 'a', srcStart: 100, srcEnd: 119 },
-      { pid: 'raw', srcStart: null, srcEnd: null },
-      { pid: 'b', srcStart: 130, srcEnd: 139 },
-    ];
-    // Verse 6 starts at 125 — inside the gap left by the raw proposition.
-    const out = attachVerses(props, [verse(6, 125)]);
-    expect(out.get('b')?.map((v) => v.verse)).toEqual([6]);
-    expect(out.has('raw')).toBe(false);
-  });
-
-  it('is empty for raw-only documents', () => {
-    expect(attachVerses([{ pid: 'x', srcStart: null, srcEnd: null }], [verse(5, 1)]).size).toBe(0);
+  it('skips words with no aligned rendering and empty rows', () => {
+    expect(rowEnglish(124775, 124777, WORD_MAP)).toEqual([
+      { marker: null, text: 'e124775 e124777' }, // 124776 is null
+    ]);
+    expect(rowEnglish(124776, 124776, WORD_MAP)).toEqual([]);
+    expect(rowEnglish(200000, 200002, WORD_MAP)).toEqual([]); // outside the map
   });
 });
 

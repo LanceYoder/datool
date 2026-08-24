@@ -89,6 +89,9 @@ const corpusWord = (index: number, text: string, verse: number): CorpusWord => (
   verse,
   translit: 'translit',
   gloss: 'gloss',
+  // Contextual English, deterministic per index; 124776 (μετ’) simulates the
+  // ≈2% of words with no aligned rendering.
+  eng: index === 124776 ? null : `e${index}`,
 });
 
 export const CORPUS_WORDS: CorpusWord[] = [
