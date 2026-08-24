@@ -767,8 +767,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
   const onClearTree = () => {
     setPopover(null);
     setSelectedDotId(null);
-    if (findBrackets(editor.state.doc).length === 0) return;
-    if (!window.confirm('Remove every connection? The propositions stay as they are.')) return;
+    // No confirmation: it is one undo away, like every other command here.
     clearConnections(editor);
   };
 
@@ -850,19 +849,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
   return (
     <RowContext.Provider value={rowCtx}>
       <div className="editor-toolbar">
-        <button type="button" disabled={!editor.can().undo()} onClick={() => editor.commands.undo()}>
-          Undo
-        </button>
-        <button type="button" disabled={!editor.can().redo()} onClick={() => editor.commands.redo()}>
-          Redo
-        </button>
-        <button
-          type="button"
-          onClick={onClearTree}
-          title="Remove every connection, leaving the propositions as they are"
-        >
-          Clear tree
-        </button>
+        {/* Left: what the reader sees. Right: what the editor does. */}
         <label className="switch">
           <input
             type="checkbox"
@@ -892,9 +879,22 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
             {flash}
           </span>
         )}
+        <button type="button" disabled={!editor.can().undo()} onClick={() => editor.commands.undo()}>
+          Undo
+        </button>
+        <button type="button" disabled={!editor.can().redo()} onClick={() => editor.commands.redo()}>
+          Redo
+        </button>
         <button
           type="button"
-          className="help-button"
+          onClick={onClearTree}
+          title="Remove every connection, leaving the propositions as they are"
+        >
+          Clear tree
+        </button>
+        <button
+          type="button"
+          className={helpPanel ? 'help-button on' : 'help-button'}
           aria-label="How this editor works"
           aria-expanded={helpPanel}
           title="How this editor works"
@@ -903,7 +903,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
           ?
         </button>
       </div>
-      {helpPanel && <HelpPanel onClose={() => setHelpPanel(false)} />}
+      {helpPanel && <HelpPanel />}
       {colorPanel && view.colorCoding && (
         <ColorSettings
           taxonomy={taxonomy}

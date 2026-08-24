@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import type { Analysis, Document as AnalysisDocument } from '../types';
 import { deleteAnalysis, errorMessages, getAnalysis, updateAnalysis } from '../api';
 import AnalysisEditor from '../editor/AnalysisEditor';
+import NotesEditor from '../notes/NotesEditor';
 
 /** Printable width of US Letter portrait at 0.5in margins, in CSS pixels. */
 const PRINT_WIDTH_PX = 7.5 * 96;
@@ -17,7 +18,6 @@ export default function AnalysisPage() {
   // survives saves (saving must not rebuild the editor).
   const [initialDoc, setInitialDoc] = useState<AnalysisDocument | null>(null);
   const draftRef = useRef<AnalysisDocument | null>(null);
-  const notesRef = useRef<HTMLTextAreaElement | null>(null);
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
@@ -101,8 +101,7 @@ export default function AnalysisPage() {
   /**
    * Printing is the browser's, but the fit is ours: the analysis is as wide as
    * its deepest tree, which is often wider than a page, so it is scaled down
-   * to the printable width first (see the @media print block), and the notes
-   * box is grown to its full text so nothing is cut off at row six.
+   * to the printable width first (see the @media print block).
    */
   const print = () => {
     const shell = document.querySelector<HTMLElement>('.editor-shell');
@@ -110,22 +109,8 @@ export default function AnalysisPage() {
       const scale = Math.min(1, PRINT_WIDTH_PX / Math.max(1, shell.scrollWidth));
       shell.style.setProperty('--print-scale', scale.toFixed(3));
     }
-    const area = notesRef.current;
-    if (area !== null) area.style.height = `${area.scrollHeight}px`;
     window.print();
   };
-
-  // Undo the print fit-up once the dialog is gone.
-  useEffect(() => {
-    const onAfterPrint = () => {
-      const area = notesRef.current;
-      if (area !== null) area.style.height = '';
-    };
-    window.addEventListener('afterprint', onAfterPrint);
-    return () => {
-      window.removeEventListener('afterprint', onAfterPrint);
-    };
-  }, []);
 
   const remove = async () => {
     if (id === undefined) return;
@@ -164,9 +149,12 @@ export default function AnalysisPage() {
         <button className="danger" onClick={() => void remove()} disabled={busy || analysis === null}>
           Delete
         </button>
-        {(dirty || titleDirty || notesDirty) && <span className="muted">Unsaved changes</span>}
+        {/* Save state is for the screen only — the print sheet drops it. */}
+        {(dirty || titleDirty || notesDirty) && (
+          <span className="muted save-state">Unsaved changes</span>
+        )}
         {savedAt !== null && errors.length === 0 && !dirty && (
-          <span className="muted">Saved {savedAt.toLocaleTimeString()}</span>
+          <span className="muted save-state">Saved {savedAt.toLocaleTimeString()}</span>
         )}
       </div>
       {errors.length > 0 && (
@@ -182,15 +170,7 @@ export default function AnalysisPage() {
           <AnalysisEditor document={initialDoc} onChange={onDocumentChange} />
           <section className="notes-panel">
             <h2>Notes</h2>
-            <textarea
-              ref={notesRef}
-              className="notes-area"
-              value={notes}
-              rows={6}
-              placeholder="Exegetical comments on this passage…"
-              aria-label="Notes"
-              onChange={(e) => setNotes(e.target.value)}
-            />
+            <NotesEditor value={notes} onChange={setNotes} />
           </section>
         </>
       )}

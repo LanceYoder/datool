@@ -372,6 +372,14 @@ div.error-box {
 
 /* ---- Help ---- */
 
+/* The button stays lit while its panel is open — it is the panel's only
+   control, clicked once to open and again to close. */
+.help-button.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
 .help-button {
   flex: none;
   width: 1.8rem;
@@ -388,17 +396,6 @@ div.error-box {
   border-radius: 8px;
   background: var(--bg-soft);
   padding: 0.5rem 0.75rem 0.75rem;
-}
-
-.help-head {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.4rem;
-}
-
-.help-head strong {
-  flex: 1;
 }
 
 .help-list {
@@ -425,11 +422,6 @@ div.error-box {
   margin: 0;
 }
 
-.help-foot {
-  margin: 0.6rem 0 0;
-  font-size: 0.85rem;
-  max-width: 52rem;
-}
 
 .color-settings {
   margin-top: 0.5rem;
@@ -698,14 +690,58 @@ div.error-box {
   margin: 2rem auto 0;
 }
 
-.notes-area {
-  width: 100%;
-  padding: 0.5rem 0.6rem;
+.notes-editor {
   border: 1px solid var(--border);
   border-radius: 6px;
-  font: inherit;
-  line-height: 1.5;
-  resize: vertical;
+  overflow: hidden;
+}
+
+.notes-tools {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.3rem 0.4rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-soft);
+}
+
+.notes-tool {
+  width: 1.9rem;
+  padding: 0.15rem 0;
+  font-size: 0.95rem;
+  line-height: 1.2;
+}
+
+.notes-tool.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.notes-tool:nth-child(1) {
+  font-weight: 700;
+}
+
+.notes-tool:nth-child(2) {
+  font-style: italic;
+}
+
+.notes-tool:nth-child(3) {
+  text-decoration: underline;
+}
+
+.notes-body .ProseMirror {
+  min-height: 8rem;
+  padding: 0.5rem 0.6rem;
+  line-height: 1.55;
+  outline: none;
+}
+
+.notes-body .ProseMirror p {
+  margin: 0 0 0.6rem;
+}
+
+.notes-body .ProseMirror p:last-child {
+  margin-bottom: 0;
 }
 
 /* ---- Recently deleted ---- */
@@ -760,6 +796,8 @@ div.error-box {
   .app-header,
   .editor-toolbar,
   .analysis-toolbar button,
+  .save-state,
+  .notes-tools,
   .color-settings,
   .popover,
   .merge-below,
@@ -814,11 +852,12 @@ div.error-box {
     margin-top: 1rem;
   }
 
-  .notes-area {
+  .notes-editor {
     border: none;
+  }
+
+  .notes-body .ProseMirror {
+    min-height: 0;
     padding: 0;
-    resize: none;
-    height: auto;
-    overflow: visible;
   }
 }
