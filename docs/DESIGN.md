@@ -55,7 +55,9 @@ default; the user can move it — that's interpretation). Two-part labels may be
 
 **Rules of the method — these become app invariants:**
 
-- Every proposition is connected into the analysis.
+- Every proposition is connected into the analysis — the goal state of a finished
+  analysis, not a save-time invariant: while the user is still connecting propositions
+  pairwise, unconnected ones are legal (see §2, the forest).
 - Brackets never cross.
 - Brackets attach to other brackets at their starred end (center if coordinate).
 - Following the stars outward from any point leads to the **main point**: the
@@ -71,12 +73,19 @@ ordered tree over contiguous spans**:
 - **Internal node** = bracket:
   `{ relationship, children (ordered, ≥ 2), prominentChildIndex | null, labelReversed? }`
   — `null` prominence ⇔ coordinate type.
-- **Contiguity is derived, not stored.** A tree is valid iff its in-order leaves equal
-  the proposition list. "Brackets never cross" needs no checking; it is unrepresentable.
-- **The main point is computed**, not stored: walk from the root following
-  `prominentChildIndex` (at coordinate nodes, the whole packet is the point).
+- **A document holds an ordered FOREST, not one tree** (`schemaVersion: 2`). The user
+  connects propositions pairwise by hand, so an in-progress analysis has propositions
+  that are not yet joined to anything: each is simply a root of its own. A *finished*,
+  fully connected analysis is a forest of one. (v1 documents carried a single `tree`
+  key; they still validate and read as a forest of one.)
+- **Contiguity is derived, not stored.** A forest is valid iff the in-order leaves of
+  its roots, in root order, equal the proposition list. "Brackets never cross" needs no
+  checking; it is unrepresentable.
+- **The main point is computed**, not stored: walk from the single root following
+  `prominentChildIndex` (at coordinate nodes, the whole packet is the point). A forest
+  with several roots has no main point yet — nothing supports everything else.
 - **Layout is deterministic**: nesting depth → margin column. There is no drag-and-drop
-  canvas and no persisted geometry — rendering is a pure function of the tree.
+  canvas and no persisted geometry — rendering is a pure function of the forest.
 
 This single decision shapes everything else: the editor is structural (wrap/unwrap/
 re-label), the storage is one JSON document, and validity is enforced by a schema rather
@@ -98,7 +107,7 @@ As a datool document (the `document` JSON of one `Analysis` row):
 
 ```jsonc
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "propositions": [
     { "id": "p1", "label": "6a", "source": { "kind": "corpus", "start": 124771, "end": 124772 } },
     { "id": "p2", "label": "6b", "source": { "kind": "corpus", "start": 124773, "end": 124777 } },
@@ -106,31 +115,33 @@ As a datool document (the `document` JSON of one `Analysis` row):
     { "id": "p4", "label": "6d", "source": { "kind": "corpus", "start": 124783, "end": 124783 } },
     { "id": "p5", "label": "6e", "source": { "kind": "corpus", "start": 124784, "end": 124788 } }
   ],
-  "tree": {
-    "kind": "bracket", "rel": "CndE", "prominent": 1,          // C? → E*
-    "children": [
-      {
-        "kind": "bracket", "rel": "FtIn", "prominent": 1,      // Ft → In*
-        "children": [
-          { "kind": "prop", "ref": "p1" },
-          {
-            "kind": "bracket", "rel": "Adv", "prominent": 0,   // 6b stands despite 6c
-            "children": [
-              { "kind": "prop", "ref": "p2" },
-              { "kind": "prop", "ref": "p3" }
-            ]
-          }
-        ]
-      },
-      {
-        "kind": "bracket", "rel": "Ser", "prominent": null,    // coordinate Series
-        "children": [
-          { "kind": "prop", "ref": "p4" },
-          { "kind": "prop", "ref": "p5" }
-        ]
-      }
-    ]
-  }
+  "forest": [
+    {
+      "kind": "bracket", "rel": "CndE", "prominent": 1,          // C? → E*
+      "children": [
+        {
+          "kind": "bracket", "rel": "FtIn", "prominent": 1,      // Ft → In*
+          "children": [
+            { "kind": "prop", "ref": "p1" },
+            {
+              "kind": "bracket", "rel": "Adv", "prominent": 0,   // 6b stands despite 6c
+              "children": [
+                { "kind": "prop", "ref": "p2" },
+                { "kind": "prop", "ref": "p3" }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "bracket", "rel": "Ser", "prominent": null,    // coordinate Series
+          "children": [
+            { "kind": "prop", "ref": "p4" },
+            { "kind": "prop", "ref": "p5" }
+          ]
+        }
+      ]
+    }
+  ]
 }
 ```
 
@@ -316,9 +327,10 @@ class Analysis(models.Model):
 ```
 
 - **Validation**: a ~50-line Python validator is the authority (the ProseMirror schema
-  mirrors it client-side for UX): in-order leaves == proposition list, every leaf used
-  exactly once, bracket arity ≥ 2, `prominent` set iff subordinate type, `rel` in the
-  taxonomy. Runs on every save.
+  mirrors it client-side for UX): a non-empty `forest`, whose in-order leaves across all
+  roots (roots in list order) == the proposition list, every leaf used exactly once,
+  bracket arity ≥ 2, `prominent` set iff subordinate type, `rel` in the taxonomy. Runs
+  on every save, and accepts legacy v1 (`tree`) documents as a forest of one.
 - **Taxonomy defined once** in Python (code, name, family, symbols, has-star, default
   star side) and exported as JSON to the frontend, so classifier, validator, and editor
   UI cannot drift.

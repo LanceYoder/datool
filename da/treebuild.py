@@ -3,8 +3,8 @@
 Input: the ordered ``Segment`` list produced by :mod:`da.segmentation` (stage 1),
 which exactly tiles an inclusive corpus range. Output: a complete, valid
 analysis document (see docs/DESIGN.md §3, §5) — every proposition connected
-into one tree, every bracket labeled with a taxonomy relationship, ambiguous
-calls carrying a ``review`` flag.
+into one tree (a ``forest`` of one root), every bracket labeled with a
+taxonomy relationship, ambiguous calls carrying a ``review`` flag.
 
 Assembly is a deterministic shift-reduce pass:
 
@@ -50,7 +50,7 @@ from collections import Counter
 from typing import TYPE_CHECKING, Iterable, Sequence
 
 from .corpus import load_words
-from .documents import validate_document
+from .documents import SCHEMA_VERSION, validate_document
 from .taxonomy import RELATIONSHIPS
 
 if TYPE_CHECKING:  # pragma: no cover — written concurrently, contract-typed
@@ -502,9 +502,11 @@ def build_document(segments: list["Segment"], *, aligned: bool = True) -> dict:
         _flag_all(tree)
 
     doc = {
-        "schemaVersion": 1,
+        "schemaVersion": SCHEMA_VERSION,
         "propositions": _propositions(segments, words),
-        "tree": tree,
+        # The first pass connects everything, so the forest has a single root;
+        # disconnected roots only appear once the user edits (DESIGN.md §3).
+        "forest": [tree],
     }
     validate_document(doc)  # a failure here is a builder bug — never ship it
     return doc

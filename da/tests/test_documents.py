@@ -1,8 +1,15 @@
 """Unit tests for the document validator and main-point walk (da.documents)."""
 
+import copy
+
 import pytest
 
-from da.documents import DocumentError, main_point, validate_document
+from da.documents import (
+    DocumentError,
+    main_point,
+    normalize_document,
+    validate_document,
+)
 
 
 def prop(pid: str, start: int, end: int) -> dict:
@@ -14,9 +21,10 @@ def prop(pid: str, start: int, end: int) -> dict:
 
 
 def valid_doc() -> dict:
-    """The 1 John 1:6 worked example from docs/DESIGN.md §3 (small indexes)."""
+    """The 1 John 1:6 worked example from docs/DESIGN.md §3 (small indexes) —
+    fully connected, so its forest has a single root."""
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "propositions": [
             prop("p1", 0, 1),
             prop("p2", 2, 6),
@@ -24,31 +32,67 @@ def valid_doc() -> dict:
             prop("p4", 12, 12),
             prop("p5", 13, 17),
         ],
-        "tree": {
-            "kind": "bracket", "rel": "CndE", "prominent": 1,
-            "children": [
-                {
-                    "kind": "bracket", "rel": "FtIn", "prominent": 1,
-                    "children": [
-                        {"kind": "prop", "ref": "p1"},
-                        {
-                            "kind": "bracket", "rel": "Adv", "prominent": 0,
-                            "children": [
-                                {"kind": "prop", "ref": "p2"},
-                                {"kind": "prop", "ref": "p3"},
-                            ],
-                        },
-                    ],
-                },
-                {
-                    "kind": "bracket", "rel": "Ser", "prominent": None,
-                    "children": [
-                        {"kind": "prop", "ref": "p4"},
-                        {"kind": "prop", "ref": "p5"},
-                    ],
-                },
-            ],
-        },
+        "forest": [
+            {
+                "kind": "bracket", "rel": "CndE", "prominent": 1,
+                "children": [
+                    {
+                        "kind": "bracket", "rel": "FtIn", "prominent": 1,
+                        "children": [
+                            {"kind": "prop", "ref": "p1"},
+                            {
+                                "kind": "bracket", "rel": "Adv", "prominent": 0,
+                                "children": [
+                                    {"kind": "prop", "ref": "p2"},
+                                    {"kind": "prop", "ref": "p3"},
+                                ],
+                            },
+                        ],
+                    },
+                    {
+                        "kind": "bracket", "rel": "Ser", "prominent": None,
+                        "children": [
+                            {"kind": "prop", "ref": "p4"},
+                            {"kind": "prop", "ref": "p5"},
+                        ],
+                    },
+                ],
+            },
+        ],
+    }
+
+
+def legacy_doc() -> dict:
+    """The same analysis in the v1 single-tree shape."""
+    doc = valid_doc()
+    return {
+        "schemaVersion": 1,
+        "propositions": doc["propositions"],
+        "tree": doc["forest"][0],
+    }
+
+
+def partial_doc() -> dict:
+    """A half-connected analysis: p1 and p2 still stand alone, p3+p4 bracketed."""
+    return {
+        "schemaVersion": 2,
+        "propositions": [
+            prop("p1", 0, 1),
+            prop("p2", 2, 6),
+            prop("p3", 7, 11),
+            prop("p4", 12, 12),
+        ],
+        "forest": [
+            {"kind": "prop", "ref": "p1"},
+            {"kind": "prop", "ref": "p2"},
+            {
+                "kind": "bracket", "rel": "Ser", "prominent": None,
+                "children": [
+                    {"kind": "prop", "ref": "p3"},
+                    {"kind": "prop", "ref": "p4"},
+                ],
+            },
+        ],
     }
 
 
@@ -67,36 +111,146 @@ class TestValidDocuments:
 
     def test_single_proposition_doc(self):
         doc = {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "propositions": [prop("p1", 0, 3)],
-            "tree": {"kind": "prop", "ref": "p1"},
+            "forest": [{"kind": "prop", "ref": "p1"}],
         }
         validate_document(doc)
 
     def test_raw_source_reversed_and_flag(self):
         doc = {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "propositions": [
                 {"id": "a", "label": "1", "source": {"kind": "raw", "text": "ψευδόμεθα"}},
                 {"id": "b", "label": "2", "source": {"kind": "raw", "text": "καὶ οὐ ποιοῦμεν"},
                  "color": "#fde047"},
             ],
-            "tree": {
-                "kind": "bracket", "rel": "WEd", "prominent": 0,
-                "reversed": True, "flag": "review",
-                "children": [
-                    {"kind": "prop", "ref": "a"},
-                    {"kind": "prop", "ref": "b"},
-                ],
-            },
+            "forest": [
+                {
+                    "kind": "bracket", "rel": "WEd", "prominent": 0,
+                    "reversed": True, "flag": "review",
+                    "children": [
+                        {"kind": "prop", "ref": "a"},
+                        {"kind": "prop", "ref": "b"},
+                    ],
+                },
+            ],
         }
         validate_document(doc)
+
+
+class TestForest:
+    def test_multi_root_forest_valid(self):
+        # Two disconnected propositions followed by a bracketed pair.
+        validate_document(partial_doc())
+
+    def test_every_proposition_its_own_root(self):
+        doc = {
+            "schemaVersion": 2,
+            "propositions": [prop("p1", 0, 1), prop("p2", 2, 3), prop("p3", 4, 5)],
+            "forest": [
+                {"kind": "prop", "ref": "p1"},
+                {"kind": "prop", "ref": "p2"},
+                {"kind": "prop", "ref": "p3"},
+            ],
+        }
+        validate_document(doc)
+
+    def test_out_of_order_across_roots(self):
+        doc = partial_doc()
+        doc["forest"][0], doc["forest"][1] = doc["forest"][1], doc["forest"][0]
+        problems = problems_of(doc)
+        assert any("proposition order" in p for p in problems)
+
+    def test_duplicate_across_roots(self):
+        doc = partial_doc()
+        # p2's root now repeats p1: p2 goes missing and p1 appears twice.
+        doc["forest"][1] = {"kind": "prop", "ref": "p1"}
+        problems = problems_of(doc)
+        assert any("not in the forest" in p and "p2" in p for p in problems)
+
+    def test_empty_forest_rejected(self):
+        doc = valid_doc()
+        doc["forest"] = []
+        problems = problems_of(doc)
+        assert any("forest must be a non-empty list" in p for p in problems)
+
+    def test_forest_must_be_a_list(self):
+        doc = valid_doc()
+        doc["forest"] = doc["forest"][0]
+        problems = problems_of(doc)
+        assert any("forest must be a non-empty list" in p for p in problems)
+
+    def test_error_paths_name_the_root_index(self):
+        doc = partial_doc()
+        doc["forest"][2]["rel"] = "Zorp"
+        problems = problems_of(doc)
+        assert any(p.startswith("forest[2].rel") for p in problems)
+
+    def test_bad_root_node(self):
+        doc = partial_doc()
+        doc["forest"][1] = "p2"
+        problems = problems_of(doc)
+        assert any("forest[1] must be an object" in p for p in problems)
+
+
+class TestLegacyDocuments:
+    def test_v1_document_accepted(self):
+        validate_document(legacy_doc())
+
+    def test_v1_document_validated_like_v2(self):
+        doc = legacy_doc()
+        doc["tree"]["rel"] = "Zorp"
+        problems = problems_of(doc)
+        assert any("tree.rel" in p and "Zorp" in p for p in problems)
+
+    def test_normalize_converts_v1_to_forest_of_one(self):
+        doc = legacy_doc()
+        normalized = normalize_document(doc)
+        assert normalized["schemaVersion"] == 2
+        assert "tree" not in normalized
+        assert normalized["forest"] == [doc["tree"]]
+        assert normalized["propositions"] == doc["propositions"]
+        validate_document(normalized)
+
+    def test_normalize_does_not_mutate_input(self):
+        doc = legacy_doc()
+        before = copy.deepcopy(doc)
+        normalize_document(doc)
+        assert doc == before
+
+    def test_normalize_is_identity_on_v2(self):
+        doc = valid_doc()
+        assert normalize_document(doc) == doc
+
+    def test_validate_does_not_mutate_input(self):
+        for doc in (valid_doc(), legacy_doc(), partial_doc()):
+            before = copy.deepcopy(doc)
+            validate_document(doc)
+            assert doc == before
+
+    def test_v1_version_on_a_forest_rejected(self):
+        # The version says which shape to read; a forest is v2 by definition.
+        doc = valid_doc()
+        doc["schemaVersion"] = 1
+        problems = problems_of(doc)
+        assert any("schemaVersion must be 2" in p for p in problems)
+
+    def test_v2_version_on_a_tree_rejected(self):
+        doc = legacy_doc()
+        doc["schemaVersion"] = 2
+        problems = problems_of(doc)
+        assert any("forest must be a non-empty list" in p for p in problems)
+
+    def test_normalize_rejects_non_dict(self):
+        with pytest.raises(DocumentError):
+            normalize_document(["not", "a", "dict"])
 
 
 class TestTreeInvariants:
     def test_out_of_order_leaves(self):
         doc = valid_doc()
-        ser = doc["tree"]["children"][1]
+        ser = doc["forest"][0]["children"][1]
         ser["children"] = [ser["children"][1], ser["children"][0]]  # p5, p4
         problems = problems_of(doc)
         assert any("proposition order" in p for p in problems)
@@ -104,54 +258,56 @@ class TestTreeInvariants:
     def test_duplicate_leaf(self):
         doc = valid_doc()
         # p4 twice: the Series bracket references p4 in both slots.
-        doc["tree"]["children"][1]["children"][1] = {"kind": "prop", "ref": "p4"}
+        doc["forest"][0]["children"][1]["children"][1] = {"kind": "prop", "ref": "p4"}
         problems = problems_of(doc)
-        assert any("p5" in p for p in problems)  # p5 is now missing from the tree
+        assert any("p5" in p for p in problems)  # p5 is now missing from the forest
 
     def test_missing_prop(self):
         doc = valid_doc()
         doc["propositions"].append(prop("p6", 18, 20))  # declared, never placed
         problems = problems_of(doc)
-        assert any("not in tree" in p and "p6" in p for p in problems)
+        assert any("not in the forest" in p and "p6" in p for p in problems)
 
     def test_unknown_leaf_ref(self):
         doc = valid_doc()
-        doc["tree"]["children"][1]["children"][1] = {"kind": "prop", "ref": "ghost"}
+        doc["forest"][0]["children"][1]["children"][1] = {"kind": "prop", "ref": "ghost"}
         problems = problems_of(doc)
         assert any("unknown propositions" in p and "ghost" in p for p in problems)
 
     def test_unknown_rel(self):
         doc = valid_doc()
-        doc["tree"]["rel"] = "Zorp"
+        doc["forest"][0]["rel"] = "Zorp"
         problems = problems_of(doc)
         assert any("Zorp" in p and "not a known relationship" in p for p in problems)
 
     def test_prominent_on_coordinate_rejected(self):
         doc = valid_doc()
-        doc["tree"]["children"][1]["prominent"] = 0  # Ser must stay null
+        doc["forest"][0]["children"][1]["prominent"] = 0  # Ser must stay null
         problems = problems_of(doc)
         assert any("must be null for coordinate" in p for p in problems)
 
     def test_prominent_missing_on_subordinate_rejected(self):
         doc = valid_doc()
-        doc["tree"]["prominent"] = None  # CndE needs a starred child
+        doc["forest"][0]["prominent"] = None  # CndE needs a starred child
         problems = problems_of(doc)
         assert any("valid child index" in p for p in problems)
 
     def test_prominent_out_of_range_rejected(self):
         doc = valid_doc()
-        doc["tree"]["prominent"] = 2  # only children 0 and 1 exist
+        doc["forest"][0]["prominent"] = 2  # only children 0 and 1 exist
         problems = problems_of(doc)
         assert any("valid child index" in p for p in problems)
 
     def test_single_child_bracket(self):
         doc = {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "propositions": [prop("p1", 0, 1)],
-            "tree": {
-                "kind": "bracket", "rel": "Ser", "prominent": None,
-                "children": [{"kind": "prop", "ref": "p1"}],
-            },
+            "forest": [
+                {
+                    "kind": "bracket", "rel": "Ser", "prominent": None,
+                    "children": [{"kind": "prop", "ref": "p1"}],
+                },
+            ],
         }
         problems = problems_of(doc)
         assert any(">= 2" in p for p in problems)
@@ -195,14 +351,20 @@ class TestOtherShapes:
 
     def test_wrong_schema_version(self):
         doc = valid_doc()
-        doc["schemaVersion"] = 2
+        doc["schemaVersion"] = 3
+        problems = problems_of(doc)
+        assert any("schemaVersion" in p for p in problems)
+
+    def test_missing_schema_version(self):
+        doc = valid_doc()
+        del doc["schemaVersion"]
         problems = problems_of(doc)
         assert any("schemaVersion" in p for p in problems)
 
     def test_empty_propositions(self):
         problems = problems_of({
-            "schemaVersion": 1, "propositions": [],
-            "tree": {"kind": "prop", "ref": "p1"},
+            "schemaVersion": 2, "propositions": [],
+            "forest": [{"kind": "prop", "ref": "p1"}],
         })
         assert any("non-empty" in p for p in problems)
 
@@ -214,7 +376,7 @@ class TestOtherShapes:
 
     def test_every_problem_reported(self):
         doc = valid_doc()
-        doc["tree"]["rel"] = "Zorp"
+        doc["forest"][0]["rel"] = "Zorp"
         doc["propositions"][0]["source"] = {"kind": "corpus", "start": 3, "end": 1}
         problems = problems_of(doc)
         assert len(problems) >= 2
@@ -228,19 +390,25 @@ class TestMainPoint:
 
     def test_subordinate_chain_to_single_leaf(self):
         doc = valid_doc()
-        doc["tree"]["prominent"] = 0        # star the FtIn side instead
+        doc["forest"][0]["prominent"] = 0   # star the FtIn side instead
         assert main_point(doc) == ["p2"]    # FtIn* -> Adv (prominent 0) -> p2
 
     def test_coordinate_root_is_whole_packet(self):
         doc = valid_doc()
-        doc["tree"]["rel"] = "Ser"
-        doc["tree"]["prominent"] = None
+        doc["forest"][0]["rel"] = "Ser"
+        doc["forest"][0]["prominent"] = None
         assert main_point(doc) == ["p1", "p2", "p3", "p4", "p5"]
 
     def test_single_prop_doc(self):
         doc = {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "propositions": [prop("p1", 0, 0)],
-            "tree": {"kind": "prop", "ref": "p1"},
+            "forest": [{"kind": "prop", "ref": "p1"}],
         }
         assert main_point(doc) == ["p1"]
+
+    def test_multi_root_forest_has_no_main_point_yet(self):
+        assert main_point(partial_doc()) == []
+
+    def test_legacy_document_walks_its_tree(self):
+        assert main_point(legacy_doc()) == ["p4", "p5"]

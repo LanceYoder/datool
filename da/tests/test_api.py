@@ -28,20 +28,22 @@ def small_document(alignment) -> dict:
     """Two corpus-sourced propositions covering John 1:1, in a Series."""
     start, end = alignment.start, alignment.end
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "propositions": [
             {"id": "p1", "label": "1a",
              "source": {"kind": "corpus", "start": start, "end": start + 4}},
             {"id": "p2", "label": "1b",
              "source": {"kind": "corpus", "start": start + 5, "end": end}},
         ],
-        "tree": {
-            "kind": "bracket", "rel": "Ser", "prominent": None,
-            "children": [
-                {"kind": "prop", "ref": "p1"},
-                {"kind": "prop", "ref": "p2"},
-            ],
-        },
+        "forest": [
+            {
+                "kind": "bracket", "rel": "Ser", "prominent": None,
+                "children": [
+                    {"kind": "prop", "ref": "p1"},
+                    {"kind": "prop", "ref": "p2"},
+                ],
+            },
+        ],
     }
 
 
@@ -78,13 +80,13 @@ class TestAnalysisCrud:
 
         # Update title and document; passage_ref re-derives from the document.
         smaller = {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "propositions": [
                 {"id": "q1", "label": "1a",
                  "source": {"kind": "corpus",
                             "start": john_1_1.start, "end": john_1_1.start + 4}},
             ],
-            "tree": {"kind": "prop", "ref": "q1"},
+            "forest": [{"kind": "prop", "ref": "q1"}],
         }
         updated = client.put(
             f"/api/analyses/{pk}",
@@ -101,10 +103,35 @@ class TestAnalysisCrud:
         assert client.delete(f"/api/analyses/{pk}").status_code == 204
         assert client.get(f"/api/analyses/{pk}").status_code == 404
 
+    def test_create_disconnected_forest(self, client, john_1_1):
+        """A partly connected analysis — two roots — saves and reads back."""
+        document = small_document(john_1_1)
+        document["forest"] = [
+            {"kind": "prop", "ref": "p1"},
+            {"kind": "prop", "ref": "p2"},
+        ]
+        created = client.post("/api/analyses", {"document": document}, format="json")
+        assert created.status_code == 201
+        assert created.json()["document"] == document
+        assert created.json()["passageRef"] == "John 1:1"
+
+    def test_create_legacy_v1_document_accepted(self, client, john_1_1):
+        """Validator tolerance: a v1 single-tree document still writes."""
+        v2 = small_document(john_1_1)
+        legacy = {
+            "schemaVersion": 1,
+            "propositions": v2["propositions"],
+            "tree": v2["forest"][0],
+        }
+        created = client.post("/api/analyses", {"document": legacy}, format="json")
+        assert created.status_code == 201
+        assert created.json()["document"] == legacy
+        assert created.json()["passageRef"] == "John 1:1"
+
     def test_create_invalid_document_400(self, client, john_1_1):
         document = small_document(john_1_1)
-        document["tree"]["rel"] = "Zorp"
-        document["tree"]["prominent"] = 5
+        document["forest"][0]["rel"] = "Zorp"
+        document["forest"][0]["prominent"] = 5
         response = client.post("/api/analyses", {"document": document}, format="json")
         assert response.status_code == 400
         errors = response.json()["errors"]
@@ -119,12 +146,12 @@ class TestAnalysisCrud:
     def test_create_range_beyond_corpus_400(self, client):
         n = len(load_words())
         document = {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "propositions": [
                 {"id": "p1", "label": "1",
                  "source": {"kind": "corpus", "start": n, "end": n + 3}},
             ],
-            "tree": {"kind": "prop", "ref": "p1"},
+            "forest": [{"kind": "prop", "ref": "p1"}],
         }
         response = client.post("/api/analyses", {"document": document}, format="json")
         assert response.status_code == 400
@@ -135,7 +162,7 @@ class TestAnalysisCrud:
         pk = client.post(
             "/api/analyses", {"document": document}, format="json"
         ).json()["id"]
-        bad = dict(document, tree={"kind": "prop", "ref": "nope"})
+        bad = dict(document, forest=[{"kind": "prop", "ref": "nope"}])
         response = client.put(f"/api/analyses/{pk}", {"document": bad}, format="json")
         assert response.status_code == 400
         assert client.get(f"/api/analyses/{pk}").json()["document"] == document
@@ -156,7 +183,8 @@ class TestFirstPass:
         assert response.status_code == 200
         body = response.json()
         document, alignment = body["document"], body["alignment"]
-        assert document["schemaVersion"] == 1
+        assert document["schemaVersion"] == 2
+        assert len(document["forest"]) == 1
         assert document["propositions"]
         assert alignment is not None
         assert alignment["ref"] == "John 1:1"
@@ -168,11 +196,11 @@ class TestFirstPass:
     def test_mocked_first_pass(self, client, monkeypatch):
         """Stub the firstpass boundary — works whether or not the module exists."""
         stub_document = {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "propositions": [
                 {"id": "p1", "label": "1", "source": {"kind": "raw", "text": "stub"}},
             ],
-            "tree": {"kind": "prop", "ref": "p1"},
+            "forest": [{"kind": "prop", "ref": "p1"}],
         }
         result = types.SimpleNamespace(document=stub_document, alignment=None)
         calls = []

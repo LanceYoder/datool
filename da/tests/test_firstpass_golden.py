@@ -67,6 +67,13 @@ def span(doc, node):
             max(sources[r]["end"] for r in refs))
 
 
+def the_root(doc):
+    """The first pass connects everything, so its forest has exactly one root."""
+    assert doc["schemaVersion"] == 2
+    assert isinstance(doc["forest"], list) and len(doc["forest"]) == 1
+    return doc["forest"][0]
+
+
 def by_label(doc):
     return {p["label"]: p["id"] for p in doc["propositions"]}
 
@@ -129,7 +136,7 @@ J_HAND_SEGMENTS = [
 
 def assert_1john_structure(doc):
     validate_document(doc)
-    tree = doc["tree"]
+    tree = the_root(doc)
     ids = by_label(doc)
 
     # 6a/6b: ὅτι after εἴπωμεν (verbum dicendi) → Ft/In, review, star on the
@@ -247,7 +254,7 @@ def assert_hebrews_structure(doc):
     only the explicit-connective calls, located by the corpus span of the
     supporting side."""
     validate_document(doc)
-    tree = doc["tree"]
+    tree = the_root(doc)
 
     # γάρ sentences ground what precedes: star on the supported (previous)
     # side, confident.
@@ -292,7 +299,7 @@ def test_build_document_hebrews_hand_segments():
 
     # With this segmentation the discourse shape is fully determined:
     # Grnd[Inf[Grnd[v9, v10], v11], v12], and the star walk ends at ἵνα.
-    tree = doc["tree"]
+    tree = the_root(doc)
     assert tree["rel"] == "Grnd" and tree["prominent"] == 0
     inner_inf = tree["children"][0]
     assert inner_inf["rel"] == "Inf" and inner_inf["prominent"] == 1
@@ -331,7 +338,7 @@ def test_raw_mode_english_text():
     assert len(doc["propositions"]) == 1
     assert doc["propositions"][0]["source"]["kind"] == "raw"
     assert doc["propositions"][0]["label"] == "1"
-    assert doc["tree"] == {"kind": "prop", "ref": "p1"}
+    assert doc["forest"] == [{"kind": "prop", "ref": "p1"}]
 
 
 def test_raw_mode_non_nt_greek():
@@ -341,7 +348,7 @@ def test_raw_mode_non_nt_greek():
     validate_document(doc)
     assert [p["label"] for p in doc["propositions"]] == ["1", "2"]
     assert all(p["source"]["kind"] == "raw" for p in doc["propositions"])
-    tree = doc["tree"]
+    tree = the_root(doc)
     assert tree["rel"] == "Ser"
     assert tree["prominent"] is None
     assert tree["flag"] == "review"
@@ -358,7 +365,7 @@ def test_verse6_alone_matches_design_worked_example():
     doc = build_document([s for s in J_HAND_SEGMENTS if s.sentence == 1])
     assert [p["label"] for p in doc["propositions"]] == \
         ["6a", "6b", "6c", "6d", "6e"]
-    tree = doc["tree"]
+    tree = the_root(doc)
     assert tree["rel"] == "CndE" and tree["prominent"] == 1
     assert tree.get("flag") is None
     ft = tree["children"][0]
@@ -378,5 +385,5 @@ def test_verse6_alone_matches_design_worked_example():
 def test_unaligned_build_flags_every_bracket():
     doc = build_document([s for s in J_HAND_SEGMENTS if s.sentence == 2],
                          aligned=False)
-    for bracket in brackets(doc["tree"]):
+    for bracket in brackets(the_root(doc)):
         assert bracket.get("flag") == "review"

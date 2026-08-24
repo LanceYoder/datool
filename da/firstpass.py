@@ -16,7 +16,7 @@ import unicodedata
 from dataclasses import dataclass
 
 from .corpus import Alignment, align
-from .documents import validate_document
+from .documents import SCHEMA_VERSION, validate_document
 from .treebuild import build_document
 
 # NFC first (below) maps the Greek question mark U+037E to ';' and ano teleia
@@ -64,6 +64,7 @@ def _raw_document(text: str) -> dict:
         "kind": "bracket", "rel": "Ser", "prominent": None,
         "flag": "review", "children": leaves,
     }
-    doc = {"schemaVersion": 1, "propositions": props, "tree": tree}
+    doc = {"schemaVersion": SCHEMA_VERSION, "propositions": props,
+           "forest": [tree]}
     validate_document(doc)
     return doc
