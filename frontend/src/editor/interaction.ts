@@ -4,10 +4,10 @@
 //
 // The editor CORE (commands.ts, layout.ts) is untouched by this module: these
 // are only the small lookups the UI needs on top of it — grouping the taxonomy
-// for the relationship menu, reading a dot id back apart, working out which
-// bracket a non-connectable dot belongs to, and keeping a popover on screen.
+// for the relationship menu, reading a dot id back apart, and keeping a
+// popover on screen.
 
-import type { TaxonomyEntry, TreeNode } from '../types';
+import type { TaxonomyEntry } from '../types';
 
 /** Display names for the taxonomy's four families. */
 export const FAMILY_NAMES: Record<string, string> = {
@@ -63,37 +63,6 @@ export function parseDotId(id: string): DotRef | null {
     return { kind: 'bracket', index };
   }
   return null;
-}
-
-/**
- * The bracket each dot belongs to, as a pre-order index into findBrackets /
- * layoutBrackets — the bracket a click on a NON-CONNECTABLE dot selects.
- *
- *  - a proposition inside a bracket -> that bracket;
- *  - a bracket -> itself;
- *  - a root proposition -> absent (its dot is connectable, so a click selects
- *    the dot rather than any bracket).
- *
- * The traversal is layoutDots' traversal, so the indices agree with the ids it
- * emits (the tests pin that agreement).
- */
-export function dotOwners(forest: readonly TreeNode[]): Map<string, number> {
-  const owners = new Map<string, number>();
-  let bracketIndex = 0;
-
-  const visit = (node: TreeNode, parentIndex: number | null): void => {
-    if (node.kind === 'prop') {
-      if (parentIndex !== null) owners.set(`prop:${node.ref}`, parentIndex);
-      return;
-    }
-    const index = bracketIndex;
-    bracketIndex += 1;
-    owners.set(`bracket:${index}`, index);
-    for (const child of node.children) visit(child, index);
-  };
-
-  for (const root of forest) visit(root, null);
-  return owners;
 }
 
 export interface Point {

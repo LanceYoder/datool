@@ -8,7 +8,8 @@
 //   svg.bracket-layer.interactive
 //     g.hit-layer    rect.bracket-hit[data-bracket-pos][data-rel]
 //     g.spine-layer  g.bracket[.selected][data-rel] > line …
-//     g.dot-layer    g.dot-group[data-dot][.connectable|.fixed][.selected]
+//     g.dot-layer    g.dot-group[data-dot][.root][.selected]  (every dot is a
+//                    live, same-sized handle; .root marks disconnected units)
 //     g.glyph-layer  g.star-hit > text.bracket-star
 //                    g.label-hit[data-label] > text.bracket-label
 //
@@ -38,7 +39,7 @@ const SEL = {
   row: '.prop-row',
   bracket: 'rect.bracket-hit',
   dot: 'g.dot-group',
-  connectable: 'g.dot-group.connectable',
+  rootDot: 'g.dot-group.root',
   selectedDot: 'g.dot-group.selected',
   star: 'g.star-hit',
   label: 'g.label-hit',
@@ -62,7 +63,7 @@ async function snap(name) {
   // ("Merge below" is opacity 0 until :hover or :focus-visible) would else show
   // up wherever the last gesture left the pointer or the focus ring. Popovers
   // and selections are state-driven, so this disturbs nothing.
-  await page.mouse.move(1270, 980);
+  await page.mouse.move(1430, 980);
   await page.evaluate(() => {
     const el = document.activeElement;
     if (el instanceof HTMLElement && el !== document.body) el.blur();
@@ -145,7 +146,7 @@ const browser = await chromium.launch(
     ? { executablePath: process.env.CHROMIUM_PATH }
     : {},
 );
-page = await browser.newPage({ viewport: { width: 1280, height: 1000 } });
+page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 page.on('pageerror', (err) => {
   problems.push(`page error: ${err.message}`);
   console.error('PAGE ERROR:', err.message);
@@ -200,10 +201,49 @@ if (dots0 !== 14 + brackets0) {
 }
 if (amber0 < 1) await fail('no review-flagged (amber) brackets in the first pass');
 ok(`brackets and dots present (${brackets0} brackets, ${dots0} dots, ${amber0} amber)`);
-await expectCount(SEL.connectable, 1, 'first pass is one connected tree: one root dot');
+await expectCount(SEL.rootDot, 1, 'first pass is one connected tree: one root dot');
+
+// Uniform dot geometry: one radius for every dot, and one x for every
+// proposition dot — nesting depth must never move or shrink a dot.
+const dotRadii = await page.evaluate(() => [
+  ...new Set(
+    [...document.querySelectorAll('g.dot-group circle.dot')].map((c) => c.getAttribute('r')),
+  ),
+]);
+if (dotRadii.length !== 1) await fail(`dots have mixed radii: ${dotRadii.join(', ')}`);
+ok(`every dot has the same radius (${dotRadii[0]})`);
+// Distance is measured from the text column's left edge (the shell's
+// padding), because the whole margin shifts when the tree gets deeper or
+// shallower — the dot-to-row gap is what must never change.
+const propDotDistances = () =>
+  page.evaluate(() => {
+    const shell = document.querySelector('.editor-shell');
+    const pad = parseFloat(getComputedStyle(shell).paddingLeft);
+    return [
+      ...new Set(
+        [...document.querySelectorAll('g.dot-group[data-dot^="prop:"] circle.dot')].map(
+          (c) => pad - parseFloat(c.getAttribute('cx')),
+        ),
+      ),
+    ];
+  });
+const propDist0 = await propDotDistances();
+if (propDist0.length !== 1) {
+  await fail(`proposition dots sit at mixed distances: ${propDist0.join(', ')}`);
+}
+ok(`every proposition dot sits at the same distance from its row (${propDist0[0]}px)`);
+
+// "Merge below" flows inline inside the text span, on every row but the last.
+const rows0 = await countOf(SEL.row);
+await expectCount(
+  '.prop-row .prop-text .merge-below',
+  rows0 - 1,
+  'Merge below sits inline after the last word',
+);
 
 // The removed UI: selects, per-bracket star/confirm buttons, the row-selection
-// mode and the amber review circle that used to sit above a flagged bracket.
+// mode, the amber review circle that used to sit above a flagged bracket, and
+// the old two-tier dot classes (all dots are live handles now).
 for (const [sel, what] of [
   ['.rel-select', 'relationship <select>'],
   ['.star-btn', 'star buttons'],
@@ -212,6 +252,8 @@ for (const [sel, what] of [
   ['.prop-row.selected', 'row selection mode'],
   ['.bracket-hit circle', 'review circle marker'],
   [`circle[fill="${AMBER}"]`, 'amber marker circle'],
+  ['g.dot-group.fixed', 'fixed (dead) dots'],
+  ['g.dot-group.connectable', 'connectable-only dot class'],
 ]) {
   await expectNone(sel, `old UI gone (${what})`);
 }
@@ -250,17 +292,66 @@ if (newLabel !== `${splitLabel}′`) {
 }
 ok(`new row carries the prime mark (${newLabel})`);
 
-// Both halves are now disconnected roots — their dots are connectable handles.
+// Both halves are now disconnected roots.
 for (const pid of [splitPid, newPid]) {
   await expectCount(
-    `g.dot-group.connectable[data-dot="prop:${pid}"]`,
+    `g.dot-group.root[data-dot="prop:${pid}"]`,
     1,
-    `${pid} is a disconnected root (connectable dot handle)`,
+    `${pid} is a disconnected root`,
   );
 }
-const rootsAfterSplit = await countOf(SEL.connectable);
+const rootsAfterSplit = await countOf(SEL.rootDot);
 console.log(`  roots after split: ${rootsAfterSplit}`);
 await snap('after-split');
+
+// --- (c2) reconnect an already-connected pair by its nested dots -------------
+step('(c2) connect the halves, then RE-connect them by their now-nested dots');
+const bracketsBeforeC2 = await countOf(SEL.bracket);
+const dotHalfA = page.locator(`g.dot-group[data-dot="prop:${splitPid}"]`);
+const dotHalfB = page.locator(`g.dot-group[data-dot="prop:${newPid}"]`);
+
+await dotHalfA.dispatchEvent('click');
+await expectCount(`g.dot-group.selected[data-dot="prop:${splitPid}"]`, 1, 'root dot selected');
+await dotHalfB.dispatchEvent('click', { shiftKey: true });
+await page.waitForSelector(SEL.menu);
+await expectCount(SEL.bracket, bracketsBeforeC2 + 1, 'the halves connected into a bracket');
+await page.keyboard.press('Escape');
+
+// Both prop dots are nested now — no longer roots, but still identical
+// handles: same size, same distance, still selectable, still connectable.
+await expectCount(`g.dot-group.root[data-dot="prop:${splitPid}"]`, 0, 'first half is nested now');
+const nestedRadius = await page
+  .locator(`g.dot-group[data-dot="prop:${splitPid}"] circle.dot`)
+  .getAttribute('r');
+if (nestedRadius !== dotRadii[0]) {
+  await fail(`a connected dot changed size: ${nestedRadius} vs ${dotRadii[0]}`);
+}
+const propDistNow = await propDotDistances();
+if (propDistNow.length !== 1 || propDistNow[0] !== propDist0[0]) {
+  await fail(
+    `a connected dot moved away from its row: ${propDistNow.join(', ')} vs ${propDist0[0]}`,
+  );
+}
+ok('connecting changed neither the dot size nor its distance from the row');
+
+await dotHalfA.dispatchEvent('click');
+await expectCount(`g.dot-group.selected[data-dot="prop:${splitPid}"]`, 1, 'a NESTED dot is selectable');
+await snap('nested-dot-selected');
+await dotHalfB.dispatchEvent('click', { shiftKey: true });
+await page.waitForSelector(SEL.menu);
+await expectCount(
+  SEL.bracket,
+  bracketsBeforeC2 + 1,
+  'reconnect dissolved the old bracket into the new one (count unchanged)',
+);
+ok('an already-connected pair reconnected by its dots');
+await snap('reconnect-menu');
+
+// The fresh bracket is a root, so its open menu offers Disconnect — use it to
+// put the two halves back on the floor for the merge step.
+await page.click(`${SEL.menu} .menu-item.action:text-is("Disconnect")`);
+await expectCount(SEL.bracket, bracketsBeforeC2, 'Disconnect dissolved the bracket again');
+await expectCount(`g.dot-group.root[data-dot="prop:${splitPid}"]`, 1, 'first half is a root again');
 
 // --- (d) Merge below --------------------------------------------------------
 step('(d) merge the split back together');
@@ -284,14 +375,14 @@ ok(`merged row is ${splitPid} again ("${mergedLabel}")`);
 // --- (e) Dot connect --------------------------------------------------------
 step('(e) connect two adjacent roots by their dots');
 const bracketsBeforeConnect = await countOf(SEL.bracket);
-const rootsBeforeConnect = await countOf(SEL.connectable);
+const rootsBeforeConnect = await countOf(SEL.rootDot);
 console.log(`  brackets: ${bracketsBeforeConnect}  roots: ${rootsBeforeConnect}`);
 if (rootsBeforeConnect < 3) await fail('split/merge did not leave enough disconnected roots');
 
-// Connectable dots come out in forest-root order, so any two neighbours in
-// this list are adjacent roots — exactly what connectUnits accepts.
-const dotA = page.locator(SEL.connectable).nth(1);
-const dotB = page.locator(SEL.connectable).nth(2);
+// Root dots come out in forest-root order, so any two neighbours in this
+// list are adjacent roots — the plain (no unzip needed) connect case.
+const dotA = page.locator(SEL.rootDot).nth(1);
+const dotB = page.locator(SEL.rootDot).nth(2);
 const idA = await dotA.getAttribute('data-dot');
 const idB = await dotB.getAttribute('data-dot');
 console.log(`  connecting ${idA} + ${idB}`);
@@ -305,7 +396,7 @@ await dotB.dispatchEvent('click', { shiftKey: true });
 await page.waitForSelector(SEL.menu);
 ok('shift-click connected the pair and auto-opened the relationship menu');
 await expectCount(SEL.bracket, bracketsBeforeConnect + 1, 'a new bracket appeared');
-await expectCount(SEL.connectable, rootsBeforeConnect - 1, 'the two roots became one');
+await expectCount(SEL.rootDot, rootsBeforeConnect - 1, 'the two roots became one');
 await snap('connect-menu');
 
 await expectCount('g.label-hit[data-label="G"]', 0, 'no Ground bracket yet');
@@ -361,7 +452,7 @@ await expectCount(SEL.amberBracket, amberBefore - 1, 'Confirm cleared one review
 
 // --- (h) Disconnect ---------------------------------------------------------
 step('(h) disconnect the outermost bracket');
-const rootsBeforeDisconnect = await countOf(SEL.connectable);
+const rootsBeforeDisconnect = await countOf(SEL.rootDot);
 const bracketsBeforeDisconnect = await countOf(SEL.bracket);
 // Pre-order: the first hit rect is the outermost bracket of the first root.
 await page.locator(SEL.bracket).first().dispatchEvent('click');
@@ -378,20 +469,20 @@ console.log('  menu actions:', JSON.stringify(actions));
 if (!actions.includes('Disconnect')) await fail('a root bracket did not offer Disconnect');
 await page.click(`${SEL.menu} .menu-item.action:text-is("Disconnect")`);
 await expectCount(SEL.bracket, bracketsBeforeDisconnect - 1, 'the bracket is gone');
-await expectCount(SEL.connectable, rootsBeforeDisconnect + 1, 'its children became roots');
+await expectCount(SEL.rootDot, rootsBeforeDisconnect + 1, 'its children became roots');
 
 // --- (i) Undo / redo --------------------------------------------------------
 step('(i) undo / redo the disconnect');
 await page.click('.editor-toolbar button:has-text("Undo")');
 await expectCount(SEL.bracket, bracketsBeforeDisconnect, 'undo restored the bracket');
-await expectCount(SEL.connectable, rootsBeforeDisconnect, 'undo restored the root count');
+await expectCount(SEL.rootDot, rootsBeforeDisconnect, 'undo restored the root count');
 await page.click('.editor-toolbar button:has-text("Redo")');
 await expectCount(SEL.bracket, bracketsBeforeDisconnect - 1, 'redo removed it again');
-await expectCount(SEL.connectable, rootsBeforeDisconnect + 1, 'redo restored the root count');
+await expectCount(SEL.rootDot, rootsBeforeDisconnect + 1, 'redo restored the root count');
 
 const rowsFinal = await countOf(SEL.row);
 const bracketsFinal = await countOf(SEL.bracket);
-const rootsFinal = await countOf(SEL.connectable);
+const rootsFinal = await countOf(SEL.rootDot);
 const amberFinal = await countOf(SEL.amberBracket);
 console.log(
   `  final: rows ${rowsFinal}, brackets ${bracketsFinal}, roots ${rootsFinal}, amber ${amberFinal}` +
@@ -410,7 +501,7 @@ await page.waitForSelector(SEL.row);
 await page.waitForSelector(SEL.bracket);
 await expectCount(SEL.row, rowsFinal, 'rows survived the reload');
 await expectCount(SEL.bracket, bracketsFinal, 'brackets survived the reload');
-await expectCount(SEL.connectable, rootsFinal, 'roots survived the reload');
+await expectCount(SEL.rootDot, rootsFinal, 'roots survived the reload');
 await expectCount(SEL.amberBracket, amberFinal, 'review flags survived the reload');
 
 const stored = await page.request.get(`${API}/api/analyses/${analysisUrl.split('/').pop()}`);

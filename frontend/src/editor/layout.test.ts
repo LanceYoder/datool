@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import type { BracketNode, TreeNode } from '../types';
 import {
   COL_W,
-  DOT_INSET,
   STUB_W,
   computeColumns,
   connectY,
@@ -317,29 +316,24 @@ describe('layoutDots', () => {
       kind: 'prop',
       x: X0 - STUB_W,
       y: 220,
-      connectable: true,
+      root: true,
       stubX1: X0 - STUB_W,
       stubX2: X0,
     });
   });
 
-  it('puts a bracketed proposition dot on its own tick, just right of the parent spine', () => {
+  it('keeps EVERY proposition dot at the same fixed distance from the text column', () => {
+    // Nesting depth varies from 0 (p6) to 3 (p2, p3) — the dot x never does.
+    for (const ref of ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8']) {
+      expect(dotById(dots, `prop:${ref}`).x).toBe(X0 - STUB_W);
+    }
+    // A nested proposition needs no stub: its tick line runs under the dot.
     expect(dotById(dots, 'prop:p1')).toEqual({
       id: 'prop:p1',
       kind: 'prop',
-      x: X0 - 2 * COL_W + DOT_INSET, // FtIn's spine
+      x: X0 - STUB_W,
       y: 20,
-      connectable: false,
-    });
-    expect(dotById(dots, 'prop:p3')).toMatchObject({
-      x: X0 - COL_W + DOT_INSET, // Adv's spine
-      y: 100,
-      connectable: false,
-    });
-    expect(dotById(dots, 'prop:p7')).toMatchObject({
-      x: X0 - COL_W + DOT_INSET, // Grnd's spine
-      y: 260,
-      connectable: false,
+      root: false,
     });
   });
 
@@ -350,15 +344,15 @@ describe('layoutDots', () => {
       kind: 'bracket',
       x: X0 - 3 * COL_W,
       y: 160,
-      connectable: true,
+      root: true,
     });
     // FtIn stars child 0 (p1's row).
-    expect(dotById(dots, 'bracket:1')).toMatchObject({ y: 20, connectable: false });
+    expect(dotById(dots, 'bracket:1')).toMatchObject({ y: 20, root: false });
     // Grnd stars child 0 (p7's row) and is a root.
     expect(dotById(dots, 'bracket:4')).toMatchObject({
       x: X0 - COL_W,
       y: 260,
-      connectable: true,
+      root: true,
     });
   });
 
@@ -367,8 +361,8 @@ describe('layoutDots', () => {
     expect(dotById(dots, 'bracket:3')).toMatchObject({ y: 160 }); // Ser: (140+180)/2
   });
 
-  it('marks exactly the forest roots as connectable', () => {
-    expect(dots.filter((d) => d.connectable).map((d) => d.id)).toEqual([
+  it('flags exactly the forest roots with root: true', () => {
+    expect(dots.filter((d) => d.root).map((d) => d.id)).toEqual([
       'bracket:0',
       'prop:p6',
       'bracket:4',
@@ -380,9 +374,9 @@ describe('layoutDots', () => {
     expect(fromCenters).toEqual(dots);
   });
 
-  it('gives every proposition in a fully disconnected forest a connectable stub', () => {
+  it('gives every proposition in a fully disconnected forest a root dot with a stub', () => {
     const loose = layoutDots([p('p1'), p('p2'), p('p3')], rows, X0);
     expect(loose).toHaveLength(3);
-    expect(loose.every((d) => d.connectable && d.stubX1 === X0 - STUB_W)).toBe(true);
+    expect(loose.every((d) => d.root && d.stubX1 === X0 - STUB_W)).toBe(true);
   });
 });

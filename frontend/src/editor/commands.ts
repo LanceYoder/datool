@@ -194,14 +194,95 @@ function rootIndexAt(doc: PMNode, pos: number): number | null {
 }
 
 /**
- * Connect two ADJACENT forest roots into one new BINARY bracket, in document
- * order, with relationship `rel` (default 'Ser' — a coordinate series, no
- * star, no flag). `posA`/`posB` are the positions of two top-level doc
- * children in either order.
+ * A stable way to re-find a unit while a transaction reshapes the document.
+ * Propositions carry their pid; a bracket is named by its leftmost leaf's pid
+ * plus how many levels the bracket sits above that leaf — both invariant under
+ * the only mutation the connect path performs (dissolving brackets ABOVE the
+ * unit), where raw positions and pre-order indices are not.
+ */
+type UnitHandle =
+  | { kind: 'prop'; pid: string }
+  | { kind: 'bracket'; leafPid: string; up: number };
+
+/** The node at `pos` if it is a unit (proposition or bracket), else null. */
+function unitNodeAt(doc: PMNode, pos: number): PMNode | null {
+  if (pos < 0 || pos >= doc.content.size) return null;
+  const node = doc.nodeAt(pos);
+  if (node === null) return null;
+  return node.type.name === 'proposition' || node.type.name === 'bracket' ? node : null;
+}
+
+function unitHandleAt(doc: PMNode, pos: number): UnitHandle | null {
+  const node = unitNodeAt(doc, pos);
+  if (node === null) return null;
+  if (node.type.name === 'proposition') {
+    return { kind: 'prop', pid: String(node.attrs.pid) };
+  }
+  let leafPid: string | null = null;
+  node.descendants((n) => {
+    if (leafPid !== null) return false;
+    if (n.type.name === 'proposition') {
+      leafPid = String(n.attrs.pid);
+      return false;
+    }
+    return true;
+  });
+  if (leafPid === null) return null;
+  const leafPos = findPropositionPos(doc, leafPid);
+  if (leafPos === null) return null;
+  return {
+    kind: 'bracket',
+    leafPid,
+    up: doc.resolve(leafPos).depth - doc.resolve(pos).depth,
+  };
+}
+
+/** Current position of the unit a handle names, or null when it is gone. */
+function locateUnit(doc: PMNode, handle: UnitHandle): number | null {
+  if (handle.kind === 'prop') return findPropositionPos(doc, handle.pid);
+  const leafPos = findPropositionPos(doc, handle.leafPid);
+  if (leafPos === null) return null;
+  const $leaf = doc.resolve(leafPos);
+  const depth = $leaf.depth - handle.up + 1;
+  if (depth < 1 || depth > $leaf.depth) return null;
+  if ($leaf.node(depth).type.name !== 'bracket') return null;
+  return $leaf.before(depth);
+}
+
+/**
+ * Dissolve, inside `tr`, every bracket ABOVE the unit `handle` names,
+ * outermost first, until the unit is itself a forest root. Each round
+ * re-locates the unit (the previous replace moved it). Returns the unit's
+ * final position, or null when it cannot be found.
+ */
+function unzipUnitInTransaction(tr: Transaction, handle: UnitHandle): number | null {
+  for (;;) {
+    const pos = locateUnit(tr.doc, handle);
+    if (pos === null) return null;
+    const $pos = tr.doc.resolve(pos);
+    if ($pos.depth === 0) return pos; // a root already
+    const rootPos = $pos.before(1);
+    const root = tr.doc.nodeAt(rootPos);
+    if (root === null) return null;
+    tr.replaceWith(rootPos, rootPos + root.nodeSize, root.content);
+  }
+}
+
+/**
+ * Connect two units into one new BINARY bracket, in document order, with
+ * relationship `rel` (default 'Ser' — a coordinate series, no star, no flag).
+ * `posA`/`posB` are the units' positions in either order.
+ *
+ * The units need not be roots: a NESTED unit is first unzipped — every
+ * bracket above it is dissolved, inside the same transaction — because those
+ * connections described the unit's old place and cannot survive its moving.
+ * That is what lets a user re-connect an already-connected unit by its dot.
+ * After unzipping, the two units must be ADJACENT roots; otherwise nothing at
+ * all is dispatched.
  *
  * Rejected (returns null, dispatching nothing) when either position is not a
- * root, when they are the same root, when their indices differ by more than 1,
- * or when `rel` is not in the taxonomy.
+ * unit, when one unit contains the other, when they do not come out adjacent,
+ * or when `rel` is not in the taxonomy. One undo step.
  *
  * @returns the new bracket's position, or null.
  */
@@ -217,19 +298,38 @@ export function connectUnits(
 
   const { state } = editor;
   const { doc } = state;
-  const indexA = rootIndexAt(doc, posA);
-  const indexB = rootIndexAt(doc, posB);
-  if (indexA === null || indexB === null) return null;
-  if (Math.abs(indexA - indexB) !== 1) return null; // same root or not adjacent
-
-  const from = Math.min(posA, posB);
-  const to = Math.max(posA, posB);
-  const first = doc.nodeAt(from);
-  const second = doc.nodeAt(to);
-  if (first === null || second === null) return null;
+  if (posA === posB) return null;
+  const nodeA = unitNodeAt(doc, posA);
+  const nodeB = unitNodeAt(doc, posB);
+  if (nodeA === null || nodeB === null) return null;
+  // Overlapping ranges: one unit contains the other — nothing to connect.
+  if (posA < posB + nodeB.nodeSize && posB < posA + nodeA.nodeSize) return null;
 
   const bracketType = state.schema.nodes.bracket;
   if (bracketType === undefined) return null;
+
+  const handleA = unitHandleAt(doc, posA);
+  const handleB = unitHandleAt(doc, posB);
+  if (handleA === null || handleB === null) return null;
+
+  const tr = state.tr;
+  if (unzipUnitInTransaction(tr, handleA) === null) return null;
+  if (unzipUnitInTransaction(tr, handleB) === null) return null;
+  // B's unzip may have shifted A (never dissolved it — A is a root by now and
+  // roots sit inside nothing), so re-locate both before judging adjacency.
+  const finalA = locateUnit(tr.doc, handleA);
+  const finalB = locateUnit(tr.doc, handleB);
+  if (finalA === null || finalB === null) return null;
+  const indexA = rootIndexAt(tr.doc, finalA);
+  const indexB = rootIndexAt(tr.doc, finalB);
+  if (indexA === null || indexB === null) return null;
+  if (Math.abs(indexA - indexB) !== 1) return null; // not adjacent: dispatch nothing
+
+  const from = Math.min(finalA, finalB);
+  const to = Math.max(finalA, finalB);
+  const first = tr.doc.nodeAt(from);
+  const second = tr.doc.nodeAt(to);
+  if (first === null || second === null) return null;
 
   const prominent = defaultProminent(entry, 2);
   const bracket = bracketType.create(
@@ -242,7 +342,8 @@ export function connectUnits(
     [first, second],
   );
 
-  dispatch(editor, state.tr.replaceWith(from, to + second.nodeSize, bracket));
+  tr.replaceWith(from, to + second.nodeSize, bracket);
+  dispatch(editor, tr);
   return from;
 }
 
@@ -264,20 +365,10 @@ export function disconnectRoot(editor: Editor, pos: number): boolean {
 
 /**
  * Dissolve, inside `tr`, every bracket between the proposition `pid` and the
- * forest floor, outermost first, until the proposition is itself a root. Each
- * round re-locates the proposition (the previous replace moved it).
+ * forest floor, outermost first, until the proposition is itself a root.
  */
 function unzipInTransaction(tr: Transaction, pid: string): boolean {
-  for (;;) {
-    const pos = findPropositionPos(tr.doc, pid);
-    if (pos === null) return false;
-    const $pos = tr.doc.resolve(pos);
-    if ($pos.depth === 0) return true; // already a root
-    const rootPos = $pos.before(1);
-    const root = tr.doc.nodeAt(rootPos);
-    if (root === null) return false;
-    tr.replaceWith(rootPos, rootPos + root.nodeSize, root.content);
-  }
+  return unzipUnitInTransaction(tr, { kind: 'prop', pid }) !== null;
 }
 
 /**

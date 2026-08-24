@@ -136,7 +136,7 @@ describe('connectUnits', () => {
     expect(forestOf(ed, doc)[0]).not.toHaveProperty('reversed');
   });
 
-  it('rejects non-adjacent roots, the same root twice, nested units and unknown rels', () => {
+  it('rejects non-adjacent units, the same unit twice, containment and unknown rels', () => {
     const doc = disconnectedDoc(); // [ a, Ser[b,c], d, e ]
     const ed = open(doc);
     const before = ed.getJSON();
@@ -144,12 +144,74 @@ describe('connectUnits', () => {
     expect(connectUnits(ed, rootPos(ed, 0), rootPos(ed, 2), TAXONOMY)).toBeNull(); // gap of 1
     expect(connectUnits(ed, rootPos(ed, 0), rootPos(ed, 3), TAXONOMY)).toBeNull(); // gap of 2
     expect(connectUnits(ed, rootPos(ed, 2), rootPos(ed, 2), TAXONOMY)).toBeNull(); // same root
-    expect(connectUnits(ed, propPos(ed, 'b'), propPos(ed, 'c'), TAXONOMY)).toBeNull(); // nested
-    expect(connectUnits(ed, propPos(ed, 'b'), rootPos(ed, 2), TAXONOMY)).toBeNull(); // one nested
+    // Nested b to root d: unzipping b makes [a,b,c,d,e] — b and d are still a
+    // gap apart, so nothing at all is dispatched (the unzip included).
+    expect(connectUnits(ed, propPos(ed, 'b'), rootPos(ed, 2), TAXONOMY)).toBeNull();
+    // The Ser bracket with its own child: containment is never a connection.
+    expect(connectUnits(ed, rootPos(ed, 1), propPos(ed, 'b'), TAXONOMY)).toBeNull();
     expect(connectUnits(ed, rootPos(ed, 0), rootPos(ed, 1), TAXONOMY, 'Nope')).toBeNull();
     expect(connectUnits(ed, -1, rootPos(ed, 1), TAXONOMY)).toBeNull(); // out of range
 
     expect(ed.getJSON()).toEqual(before); // nothing dispatched
+  });
+
+  it('reconnects an already-connected pair: their bracket dissolves into the new one', () => {
+    const doc = disconnectedDoc(); // [ a, Ser[b,c], d, e ]
+    const ed = open(doc);
+    // b and c both sit under the Ser bracket. Connecting them again dissolves
+    // it and forms a fresh bracket with the requested relationship.
+    const pos = connectUnits(ed, propPos(ed, 'b'), propPos(ed, 'c'), TAXONOMY, 'Grnd');
+    expect(pos).not.toBeNull();
+    ed.state.doc.check();
+    const forest = forestOf(ed, doc);
+    expect(forest).toEqual([
+      prop('a'),
+      { kind: 'bracket', rel: 'Grnd', prominent: 0, children: [prop('b'), prop('c')] },
+      prop('d'),
+      prop('e'),
+    ]);
+  });
+
+  it('unzips nested units from different subtrees and connects them, in ONE undo step', () => {
+    const doc = firstJohn16(); // CndE[ FtIn[p1, Adv[p2,p3]], Ser[p4,p5] ]
+    const ed = open(doc);
+    const before = ed.getJSON();
+    // p3 (under CndE > FtIn > Adv) to p4 (under CndE > Ser): every bracket
+    // above either one dissolves, then the two (now adjacent roots) connect.
+    const pos = connectUnits(ed, propPos(ed, 'p3'), propPos(ed, 'p4'), TAXONOMY, 'CndE');
+    expect(pos).not.toBeNull();
+    ed.state.doc.check();
+    expect(forestOf(ed, doc)).toEqual([
+      prop('p1'),
+      prop('p2'),
+      { kind: 'bracket', rel: 'CndE', prominent: 1, children: [prop('p3'), prop('p4')] },
+      prop('p5'),
+    ]);
+    expect(labelsOf(ed, doc)).toEqual(['6a', '6b', '6c', '6d', '6e']); // nothing relabeled
+
+    expect(ed.commands.undo()).toBe(true); // unzips + connect are one step
+    expect(ed.getJSON()).toEqual(before);
+  });
+
+  it('connects a nested BRACKET outward, keeping the bracket itself intact', () => {
+    const doc = firstJohn16(); // CndE[ FtIn[p1, Adv[p2,p3]], Ser[p4,p5] ]
+    const ed = open(doc);
+    // The Adv bracket (nested under CndE > FtIn) to the Ser bracket (nested
+    // under CndE): CndE and FtIn dissolve; Adv and Ser survive whole.
+    const pos = connectUnits(ed, bracketPos(ed, 'Adv'), bracketPos(ed, 'Ser'), TAXONOMY, 'Inf');
+    expect(pos).not.toBeNull();
+    ed.state.doc.check();
+    const forest = forestOf(ed, doc);
+    expect(forest).toHaveLength(2);
+    expect(forest[0]).toEqual(prop('p1'));
+    expect(forest[1]).toMatchObject({
+      kind: 'bracket',
+      rel: 'Inf',
+      children: [
+        { kind: 'bracket', rel: 'Adv' },
+        { kind: 'bracket', rel: 'Ser' },
+      ],
+    });
   });
 
   it('can rebuild a whole tree from loose roots, one adjacent pair at a time', () => {

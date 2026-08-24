@@ -6,7 +6,8 @@
 // re-indexes propositions or repairs structure:
 //
 //   click a word          "Split after" popover -> splitProposition
-//   click a dot           select that (connectable) dot
+//   click a dot           select that dot (EVERY dot is clickable, connected
+//                         or not — reconnecting dissolves the old connection)
 //   shift-click a dot     connectUnits(first, second) -> the relationship menu
 //                         opens on the new bracket; a rejected pair shakes and
 //                         keeps the first selection
@@ -61,17 +62,17 @@ import {
 } from './commands';
 import { COL_W, STUB_W, computeColumns, layoutBrackets, layoutDots } from './layout';
 import type { DotGeom, RowBox } from './layout';
-import { canSplitAfter, clampPopover, dotOwners, parseDotId } from './interaction';
+import { canSplitAfter, clampPopover, parseDotId } from './interaction';
 import type { Point } from './interaction';
 import BracketLayer from './BracketLayer';
 import type { PositionedBracket, ShakeState } from './BracketLayer';
 import RelationshipMenu from './RelationshipMenu';
 
-const LABEL_GUTTER = 46; // px between the bracket columns and the row gutter
+const LABEL_GUTTER = 56; // px between the bracket columns and the row gutter
 
 /** Nominal popover boxes, used to keep them inside the shell. */
-const SPLIT_SIZE = { width: 132, height: 44 };
-const MENU_SIZE = { width: 232, height: 360 };
+const SPLIT_SIZE = { width: 150, height: 50 };
+const MENU_SIZE = { width: 260, height: 400 };
 
 /** How long a rejected connection shakes / the message stays up. */
 const FLASH_MS = 1600;
@@ -150,22 +151,23 @@ function PropositionRow({ node }: ReactNodeViewProps) {
               );
             })
           : String(node.attrs.text)}
+        {/* Inside the text span, so it flows right after the last word. */}
+        {ctx !== null && ctx.lastPid !== pid && (
+          <button
+            type="button"
+            className="merge-below"
+            title="Merge this proposition with the one below it"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              ctx.onMergeBelow(pid);
+            }}
+          >
+            Merge below
+          </button>
+        )}
       </span>
-      {ctx !== null && ctx.lastPid !== pid && (
-        <button
-          type="button"
-          className="merge-below"
-          title="Merge this proposition with the one below it"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            ctx.onMergeBelow(pid);
-          }}
-        >
-          Merge below
-        </button>
-      )}
     </NodeViewWrapper>
   );
 }
@@ -250,8 +252,6 @@ type PopoverState =
 interface Overlay {
   brackets: PositionedBracket[];
   dots: DotGeom[];
-  /** Dot id -> pre-order index of the bracket a click on it selects. */
-  owners: Map<string, number>;
   margin: number;
   height: number;
 }
@@ -433,7 +433,6 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     return {
       brackets,
       dots: layoutDots(current.forest, rows, margin),
-      owners: dotOwners(current.forest),
       margin,
       height: shellRect.height,
     };
@@ -503,19 +502,10 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
   };
 
   const onDotClick = (dot: DotGeom, shiftKey: boolean) => {
+    // Every dot is a live handle, connected or not: a plain click selects it,
+    // a shift-click connects it to the already-selected one (dissolving any
+    // old connections above either unit — connectUnits' job).
     setPopover(null);
-    if (!dot.connectable) {
-      if (shiftKey && selectedDotId !== null) {
-        // A connect gesture aimed at a unit that is already spoken for.
-        rejectConnection(dot.id, 'That unit is already connected.');
-        return;
-      }
-      // Otherwise the dot is just another handle on its bracket.
-      const owner = overlay?.owners.get(dot.id);
-      const pos = owner === undefined ? null : bracketPosAt(owner);
-      if (pos !== null) selectBracket(pos);
-      return;
-    }
     if (!shiftKey || selectedDotId === null || selectedDotId === dot.id) {
       setSelectedDotId(dot.id);
       setSelectedBracketPos(null);
@@ -527,7 +517,8 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
       rejectConnection(dot.id, 'That unit is no longer there.');
       return;
     }
-    // connectUnits itself is the judge of what may connect (adjacent roots).
+    // connectUnits itself is the judge of what may connect (units that are —
+    // or come out as — adjacent roots).
     const newPos = connectUnits(editor, posA, posB, taxonomy);
     if (newPos === null) {
       rejectConnection(dot.id, 'Only two adjacent units can be connected.');

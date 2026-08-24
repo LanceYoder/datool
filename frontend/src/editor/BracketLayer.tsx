@@ -30,8 +30,13 @@ const LINE = '#374151';
 const ACCENT = '#1d4ed8';
 const MUTED = '#9ca3af';
 
-/** Rough advance width of the 10px label font, for the label hit rect. */
-const LABEL_CHAR_W = 6.5;
+/** Every dot is this size, whatever it belongs to and however it is nested. */
+const DOT_R = 5;
+/** The (invisible) click target around each dot. */
+const DOT_HIT_R = 12;
+
+/** Rough advance width of the 13px label font, for the label hit rect. */
+const LABEL_CHAR_W = 8;
 
 export interface BracketLayerProps {
   brackets: PositionedBracket[];
@@ -102,7 +107,7 @@ export default function BracketLayer({
                 x2={b.x}
                 y2={b.bottom}
                 stroke={stroke}
-                strokeWidth={selected ? 2.5 : 1.5}
+                strokeWidth={selected ? 3 : 1.8}
               />
               {b.ticks.map((t) => (
                 <line
@@ -112,7 +117,7 @@ export default function BracketLayer({
                   x2={t.x2}
                   y2={t.y}
                   stroke={stroke}
-                  strokeWidth={selected ? 2 : 1.2}
+                  strokeWidth={selected ? 2.4 : 1.5}
                 />
               ))}
             </g>
@@ -124,7 +129,10 @@ export default function BracketLayer({
         {dots.map((d) => {
           const selected = d.id === selectedDotId;
           const shaking = shake !== null && shake.dotId === d.id;
-          const classes = ['dot-group', d.connectable ? 'connectable' : 'fixed'];
+          // Every dot renders (and behaves) identically; 'root' only marks
+          // units that are currently disconnected, for styling and tests.
+          const classes = ['dot-group'];
+          if (d.root) classes.push('root');
           if (selected) classes.push('selected');
           if (shaking) classes.push('shake');
           return (
@@ -148,15 +156,15 @@ export default function BracketLayer({
                   strokeWidth={1}
                 />
               )}
-              <circle cx={d.x} cy={d.y} r={9} fill="transparent" />
+              <circle cx={d.x} cy={d.y} r={DOT_HIT_R} fill="transparent" />
               <circle
                 className="dot"
                 cx={d.x}
                 cy={d.y}
-                r={d.connectable ? 4 : 2.5}
-                fill={selected ? ACCENT : d.connectable ? '#fff' : MUTED}
-                stroke={selected ? ACCENT : d.connectable ? LINE : MUTED}
-                strokeWidth={d.connectable ? 1.5 : 1}
+                r={DOT_R}
+                fill={selected ? ACCENT : '#fff'}
+                stroke={selected ? ACCENT : LINE}
+                strokeWidth={1.6}
               />
             </g>
           );
@@ -180,7 +188,7 @@ export default function BracketLayer({
                       onMouseDown={swallow}
                       onClick={() => onStarClick(b.pos)}
                     >
-                      <circle cx={cx} cy={t.y - 6} r={8} fill="transparent" />
+                      <circle cx={cx} cy={t.y - 7} r={10} fill="transparent" />
                       <text
                         className="bracket-star"
                         x={cx}
@@ -195,9 +203,9 @@ export default function BracketLayer({
                 })}
               {b.labels.map((l, i) => {
                 const mid = l.placement === 'mid';
-                const x = mid ? b.x - 4 : b.x + 4;
-                const y = mid ? l.y : l.y - 4;
-                const w = Math.max(14, l.text.length * LABEL_CHAR_W + 8);
+                const x = mid ? b.x - 5 : b.x + 5;
+                const y = mid ? l.y : l.y - 5;
+                const w = Math.max(18, l.text.length * LABEL_CHAR_W + 10);
                 const hitX = mid ? x - w : x - 2;
                 return (
                   <g
@@ -209,7 +217,7 @@ export default function BracketLayer({
                   >
                     {/* Sits just above the label's own row so it never covers
                         the tick line's dot. */}
-                    <rect x={hitX} y={y - 11} width={w} height={12} fill="transparent" />
+                    <rect x={hitX} y={y - 14} width={w} height={16} fill="transparent" />
                     <text
                       className="bracket-label"
                       x={x}

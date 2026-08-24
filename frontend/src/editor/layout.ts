@@ -14,13 +14,16 @@
 import type { BracketNode, TreeNode } from '../types';
 
 /** Horizontal distance between adjacent bracket columns, in px. */
-export const COL_W = 34;
+export const COL_W = 46;
 
-/** Length of the stub drawn to the left of a root proposition's row. */
-export const STUB_W = 26;
-
-/** How far right of a bracket's spine a child proposition's dot sits. */
-export const DOT_INSET = 6;
+/**
+ * How far left of the text column every PROPOSITION dot sits — a constant, so
+ * a proposition's dot never moves as connections nest around it. Root
+ * propositions also draw a stub across this distance (nested ones already have
+ * their tick line passing under the dot). Always < COL_W, so the dot stays
+ * clear of every bracket spine.
+ */
+export const STUB_W = 34;
 
 /** Amber used for brackets flagged for review (color only — no marker). */
 export const REVIEW_COLOR = '#b45309';
@@ -314,11 +317,12 @@ export interface DotGeom {
   x: number;
   y: number;
   /**
-   * Whether this dot may start/receive a connection: root propositions and
-   * root brackets can be connected to an adjacent root; anything nested is
-   * already spoken for (clicking it selects its bracket instead).
+   * True when this unit is a root of the forest. EVERY dot is clickable and
+   * can start or receive a connection (connecting a nested unit dissolves the
+   * brackets above it first — see connectUnits); the flag only says whether
+   * the unit is currently disconnected.
    */
-  connectable: boolean;
+  root: boolean;
   /** Root propositions only: the stub drawn from stubX1 to stubX2 at y. */
   stubX1?: number;
   stubX2?: number;
@@ -327,16 +331,15 @@ export interface DotGeom {
 /**
  * A dot for every proposition and every bracket in the forest, emitted in
  * document pre-order (bracket dots numbered to match layoutBrackets and
- * findBrackets).
+ * findBrackets). Every dot is the same size and every proposition's dot is
+ * the same distance from its row — the geometry here never changes with
+ * connection state, only the `root` flag does.
  *
- *  - Root proposition (a root of the forest, in no bracket): a stub runs from
- *    x0 - STUB_W to x0 along its row, with the dot at the stub's left end.
- *    Connectable.
- *  - Proposition inside a bracket: the dot sits on its own tick line, just
- *    right of the parent's spine (parentX + DOT_INSET). Not connectable.
- *  - Root bracket: connectable. Nested bracket: not.
- *  - Bracket dot position: the spine's midpoint when the bracket is
- *    coordinate or otherwise unstarred, else the starred end's corner.
+ *  - Proposition: the dot sits at x0 - STUB_W on its row, ALWAYS — nesting
+ *    never moves it. A root proposition also gets a stub from the dot to x0
+ *    (a nested one's tick line already runs underneath its dot).
+ *  - Bracket: the dot sits on the spine — at its midpoint when the bracket is
+ *    coordinate or otherwise unstarred, else at the starred end's corner.
  */
 export function layoutDots(
   forest: readonly TreeNode[],
@@ -348,37 +351,27 @@ export function layoutDots(
   const dots: DotGeom[] = [];
   let bracketIndex = 0;
 
-  const xOfBracket = (node: BracketNode): number =>
-    x0 - (columns.get(node) ?? 1) * colW;
-
   const visit = (node: TreeNode, parent: BracketNode | null): void => {
     if (node.kind === 'prop') {
       const y = rowY(rows, node.ref);
+      const dot: DotGeom = {
+        id: `prop:${node.ref}`,
+        kind: 'prop',
+        x: x0 - STUB_W,
+        y,
+        root: parent === null,
+      };
       if (parent === null) {
-        dots.push({
-          id: `prop:${node.ref}`,
-          kind: 'prop',
-          x: x0 - STUB_W,
-          y,
-          connectable: true,
-          stubX1: x0 - STUB_W,
-          stubX2: x0,
-        });
-      } else {
-        dots.push({
-          id: `prop:${node.ref}`,
-          kind: 'prop',
-          x: xOfBracket(parent) + DOT_INSET,
-          y,
-          connectable: false,
-        });
+        dot.stubX1 = x0 - STUB_W;
+        dot.stubX2 = x0;
       }
+      dots.push(dot);
       return;
     }
 
     const index = bracketIndex;
     bracketIndex += 1;
-    const x = xOfBracket(node);
+    const x = x0 - (columns.get(node) ?? 1) * colW;
     const childYs = node.children.map((child) => connectY(child, rows));
     const top = childYs[0] ?? 0;
     const bottom = childYs[childYs.length - 1] ?? 0;
@@ -393,7 +386,7 @@ export function layoutDots(
       kind: 'bracket',
       x,
       y: starred ?? (top + bottom) / 2,
-      connectable: parent === null,
+      root: parent === null,
     });
 
     for (const child of node.children) visit(child, node);

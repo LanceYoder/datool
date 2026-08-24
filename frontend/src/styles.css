@@ -23,8 +23,8 @@ body {
 
 .greek {
   font-family: 'SBL Greek', 'Gentium Plus', 'Times New Roman', Georgia, serif;
-  font-size: 1.08rem;
-  line-height: 1.9;
+  font-size: 1.35rem;
+  line-height: 2;
 }
 
 .muted {
@@ -47,9 +47,9 @@ body {
 }
 
 .app-main {
-  max-width: 60rem;
+  max-width: 100rem;
   margin: 0 auto;
-  padding: 1.25rem 1.5rem 4rem;
+  padding: 1.25rem 2rem 4rem;
 }
 
 h2 {
@@ -207,12 +207,12 @@ div.error-box {
 
 .bracket-label {
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  font-size: 10px;
+  font-size: 13px;
 }
 
 .bracket-star {
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 700;
 }
 
@@ -228,11 +228,11 @@ div.error-box {
 
 .verse-label {
   flex: none;
-  width: 56px;
-  padding-right: 8px;
+  width: 72px;
+  padding-right: 10px;
   text-align: right;
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: 0.9rem;
 }
 
 .prop-spacer {
@@ -271,7 +271,7 @@ div.error-box {
 
 .toolbar-hint,
 .toolbar-flash {
-  font-size: 0.8rem;
+  font-size: 0.9rem;
 }
 
 .toolbar-flash {
@@ -316,8 +316,9 @@ div.error-box {
   transition: r 80ms ease-out;
 }
 
-.dot-group.connectable:hover .dot {
-  r: 5;
+/* Every dot is a live handle — connected or not — so all of them respond. */
+.dot-group:hover .dot {
+  r: 6.5;
 }
 
 .dot-group.shake {
@@ -342,12 +343,15 @@ div.error-box {
 
 /* ---- Merge below ---- */
 
+/* Lives INSIDE .prop-text, so it flows right after the row's last word. */
 .merge-below {
-  flex: none;
-  align-self: center;
-  margin-left: 0.5rem;
-  padding: 0.05rem 0.4rem;
-  font-size: 0.72rem;
+  display: inline-block;
+  margin-left: 0.75rem;
+  padding: 0.05rem 0.45rem;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  vertical-align: 0.12em;
   color: var(--muted);
   background: var(--bg-soft);
   opacity: 0;
@@ -380,11 +384,11 @@ div.error-box {
   align-items: baseline;
   gap: 0.5rem;
   width: 100%;
-  padding: 0.25rem 0.5rem;
+  padding: 0.3rem 0.55rem;
   border: none;
   border-radius: 5px;
   background: none;
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   text-align: left;
   white-space: nowrap;
 }
@@ -396,14 +400,14 @@ div.error-box {
 }
 
 .menu-popover {
-  max-height: 22rem;
+  max-height: 24rem;
   overflow-y: auto;
-  width: 14.5rem;
+  width: 16rem;
 }
 
 .menu-heading {
-  padding: 0.3rem 0.5rem 0.1rem;
-  font-size: 0.68rem;
+  padding: 0.3rem 0.55rem 0.1rem;
+  font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -412,7 +416,7 @@ div.error-box {
 
 .menu-symbol {
   flex: none;
-  width: 2.6rem;
+  width: 3rem;
   font-weight: 600;
 }
 

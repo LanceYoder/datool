@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { BracketNode, TaxonomyEntry, TreeNode } from '../../types';
-import { layoutBrackets, layoutDots } from '../layout';
+import { layoutDots } from '../layout';
 import type { RowBox } from '../layout';
 import {
   canSplitAfter,
   clampPopover,
-  dotOwners,
   groupByFamily,
   parseDotId,
 } from '../interaction';
@@ -95,45 +94,6 @@ describe('parseDotId', () => {
     for (const dot of layoutDots(buildForest(), rows, 200)) {
       expect(parseDotId(dot.id)).not.toBeNull();
     }
-  });
-});
-
-describe('dotOwners', () => {
-  const forest = buildForest();
-  const owners = dotOwners(forest);
-  const dots = layoutDots(forest, rows, 200);
-  const brackets = layoutBrackets(forest, rows, 200).brackets;
-
-  it('maps every bracket dot to its own pre-order index', () => {
-    for (const bracket of brackets) {
-      expect(owners.get(`bracket:${bracket.preorderIndex}`)).toBe(bracket.preorderIndex);
-    }
-  });
-
-  it('maps a nested proposition to the bracket that holds it', () => {
-    // CndE 0, FtIn 1, Adv 2, Ser 3, Grnd 4 (document pre-order).
-    expect(owners.get('prop:p1')).toBe(1); // FtIn
-    expect(owners.get('prop:p2')).toBe(2); // Adv
-    expect(owners.get('prop:p3')).toBe(2);
-    expect(owners.get('prop:p4')).toBe(3); // Ser
-    expect(owners.get('prop:p7')).toBe(4); // Grnd
-  });
-
-  it('leaves root propositions out — their dots connect instead of selecting', () => {
-    expect(owners.has('prop:p6')).toBe(false);
-  });
-
-  it('gives every non-connectable dot an owner that is a real bracket', () => {
-    for (const dot of dots) {
-      if (dot.connectable) continue;
-      const owner = owners.get(dot.id);
-      expect(owner).toBeTypeOf('number');
-      expect(brackets[owner as number]).toBeDefined();
-    }
-  });
-
-  it('is empty for a fully disconnected forest', () => {
-    expect(dotOwners([p('p1'), p('p2')]).size).toBe(0);
   });
 });
 
