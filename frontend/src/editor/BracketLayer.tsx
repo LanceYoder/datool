@@ -45,6 +45,13 @@ const LABEL_OFFSET = 12;
 /** Gap between an end label's last letter and its star. */
 const STAR_GAP = 4;
 
+/**
+ * How far LEFT of a root bracket's dot its delete cross sits. Left, because
+ * everything a bracket draws — spine, ticks, labels, stars — is at the dot or
+ * to its right: out here the cross can never land on a line.
+ */
+const DELETE_OFFSET = 17;
+
 export interface BracketLayerProps {
   brackets: PositionedBracket[];
   dots: DotGeom[];
@@ -55,6 +62,8 @@ export interface BracketLayerProps {
   onDotClick: (dot: DotGeom) => void;
   onLabelClick: (pos: number, at: Point) => void;
   onStarClick: (pos: number) => void;
+  /** Remove the connection a ROOT bracket's dot names (its delete cross). */
+  onDeleteBracket: (dot: DotGeom) => void;
 }
 
 /** Never let a click in the overlay move the ProseMirror selection. */
@@ -72,6 +81,7 @@ export default function BracketLayer({
   onDotClick,
   onLabelClick,
   onStarClick,
+  onDeleteBracket,
 }: BracketLayerProps) {
   return (
     <svg className="bracket-layer interactive" width={width} height={height} style={{ left: 0 }}>
@@ -135,6 +145,37 @@ export default function BracketLayer({
                 stroke={selected ? ACCENT : LINE}
                 strokeWidth={1.6}
               />
+              {/* One click to undo a connection, on the bracket that holds it.
+                  Only a ROOT bracket can be dissolved on its own, which is
+                  exactly where the menu offers Disconnect. */}
+              {d.kind === 'bracket' && d.root && (
+                <g
+                  className="dot-delete"
+                  onMouseDown={swallow}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDeleteBracket(d);
+                  }}
+                >
+                  <title>Delete this connection</title>
+                  <circle
+                    cx={d.x - DELETE_OFFSET}
+                    cy={d.y}
+                    r={DOT_HIT_R - 1}
+                    fill="transparent"
+                  />
+                  <circle
+                    className="dot-delete-disc"
+                    cx={d.x - DELETE_OFFSET}
+                    cy={d.y}
+                    r={DOT_R + 2}
+                  />
+                  <path
+                    className="dot-delete-cross"
+                    d={`M${d.x - DELETE_OFFSET - 3},${d.y - 3} l6,6 M${d.x - DELETE_OFFSET + 3},${d.y - 3} l-6,6`}
+                  />
+                </g>
+              )}
             </g>
           );
         })}

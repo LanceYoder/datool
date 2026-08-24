@@ -81,10 +81,16 @@ const VERSE_LABEL_W = 72;
 
 /** Nominal popover boxes, used to keep them inside the shell. */
 const WORD_SIZE = { width: 280, height: 170 };
-const MENU_SIZE = { width: 260, height: 400 };
+const MENU_SIZE = { width: 272, height: 400 };
+
+/** Clear space kept between the relationship menu and the text column. */
+const TEXT_GAP = 12;
 
 /** How long a rejected connection shakes / the message stays up. */
 const FLASH_MS = 1600;
+
+/** How long a word click waits to see whether it is half of a double click. */
+const DOUBLE_CLICK_MS = 220;
 
 // ---------------------------------------------------------------------------
 // Row rendering (React node view)
@@ -101,8 +107,8 @@ interface RowContextValue {
   mainPids: ReadonlySet<string>;
   /**
    * A single click on ANY word: the word-info popover (lemma, morphology,
-   * gloss), plus "Split after" when the word is splittable. `index` is the
-   * corpus word index, null for raw text.
+   * gloss). `index` is the corpus word index, null for raw text. The popover
+   * waits out the double-click window, so splitting never flashes it up.
    */
   onWordClick: (
     pid: string,
@@ -112,6 +118,8 @@ interface RowContextValue {
     splittable: boolean,
     target: HTMLElement,
   ) => void;
+  /** A DOUBLE click on a splittable word: split the proposition after it. */
+  onWordSplit: (pid: string, ordinal: number) => void;
   onMergeBelow: (pid: string) => void;
 }
 
@@ -191,7 +199,7 @@ function PropositionRow({ node }: ReactNodeViewProps) {
                   const title =
                     (t.hover !== undefined ? t.hover : '') +
                     (splittable
-                      ? `${t.hover !== undefined ? '\n' : ''}click: split after this word`
+                      ? `${t.hover !== undefined ? '\n' : ''}double-click: split after this word`
                       : '');
                   return (
                     <span
@@ -210,6 +218,11 @@ function PropositionRow({ node }: ReactNodeViewProps) {
                           splittable,
                           event.currentTarget,
                         );
+                      }}
+                      onDoubleClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        if (splittable) ctx.onWordSplit(pid, ordinal);
                       }}
                     >
                       {t.display}{' '}
@@ -349,6 +362,10 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
   const lastOverlay = useRef<Overlay | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const flashTimer = useRef<number | null>(null);
+  const wordClickTimer = useRef<number | null>(null);
+  // onSplit is defined further down (it needs the editor); the row context is
+  // built before it, so it reaches the command through this ref.
+  const onSplitRef = useRef<(pid: string, ordinal: number) => void>(() => {});
   const shakeSeq = useRef(0);
 
   const taxonomyByCode = useMemo(
@@ -573,12 +590,26 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
         const shellRect = shell.getBoundingClientRect();
         const rect = target.getBoundingClientRect();
         const at = { x: rect.left - shellRect.left, y: rect.bottom - shellRect.top + 4 };
-        setSelectedDotId(null);
-        setPopover((prev) =>
-          prev !== null && prev.kind === 'word' && prev.pid === pid && prev.ordinal === ordinal
-            ? null // clicking the same word again dismisses the popover
-            : { kind: 'word', pid, ordinal, word, index, splittable, at },
-        );
+        // Splitting is a double click, so hold the info popover until the
+        // double-click window has passed — otherwise every split would flash
+        // it open and shut. onWordSplit cancels this timer.
+        if (wordClickTimer.current !== null) window.clearTimeout(wordClickTimer.current);
+        wordClickTimer.current = window.setTimeout(() => {
+          wordClickTimer.current = null;
+          setSelectedDotId(null);
+          setPopover((prev) =>
+            prev !== null && prev.kind === 'word' && prev.pid === pid && prev.ordinal === ordinal
+              ? null // clicking the same word again dismisses the popover
+              : { kind: 'word', pid, ordinal, word, index, splittable, at },
+          );
+        }, DOUBLE_CLICK_MS);
+      },
+      onWordSplit: (pid, ordinal) => {
+        if (wordClickTimer.current !== null) {
+          window.clearTimeout(wordClickTimer.current);
+          wordClickTimer.current = null;
+        }
+        onSplitRef.current(pid, ordinal);
       },
       onMergeBelow: (pid) => {
         if (editor === null) return;
@@ -669,6 +700,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     if (pos === null) return;
     splitProposition(editor, pos, ordinal + 1, words);
   };
+  onSplitRef.current = onSplit;
 
   const onPickRelationship = (pos: number, rel: string) => {
     setRelationship(editor, pos, rel, taxonomy);
@@ -676,6 +708,14 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
 
   const onDisconnect = (pos: number) => {
     disconnectRoot(editor, pos);
+  };
+
+  /** The delete cross on a root bracket's dot: the same single command. */
+  const onDeleteBracket = (dot: DotGeom) => {
+    setPopover(null);
+    setSelectedDotId(null);
+    const pos = dotPos(dot.id);
+    if (pos !== null) disconnectRoot(editor, pos);
   };
 
   // ---- Popovers -----------------------------------------------------------
@@ -696,20 +736,10 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
           style={{ left: at.x, top: at.y }}
           role="menu"
         >
-          {/* The action first: the popover opens right under the clicked
-              word, so the top edge is the easiest thing to hit. */}
-          {popover.splittable && (
-            <button
-              type="button"
-              role="menuitem"
-              className="popover-item"
-              title={`Split this proposition after “${popover.word}”`}
-              onClick={() => onSplit(popover.pid, popover.ordinal)}
-            >
-              Split after
-            </button>
-          )}
           <div className="word-head greek">{popover.word}</div>
+          {popover.splittable && (
+            <div className="word-hint muted">Double-click a word to split after it</div>
+          )}
           {info !== undefined && (
             <div className="word-info">
               <div className="word-lemma">
@@ -729,8 +759,11 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
       const geom = overlay.brackets.find((b) => b.pos === popover.pos);
       const node = editor.state.doc.nodeAt(popover.pos);
       if (geom !== undefined && node !== null && node.type.name === 'bracket') {
+        // Never over the words: the menu lives in the bracket half, its right
+        // edge held clear of the text column (which starts at overlay.margin).
+        const desired = popover.at ?? { x: geom.x + 8, y: geom.connectY + 8 };
         const at = clampPopover(
-          popover.at ?? { x: geom.x + 8, y: geom.connectY + 8 },
+          { x: Math.min(desired.x, overlay.margin - MENU_SIZE.width - TEXT_GAP), y: desired.y },
           MENU_SIZE,
           bounds,
         );
@@ -792,6 +825,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
             onDotClick={onDotClick}
             onLabelClick={onLabelClick}
             onStarClick={onStarClick}
+            onDeleteBracket={onDeleteBracket}
           />
         )}
         <EditorContent editor={editor} />

@@ -47,6 +47,58 @@ export function groupByFamily(taxonomy: readonly TaxonomyEntry[]): RelationshipG
   }));
 }
 
+/**
+ * Keyboard shortcut per relationship code — what the menu shows in parentheses
+ * and what typing that key picks while the menu is open.
+ *
+ * Mnemonics follow the relationship's own name or symbol wherever the letter
+ * is free (g Ground, i Inference, m Means–End, t Temporal, l Locative …);
+ * where two names compete for a letter the more common relationship keeps it
+ * and the other takes its next distinctive letter (e Cause–Effect, v
+ * adVersative, r situation–Response, d conDitional). General–Specific is the
+ * one arbitrary key ('x'): every letter in its name was already taken.
+ */
+export const RELATIONSHIP_KEYS: Record<string, string> = {
+  Ser: 's',
+  Prog: 'p',
+  Alt: 'a',
+  WEd: 'w',
+  Cmp: 'c',
+  NegPos: 'n',
+  GnSp: 'x',
+  FtIn: 'f',
+  Grnd: 'g',
+  Inf: 'i',
+  CE: 'e',
+  CndE: 'd',
+  MEd: 'm',
+  Tmp: 't',
+  Loc: 'l',
+  Adv: 'v',
+  QA: 'q',
+  SR: 'r',
+};
+
+/** The shortcut key for a relationship code, or null when it has none. */
+export function shortcutFor(code: string): string | null {
+  return RELATIONSHIP_KEYS[code] ?? null;
+}
+
+/**
+ * The relationship a typed key selects, or null. Only codes actually present
+ * in `taxonomy` can be picked, so a key for a retired relationship is inert.
+ */
+export function relationshipForKey(
+  key: string,
+  taxonomy: readonly TaxonomyEntry[],
+): string | null {
+  const wanted = key.toLowerCase();
+  for (const entry of taxonomy) {
+    if (RELATIONSHIP_KEYS[entry.code] === wanted) return entry.code;
+  }
+  return null;
+}
+
 /** What a DotGeom id points at (see layoutDots). */
 export type DotRef = { kind: 'prop'; pid: string } | { kind: 'bracket'; index: number };
 

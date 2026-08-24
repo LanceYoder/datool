@@ -3,12 +3,15 @@ import type { BracketNode, TaxonomyEntry, TreeNode } from '../../types';
 import { layoutDots } from '../layout';
 import type { RowBox } from '../layout';
 import {
+  RELATIONSHIP_KEYS,
   canSplitAfter,
   clampPopover,
   groupByFamily,
   mainPointRefs,
   parseDotId,
+  relationshipForKey,
   rowEnglish,
+  shortcutFor,
 } from '../interaction';
 import { WORD_MAP } from './fixtures';
 import { TAXONOMY } from './fixtures';
@@ -193,5 +196,30 @@ describe('canSplitAfter', () => {
     expect(canSplitAfter(0, 1)).toBe(false);
     expect(canSplitAfter(0, 0)).toBe(false);
     expect(canSplitAfter(1.5, 5)).toBe(false);
+  });
+});
+
+describe('relationship shortcuts', () => {
+  it('gives every relationship in the taxonomy its own key', () => {
+    const keys = TAXONOMY.map((entry) => shortcutFor(entry.code));
+    expect(keys.every((key) => key !== null)).toBe(true);
+    expect(new Set(keys).size).toBe(TAXONOMY.length);
+  });
+
+  it('has no shortcut for a code outside the taxonomy', () => {
+    expect(shortcutFor('Nope')).toBeNull();
+  });
+
+  it('reads a typed key back to its relationship, either case', () => {
+    expect(relationshipForKey('g', TAXONOMY)).toBe('Grnd');
+    expect(relationshipForKey('G', TAXONOMY)).toBe('Grnd');
+    expect(relationshipForKey('s', TAXONOMY)).toBe('Ser');
+    expect(relationshipForKey('?', TAXONOMY)).toBeNull();
+  });
+
+  it('ignores a key whose relationship the taxonomy does not carry', () => {
+    const withoutGround = TAXONOMY.filter((entry) => entry.code !== 'Grnd');
+    expect(RELATIONSHIP_KEYS.Grnd).toBe('g');
+    expect(relationshipForKey('g', withoutGround)).toBeNull();
   });
 });

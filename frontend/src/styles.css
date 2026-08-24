@@ -342,6 +342,39 @@ div.error-box {
   cursor: pointer;
 }
 
+/* The delete cross shows only under the pointer, so a resting analysis is
+   just its brackets. */
+.dot-delete {
+  opacity: 0;
+  transition: opacity 90ms ease-in;
+}
+
+.dot-group:hover .dot-delete,
+.dot-delete:hover {
+  opacity: 1;
+}
+
+.dot-delete-disc {
+  fill: #fff;
+  stroke: var(--danger);
+  stroke-width: 1.4;
+}
+
+.dot-delete-cross {
+  stroke: var(--danger);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  fill: none;
+}
+
+.dot-delete:hover .dot-delete-disc {
+  fill: var(--danger);
+}
+
+.dot-delete:hover .dot-delete-cross {
+  stroke: #fff;
+}
+
 .editor-shell .prop-row {
   padding: 1px 0;
   border-radius: 4px;
@@ -482,19 +515,22 @@ div.error-box {
   font-weight: 600;
 }
 
-/* Split after sits FIRST — the popover opens just under the clicked word,
-   so the top edge is the closest, easiest target. */
-.word-popover .popover-item {
-  border-bottom: 1px solid var(--border);
-  border-radius: 5px 5px 0 0;
-  margin-bottom: 0.35rem;
-  font-weight: 600;
+.word-hint {
+  margin-top: 0.35rem;
+  padding-top: 0.3rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.8rem;
 }
 
 .menu-popover {
+  width: 17rem;
+}
+
+/* The list itself scrolls, so opening the menu can put the bracket's current
+   relationship in the middle of it (RelationshipMenu). */
+.menu-body {
   max-height: 24rem;
   overflow-y: auto;
-  width: 16rem;
 }
 
 .menu-heading {
@@ -513,7 +549,14 @@ div.error-box {
 }
 
 .menu-name {
+  flex: 1;
   color: var(--muted);
+}
+
+.menu-key {
+  flex: none;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .menu-item.current {
