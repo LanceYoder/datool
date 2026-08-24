@@ -3,7 +3,7 @@
 The passages come from the course's worked examples: 1 John 1:5–7
 (examples/da1.xlsx) and Hebrews 4:9–12 (Five Step walkthrough). We assert
 what an explicit connective settles (the confident calls) and only the
-best-guess default where the call is review-flagged judgment.
+best-guess default where the call is a judgment.
 
 Stage 1 (da/segmentation.py) is developed concurrently to the SEGMENT
 CONTRACT; the end-to-end tests skip while it does not exist yet, and
@@ -139,13 +139,13 @@ def assert_1john_structure(doc):
     tree = the_root(doc)
     ids = by_label(doc)
 
-    # 6a/6b: ὅτι after εἴπωμεν (verbum dicendi) → Ft/In, review, star on the
+    # 6a/6b: ὅτι after εἴπωμεν (verbum dicendi) → Ft/In, star on the
     # ὅτι (content) side.
     b6 = the((b for b in brackets(tree)
               if b["rel"] == "FtIn"
               and b["children"][0] == {"kind": "prop", "ref": ids["6a"]}),
              "FtIn bracket on 6a")
-    assert b6.get("flag") == "review"
+    assert "flag" not in b6
     assert b6["prominent"] == 1
     assert leaf_refs(b6["children"][1])[0] == ids["6b"]
 
@@ -153,7 +153,7 @@ def assert_1john_structure(doc):
     c6 = the((b for b in brackets(tree)
               if b["rel"] == "CndE" and span(doc, b) == (124771, 124788)),
              "verse-6 CndE bracket")
-    assert c6.get("flag") is None
+    assert "flag" not in c6
     assert not c6.get("reversed")
     assert c6["prominent"] == 1
     assert span(doc, c6["children"][0]) == (124771, 124782)
@@ -170,13 +170,13 @@ def assert_1john_structure(doc):
                                 {"kind": "prop", "ref": ids["7b"]}]
     assert cmp7.get("reversed") is True
     assert cmp7["prominent"] == 0
-    assert cmp7.get("flag") is None
+    assert "flag" not in cmp7
 
     # Verse 7 conditional: [7a, 7b] vs [7c, 7d], star on the apodosis packet.
     c7 = the((b for b in brackets(tree)
               if b["rel"] == "CndE" and span(doc, b) == (124789, 124816)),
              "verse-7 CndE bracket")
-    assert c7.get("flag") is None
+    assert "flag" not in c7
     assert c7["prominent"] == 1
     assert c7["children"][0] is cmp7 or span(doc, c7["children"][0]) == (124789, 124800)
     apodosis7 = c7["children"][1]
@@ -185,17 +185,16 @@ def assert_1john_structure(doc):
     assert leaf_refs(apodosis7) == [ids["7c"], ids["7d"]]
 
     # 5d joins as ὅτι-content: ἀναγγέλλομεν (5c) is a verbum dicendi, so the
-    # ὅτι clause is Ft/In content, review, star on the content side.
+    # ὅτι clause is Ft/In content, star on the content side.
     b5 = the((b for b in brackets(tree)
               if b["rel"] == "FtIn"
               and leaf_refs(b["children"][1])[0] == ids["5d"]),
              "FtIn bracket whose content starts at 5d")
-    assert b5.get("flag") == "review"
+    assert "flag" not in b5
     assert b5["prominent"] == 1
     assert ids["5c"] in leaf_refs(b5["children"][0])
 
-    # The three sentences chain into one n-ary discourse-level Series (the δέ
-    # of verse 7 keeps it review-flagged).
+    # The three sentences chain into one n-ary discourse-level Series.
     assert tree["kind"] == "bracket" and tree["rel"] == "Ser"
     assert tree["prominent"] is None
     assert len(tree["children"]) == 3
@@ -351,7 +350,7 @@ def test_raw_mode_non_nt_greek():
     tree = the_root(doc)
     assert tree["rel"] == "Ser"
     assert tree["prominent"] is None
-    assert tree["flag"] == "review"
+    assert "flag" not in tree
     assert leaf_refs(tree) == ["p1", "p2"]
     roundtrip(doc)
 
@@ -361,29 +360,28 @@ def test_raw_mode_non_nt_greek():
 
 def test_verse6_alone_matches_design_worked_example():
     """docs/DESIGN.md §3: first pass on 1 John 1:6 differs from the student's
-    analysis only where review flags mark judgment calls (Ser vs Adv)."""
+    analysis only on judgment calls (Ser vs Adv)."""
     doc = build_document([s for s in J_HAND_SEGMENTS if s.sentence == 1])
     assert [p["label"] for p in doc["propositions"]] == \
         ["6a", "6b", "6c", "6d", "6e"]
     tree = the_root(doc)
     assert tree["rel"] == "CndE" and tree["prominent"] == 1
-    assert tree.get("flag") is None
     ft = tree["children"][0]
     assert ft["rel"] == "FtIn" and ft["prominent"] == 1
-    assert ft.get("flag") == "review"
     assert ft["children"][0] == {"kind": "prop", "ref": "p1"}
     content = ft["children"][1]
-    assert content["rel"] == "Ser" and content.get("flag") == "review"
+    assert content["rel"] == "Ser"
     assert leaf_refs(content) == ["p2", "p3"]
     apodosis = tree["children"][1]
-    assert apodosis["rel"] == "Ser" and apodosis.get("flag") == "review"
+    assert apodosis["rel"] == "Ser"
     assert leaf_refs(apodosis) == ["p4", "p5"]
     # Star walk: conditional → apodosis packet; coordinate → whole packet.
     assert main_point(doc) == ["p4", "p5"]
 
 
-def test_unaligned_build_flags_every_bracket():
-    doc = build_document([s for s in J_HAND_SEGMENTS if s.sentence == 2],
-                         aligned=False)
+def test_no_document_ever_carries_flags():
+    """Confidence labeling was removed: the classifier's internal review
+    bookkeeping must never reach a document."""
+    doc = build_document(J_HAND_SEGMENTS)
     for bracket in brackets(the_root(doc)):
-        assert bracket.get("flag") == "review"
+        assert "flag" not in bracket

@@ -4,7 +4,6 @@
   --border: #e5e7eb;
   --accent: #1d4ed8;
   --danger: #b91c1c;
-  --review: #b45309;
   --bg: #ffffff;
   --bg-soft: #f9fafb;
 }
@@ -307,6 +306,11 @@ div.error-box {
 
 .editor-shell .ProseMirror {
   outline: none;
+  /* Every gesture is a click; without this, ProseMirror's selection sync can
+     leave a row painted with the OS text-selection highlight after a menu
+     action. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 /* ---- Dots ---- */
@@ -433,10 +437,6 @@ div.error-box {
 
 .menu-item.action {
   font-weight: 600;
-}
-
-.menu-item.confirm {
-  color: var(--review);
 }
 
 .menu-sep {

@@ -13,15 +13,13 @@
 //                    g.star-hit > text.bracket-star   (stars paint LAST)
 //
 // There are no bracket box hit areas: dots, labels and stars are the only
-// handles.
+// handles. Brackets carry no state color at all — no amber "review"
+// confidence coloring, no blue selected-branch stroke (both removed).
 //
-// Review state is carried by COLOR only (no marker): a bracket flagged for
-// review strokes its spine/labels amber (#b45309), a selected bracket strokes
-// them accent blue (#1d4ed8). So "amber brackets" are counted with :has().
-//
-// SVG groups overlap heavily (an outer bracket's hit rect spans its children),
-// so every overlay gesture is a dispatched event on the exact element rather
-// than a center-of-bbox click. Waiting is always waitForFunction/waitForSelector.
+// SVG groups overlap, so every overlay gesture is a dispatched event on the
+// exact element rather than a center-of-bbox click (except where a REAL
+// pointer click is itself the thing under test). Waiting is always
+// waitForFunction/waitForSelector.
 //
 // Run from /home/user/datool/frontend:
 //   SHOTS=/tmp/shots CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome node e2e.mjs
@@ -32,8 +30,9 @@ const SHOTS = process.env.SHOTS ?? '/tmp/e2e-shots';
 const BASE = 'http://127.0.0.1:5173';
 const API = 'http://127.0.0.1:8000';
 
-// Colors from layout.ts / BracketLayer.tsx.
-const AMBER = '#b45309'; // REVIEW_COLOR
+// Colors that must NOT appear anywhere in the overlay.
+const AMBER = '#b45309'; // the removed review/confidence color
+const ACCENT = '#1d4ed8'; // allowed on selected DOTS only, never on branches
 
 // Selectors for the parts of the overlay this script drives.
 const SEL = {
@@ -44,8 +43,6 @@ const SEL = {
   selectedDot: 'g.dot-group.selected',
   star: 'g.star-hit',
   label: 'g.label-hit',
-  amberBracket: `g.bracket:has(line[stroke="${AMBER}"])`,
-  amberLabel: `g.label-hit:has(text[fill="${AMBER}"])`,
   splitPopover: '.popover.split-popover',
   menu: '.popover.menu-popover',
 };
@@ -193,15 +190,17 @@ await expectCount(SEL.row, 14, 'proposition rows');
 
 const brackets0 = await countOf(SEL.bracket);
 const dots0 = await countOf(SEL.dot);
-const amber0 = await countOf(SEL.amberBracket);
-console.log(`  brackets: ${brackets0}  dots: ${dots0}  amber: ${amber0}`);
+console.log(`  brackets: ${brackets0}  dots: ${dots0}`);
 if (brackets0 < 1) await fail('no brackets rendered');
 if (dots0 !== 14 + brackets0) {
   await fail(`expected one dot per proposition and bracket (${14 + brackets0}), got ${dots0}`);
 }
-if (amber0 < 1) await fail('no review-flagged (amber) brackets in the first pass');
-ok(`brackets and dots present (${brackets0} brackets, ${dots0} dots, ${amber0} amber)`);
+ok(`brackets and dots present (${brackets0} brackets, ${dots0} dots)`);
 await expectCount(SEL.rootDot, 1, 'first pass is one connected tree: one root dot');
+
+// Confidence labeling is gone: nothing in the overlay is amber, and the
+// stored first pass carries no review flags.
+await expectNone(`[stroke="${AMBER}"], [fill="${AMBER}"]`, 'no amber/confidence coloring');
 
 // Uniform dot geometry: one radius for every dot, and one x for every
 // proposition dot — nesting depth must never move or shrink a dot.
@@ -242,8 +241,8 @@ await expectCount(
 );
 
 // The removed UI: selects, per-bracket star/confirm buttons, the row-selection
-// mode, the amber review circle that used to sit above a flagged bracket, and
-// the old two-tier dot classes (all dots are live handles now).
+// mode, bracket box hit areas, the selected-branch accent, and the old
+// two-tier dot classes (all dots are live handles now).
 for (const [sel, what] of [
   ['.rel-select', 'relationship <select>'],
   ['.star-btn', 'star buttons'],
@@ -251,7 +250,7 @@ for (const [sel, what] of [
   ['.bracket-controls', 'bracket controls bar'],
   ['.prop-row.selected', 'row selection mode'],
   ['rect.bracket-hit', 'bracket box hit areas'],
-  [`circle[fill="${AMBER}"]`, 'amber marker circle'],
+  ['g.bracket.selected', 'selected-bracket mode'],
   ['g.dot-group.fixed', 'fixed (dead) dots'],
   ['g.dot-group.connectable', 'connectable-only dot class'],
 ]) {
@@ -447,24 +446,21 @@ const starAfter = await page
 console.log(`  star y: ${starBefore} -> ${starAfter}`);
 await expectCount(SEL.star, starCount, 'star count unchanged by the flip');
 
-// --- (g) Label menu + Confirm ----------------------------------------------
-step('(g) label menu opens and closes; Confirm clears a review flag');
+// --- (g) Label menu ---------------------------------------------------------
+step('(g) label menu opens and closes; no Confirm, no branch highlight');
 await page.keyboard.press('Escape');
 await page.locator(SEL.label).first().dispatchEvent('click');
 await page.waitForSelector(SEL.menu);
 ok('clicking a label opened the relationship menu');
+// Confidence labeling is gone: no Confirm item, and opening a menu paints no
+// branch blue (the accent belongs to selected dots only).
+await expectNone(`${SEL.menu} .menu-item.confirm`, 'no Confirm item in the menu');
+await expectNone(
+  `g.spine-layer line[stroke="${ACCENT}"]`,
+  'no blue selected-branch stroke while a menu is open',
+);
 await page.keyboard.press('Escape');
 await expectCount(SEL.menu, 0, 'Escape closed the menu');
-
-const amberBefore = await countOf(SEL.amberBracket);
-console.log(`  amber (review-flagged) brackets: ${amberBefore}`);
-if (amberBefore < 1) await fail('no amber brackets left to confirm');
-await page.locator(SEL.amberLabel).first().dispatchEvent('click');
-await page.waitForSelector(`${SEL.menu} .menu-item.confirm`);
-ok('a review-flagged bracket offers Confirm');
-await page.click(`${SEL.menu} .menu-item.confirm`);
-await page.keyboard.press('Escape'); // drop the selection so colors read true
-await expectCount(SEL.amberBracket, amberBefore - 1, 'Confirm cleared one review flag');
 
 // --- (h) Disconnect ---------------------------------------------------------
 step('(h) disconnect the outermost bracket');
@@ -494,9 +490,8 @@ await expectCount(SEL.rootDot, rootsBeforeDisconnect + 1, 'redo restored the roo
 const rowsFinal = await countOf(SEL.row);
 const bracketsFinal = await countOf(SEL.bracket);
 const rootsFinal = await countOf(SEL.rootDot);
-const amberFinal = await countOf(SEL.amberBracket);
 console.log(
-  `  final: rows ${rowsFinal}, brackets ${bracketsFinal}, roots ${rootsFinal}, amber ${amberFinal}` +
+  `  final: rows ${rowsFinal}, brackets ${bracketsFinal}, roots ${rootsFinal}` +
     ` (connect made ${bracketsAfterConnect} brackets)`,
 );
 await snap('after-edits');
@@ -513,7 +508,7 @@ await page.waitForSelector(SEL.bracket);
 await expectCount(SEL.row, rowsFinal, 'rows survived the reload');
 await expectCount(SEL.bracket, bracketsFinal, 'brackets survived the reload');
 await expectCount(SEL.rootDot, rootsFinal, 'roots survived the reload');
-await expectCount(SEL.amberBracket, amberFinal, 'review flags survived the reload');
+await expectNone(`[stroke="${AMBER}"], [fill="${AMBER}"]`, 'still no amber after the reload');
 
 const stored = await page.request.get(`${API}/api/analyses/${analysisUrl.split('/').pop()}`);
 const storedDoc = (await stored.json()).document;

@@ -13,8 +13,7 @@
 //                         opens on the new bracket; a rejected pair shakes and
 //                         keeps the first selection
 //   click a label         the relationship menu: all 18 relationships grouped
-//                         by family, plus Confirm (review-flagged brackets) and
-//                         Disconnect (root brackets only)
+//                         by family, plus Disconnect (root brackets only)
 //   click a star          flipStar (the labels follow the star)
 //   hover a row           "Merge below" on every proposition but the last
 //   toolbar               Undo / Redo, and nothing else
@@ -49,7 +48,6 @@ import { buildTextById, displayWordText, documentToNode, nodeToDocument } from '
 import { editorExtensions } from './editor';
 import { EditorProposition } from './schema';
 import {
-  confirmFlag,
   connectUnits,
   disconnectRoot,
   findBrackets,
@@ -259,7 +257,6 @@ interface Overlay {
 }
 
 function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
-  const [selectedBracketPos, setSelectedBracketPos] = useState<number | null>(null);
   const [selectedDotId, setSelectedDotId] = useState<string | null>(null);
   const [popover, setPopover] = useState<PopoverState | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
@@ -295,7 +292,6 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
         // right after they run — those setState calls land in the same batch
         // and win.
         setSelectedDotId(null);
-        setSelectedBracketPos(null);
         setPopover(null);
         onChange(nodeToDocument(ed.state.doc, baseDoc));
         setDocTick((t) => t + 1);
@@ -333,7 +329,6 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
       if (event.key === 'Escape') {
         setPopover(null);
         setSelectedDotId(null);
-        setSelectedBracketPos(null);
         return;
       }
       if (!(event.ctrlKey || event.metaKey)) return;
@@ -511,7 +506,6 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     setPopover(null);
     if (selectedDotId === null) {
       setSelectedDotId(dot.id);
-      setSelectedBracketPos(null);
       return;
     }
     if (selectedDotId === dot.id) {
@@ -532,13 +526,11 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
       return; // nothing dispatched: the first selection stands
     }
     setSelectedDotId(null);
-    setSelectedBracketPos(newPos);
     // Label the fresh connection straight away (it defaults to Series).
     setPopover({ kind: 'menu', pos: newPos, at: null });
   };
 
   const onLabelClick = (pos: number, at: Point) => {
-    setSelectedBracketPos(pos);
     setSelectedDotId(null);
     setPopover((prev) =>
       prev !== null && prev.kind === 'menu' && prev.pos === pos ? null : { kind: 'menu', pos, at },
@@ -548,7 +540,6 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
   const onStarClick = (pos: number) => {
     setPopover(null);
     flipStar(editor, pos, taxonomy);
-    setSelectedBracketPos(pos);
     setSelectedDotId(null);
   };
 
@@ -561,12 +552,6 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
 
   const onPickRelationship = (pos: number, rel: string) => {
     setRelationship(editor, pos, rel, taxonomy);
-    setSelectedBracketPos(pos);
-  };
-
-  const onConfirm = (pos: number) => {
-    confirmFlag(editor, pos);
-    setSelectedBracketPos(pos);
   };
 
   const onDisconnect = (pos: number) => {
@@ -620,10 +605,8 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
             <RelationshipMenu
               taxonomy={taxonomy}
               current={String(node.attrs.rel)}
-              review={node.attrs.flag === 'review'}
               root={isRoot}
               onPick={(rel) => onPickRelationship(popover.pos, rel)}
-              onConfirm={() => onConfirm(popover.pos)}
               onDisconnect={() => onDisconnect(popover.pos)}
             />
           </div>
@@ -665,7 +648,6 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
             dots={overlay.dots}
             width={overlay.margin}
             height={overlay.height}
-            selectedBracketPos={selectedBracketPos}
             selectedDotId={selectedDotId}
             shake={shake}
             onDotClick={onDotClick}

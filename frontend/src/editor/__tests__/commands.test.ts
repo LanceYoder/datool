@@ -6,14 +6,12 @@ import type { BracketNode, Document as AnalysisDocument, TreeNode } from '../../
 import { buildTextById, documentToNode, nodeToDocument } from '../convert';
 import { buildEditor } from '../editor';
 import {
-  confirmFlag,
   connectUnits,
   disconnectRoot,
   findBrackets,
   findPropositionPos,
   flipStar,
   mergeBelow,
-  setFlag,
   setRelationship,
   splitProposition,
   unzipToRoot,
@@ -351,14 +349,12 @@ describe('setRelationship', () => {
     expect(ed.state.doc.child(0).attrs).toMatchObject({ prominent: 1, reversed: false });
   });
 
-  it('keeps the review flag through relationship changes', () => {
-    const doc = pairDoc('Ser');
+  it('keeps a legacy review flag through relationship changes (no UI touches it)', () => {
+    const doc = firstJohn16(); // the Ser packet carries flag: 'review'
     const ed = open(doc);
-    expect(setFlag(ed, 0)).toBe(true);
-    expect(setRelationship(ed, 0, 'CndE', TAXONOMY)).toBe(true);
-    expect(ed.state.doc.child(0).attrs.flag).toBe('review');
-    expect(confirmFlag(ed, 0)).toBe(true);
-    expect(ed.state.doc.child(0).attrs.flag).toBeNull();
+    const ser = bracketPos(ed, 'Ser');
+    expect(setRelationship(ed, ser, 'Prog', TAXONOMY)).toBe(true);
+    expect(ed.state.doc.nodeAt(ser)?.attrs.flag).toBe('review');
   });
 });
 
@@ -619,9 +615,9 @@ describe('nodeToDocument after editing', () => {
   it('keeps a legacy n-ary bracket intact through unrelated edits', () => {
     const doc = flatDoc('CndE', 2);
     const ed = open(doc);
-    expect(setFlag(ed, 0)).toBe(true);
+    expect(setRelationship(ed, 0, 'MEd', TAXONOMY)).toBe(true);
     const out = nodeToDocument(ed.state.doc, doc);
     expect((out.forest[0] as BracketNode).children).toHaveLength(3);
-    expect(out.forest[0]).toMatchObject({ prominent: 2, flag: 'review' });
+    expect(out.forest[0]).toMatchObject({ rel: 'MEd', prominent: 2 });
   });
 });

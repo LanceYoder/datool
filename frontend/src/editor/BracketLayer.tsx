@@ -10,7 +10,6 @@
 //      wins the click (a mis-hit there used to open the relationship menu).
 
 import type { BracketGeom, DotGeom } from './layout';
-import { REVIEW_COLOR } from './layout';
 import type { Point } from './interaction';
 
 /** A laid-out bracket zipped with the ProseMirror position of its node. */
@@ -51,7 +50,6 @@ export interface BracketLayerProps {
   dots: DotGeom[];
   width: number;
   height: number;
-  selectedBracketPos: number | null;
   selectedDotId: string | null;
   shake: ShakeState | null;
   onDotClick: (dot: DotGeom) => void;
@@ -64,17 +62,11 @@ function swallow(event: { preventDefault: () => void }): void {
   event.preventDefault();
 }
 
-function strokeFor(bracket: PositionedBracket, selected: boolean): string {
-  if (selected) return ACCENT;
-  return bracket.review ? REVIEW_COLOR : LINE;
-}
-
 export default function BracketLayer({
   brackets,
   dots,
   width,
   height,
-  selectedBracketPos,
   selectedDotId,
   shake,
   onDotClick,
@@ -84,33 +76,22 @@ export default function BracketLayer({
   return (
     <svg className="bracket-layer interactive" width={width} height={height} style={{ left: 0 }}>
       <g className="spine-layer" pointerEvents="none">
-        {brackets.map((b) => {
-          const selected = b.pos === selectedBracketPos;
-          const stroke = strokeFor(b, selected);
-          return (
-            <g key={b.pos} className={selected ? 'bracket selected' : 'bracket'} data-rel={b.rel}>
+        {brackets.map((b) => (
+          <g key={b.pos} className="bracket" data-rel={b.rel}>
+            <line x1={b.x} y1={b.top} x2={b.x} y2={b.bottom} stroke={LINE} strokeWidth={1.8} />
+            {b.ticks.map((t) => (
               <line
-                x1={b.x}
-                y1={b.top}
-                x2={b.x}
-                y2={b.bottom}
-                stroke={stroke}
-                strokeWidth={selected ? 3 : 1.8}
+                key={t.childIndex}
+                x1={t.x1}
+                y1={t.y}
+                x2={t.x2}
+                y2={t.y}
+                stroke={LINE}
+                strokeWidth={1.5}
               />
-              {b.ticks.map((t) => (
-                <line
-                  key={t.childIndex}
-                  x1={t.x1}
-                  y1={t.y}
-                  x2={t.x2}
-                  y2={t.y}
-                  stroke={stroke}
-                  strokeWidth={selected ? 2.4 : 1.5}
-                />
-              ))}
-            </g>
-          );
-        })}
+            ))}
+          </g>
+        ))}
       </g>
 
       <g className="dot-layer">
@@ -163,88 +144,82 @@ export default function BracketLayer({
         {/* Labels first, stars LAST: where the two touch (a star hugs its
             letters), the star must win the click — otherwise a star click
             opens the relationship menu instead of flipping the star. */}
-        {brackets.map((b) => {
-          const selected = b.pos === selectedBracketPos;
-          const stroke = strokeFor(b, selected);
-          return (
-            <g key={`labels-${b.pos}`}>
-              {b.labels.map((l, i) => {
-                const mid = l.placement === 'mid';
-                // Each label gets its own lane, clear of the bracket's dot
-                // (which sits ON the spine): end labels start LABEL_OFFSET
-                // right of the spine, mid labels end LABEL_OFFSET left of it.
-                const x = mid ? b.x - LABEL_OFFSET : b.x + LABEL_OFFSET;
-                const y = mid ? l.y + 4 : l.y - 5;
-                const w = Math.max(18, l.text.length * LABEL_CHAR_W + 10);
-                const hitX = mid ? x - w : x - 2;
+        {brackets.map((b) => (
+          <g key={`labels-${b.pos}`}>
+            {b.labels.map((l, i) => {
+              const mid = l.placement === 'mid';
+              // Each label gets its own lane, clear of the bracket's dot
+              // (which sits ON the spine): end labels start LABEL_OFFSET
+              // right of the spine, mid labels end LABEL_OFFSET left of it.
+              // Both sit ABOVE their line, so a parent's tick arriving at a
+              // coordinate bracket's midpoint never runs through the letters.
+              const x = mid ? b.x - LABEL_OFFSET : b.x + LABEL_OFFSET;
+              const y = l.y - 5;
+              const w = Math.max(18, l.text.length * LABEL_CHAR_W + 10);
+              const hitX = mid ? x - w : x - 2;
+              return (
+                <g
+                  key={`label-${i}`}
+                  className="label-hit"
+                  data-label={l.text}
+                  onMouseDown={swallow}
+                  onClick={() => onLabelClick(b.pos, { x: hitX, y: y + 6 })}
+                >
+                  {/* Sits just above the label's own row so it never covers
+                      the tick line's dot. */}
+                  <rect x={hitX} y={y - 14} width={w} height={16} fill="transparent" />
+                  <text
+                    className="bracket-label"
+                    x={x}
+                    y={y}
+                    fill={LINE}
+                    textAnchor={mid ? 'end' : 'start'}
+                  >
+                    {l.text}
+                  </text>
+                </g>
+              );
+            })}
+          </g>
+        ))}
+        {brackets.map((b) => (
+          <g key={`stars-${b.pos}`}>
+            {b.ticks
+              .filter((t) => t.star)
+              .map((t) => {
+                // The star sits a fixed gap after its end's letters (or in
+                // their place when that end shows none) — never out in the
+                // middle of the tick.
+                const label = b.labels.find(
+                  (l) => l.placement !== 'mid' && l.y === t.y,
+                );
+                const sx =
+                  b.x +
+                  LABEL_OFFSET +
+                  STAR_GAP +
+                  (label !== undefined ? label.text.length * LABEL_CHAR_W : 0);
                 return (
                   <g
-                    key={`label-${i}`}
-                    className="label-hit"
-                    data-label={l.text}
+                    key={`star-${t.childIndex}`}
+                    className="star-hit"
                     onMouseDown={swallow}
-                    onClick={() => onLabelClick(b.pos, { x: hitX, y: y + 6 })}
+                    onClick={() => onStarClick(b.pos)}
                   >
-                    {/* Sits just above the label's own row so it never covers
-                        the tick line's dot. */}
-                    <rect x={hitX} y={y - 14} width={w} height={16} fill="transparent" />
+                    <circle cx={sx + 5} cy={t.y - 9} r={12} fill="transparent" />
                     <text
-                      className="bracket-label"
-                      x={x}
-                      y={y}
-                      fill={stroke}
-                      textAnchor={mid ? 'end' : 'start'}
+                      className="bracket-star"
+                      x={sx}
+                      y={t.y - 5}
+                      fill={LINE}
+                      textAnchor="start"
                     >
-                      {l.text}
+                      *
                     </text>
                   </g>
                 );
               })}
-            </g>
-          );
-        })}
-        {brackets.map((b) => {
-          const selected = b.pos === selectedBracketPos;
-          const stroke = strokeFor(b, selected);
-          return (
-            <g key={`stars-${b.pos}`}>
-              {b.ticks
-                .filter((t) => t.star)
-                .map((t) => {
-                  // The star sits a fixed gap after its end's letters (or in
-                  // their place when that end shows none) — never out in the
-                  // middle of the tick.
-                  const label = b.labels.find(
-                    (l) => l.placement !== 'mid' && l.y === t.y,
-                  );
-                  const sx =
-                    b.x +
-                    LABEL_OFFSET +
-                    STAR_GAP +
-                    (label !== undefined ? label.text.length * LABEL_CHAR_W : 0);
-                  return (
-                    <g
-                      key={`star-${t.childIndex}`}
-                      className="star-hit"
-                      onMouseDown={swallow}
-                      onClick={() => onStarClick(b.pos)}
-                    >
-                      <circle cx={sx + 5} cy={t.y - 9} r={12} fill="transparent" />
-                      <text
-                        className="bracket-star"
-                        x={sx}
-                        y={t.y - 5}
-                        fill={stroke}
-                        textAnchor="start"
-                      >
-                        *
-                      </text>
-                    </g>
-                  );
-                })}
-            </g>
-          );
-        })}
+          </g>
+        ))}
       </g>
     </svg>
   );

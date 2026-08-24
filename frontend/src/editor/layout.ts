@@ -29,9 +29,6 @@ export const COL_W = 72;
  */
 export const STUB_W = 17;
 
-/** Amber used for brackets flagged for review (color only — no marker). */
-export const REVIEW_COLOR = '#b45309';
-
 /** A measured proposition row: its center y plus its top and bottom edges. */
 export interface RowBox {
   /** Row center y — the connection point for ticks and dots. */
@@ -199,8 +196,6 @@ export interface BracketGeom {
    * later (they come later in pre-order) lets the innermost win a click.
    */
   rect: Rect;
-  /** True when flag === 'review' — render line + labels in REVIEW_COLOR. */
-  review: boolean;
 }
 
 export interface BracketLayout {
@@ -299,7 +294,6 @@ export function layoutBrackets(
         width: x0 - x,
         height: lastBox.bottom - firstBox.top,
       },
-      review: node.flag === 'review',
     });
 
     for (const child of node.children) visit(child, rootIndex, false);

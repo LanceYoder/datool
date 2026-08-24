@@ -4,7 +4,12 @@ Input: the ordered ``Segment`` list produced by :mod:`da.segmentation` (stage 1)
 which exactly tiles an inclusive corpus range. Output: a complete, valid
 analysis document (see docs/DESIGN.md §3, §5) — every proposition connected
 into one tree (a ``forest`` of one root), every bracket labeled with a
-taxonomy relationship, ambiguous calls carrying a ``review`` flag.
+taxonomy relationship.
+
+The classifier internally distinguishes confident calls from judgment calls
+(the ``review`` markers threaded through the helpers below), but that
+bookkeeping never reaches the document: confidence labeling was removed from
+the product, so ``build_document`` strips every ``flag`` before returning.
 
 Assembly is a deterministic shift-reduce pass:
 
@@ -463,23 +468,18 @@ def _propositions(segments: Sequence, words) -> list[dict]:
 
 
 def _strip_private(node: dict) -> None:
+    """Remove builder bookkeeping documents never carry: the ``_open`` edge
+    marker and the classifier's internal ``review`` flags (confidence labeling
+    is not part of the product)."""
     node.pop("_open", None)
+    node.pop("flag", None)
     for child in node.get("children", ()):
         _strip_private(child)
 
 
-def _flag_all(node: dict) -> None:
-    if node["kind"] == "bracket":
-        node["flag"] = "review"
-        for child in node["children"]:
-            _flag_all(child)
-
-
-def build_document(segments: list["Segment"], *, aligned: bool = True) -> dict:
+def build_document(segments: list["Segment"]) -> dict:
     """Assemble the segments of one aligned passage into a validated analysis
-    document. With ``aligned=False`` (the paste only partially matched the
-    corpus) every bracket is flagged for review — the classification rests on
-    morphology that may not describe the pasted text."""
+    document."""
     if not segments:
         raise ValueError("build_document needs at least one segment")
     words = load_words()
@@ -498,8 +498,6 @@ def build_document(segments: list["Segment"], *, aligned: bool = True) -> dict:
     ]
     tree = _fold_sentences(sentence_packets, words)
     _strip_private(tree)
-    if not aligned:
-        _flag_all(tree)
 
     doc = {
         "schemaVersion": SCHEMA_VERSION,

@@ -34,9 +34,9 @@ import { displayWordText } from './convert';
  * (500ms) into one event — right for typing, wrong here: this editor has no
  * text input at all (see editor.ts), so every transaction is a discrete
  * structural gesture. Without closing the group first, two gestures made in
- * quick succession — confirm a flag, then split a proposition — would undo
- * together, which is the opposite of the "one gesture, one command, one undo
- * step" rule this module is built on.
+ * quick succession — change a relationship, then split a proposition — would
+ * undo together, which is the opposite of the "one gesture, one command, one
+ * undo step" rule this module is built on.
  */
 function dispatch(editor: Editor, tr: Transaction): void {
   editor.view.dispatch(closeHistory(tr));
@@ -160,24 +160,6 @@ export function flipStar(
     prominent: next,
     reversed: derivedReversed(entry, 2, next),
   });
-}
-
-/** Clear the review flag (flag -> null). */
-export function confirmFlag(editor: Editor, pos: number): boolean {
-  const node = bracketAt(editor, pos);
-  if (node === null) return false;
-  return setBracketAttrs(editor, pos, node, { flag: null });
-}
-
-/** Mark the bracket for review (flag -> 'review'). */
-export function setFlag(
-  editor: Editor,
-  pos: number,
-  flag: 'review' = 'review',
-): boolean {
-  const node = bracketAt(editor, pos);
-  if (node === null) return false;
-  return setBracketAttrs(editor, pos, node, { flag });
 }
 
 // ---------------------------------------------------------------------------

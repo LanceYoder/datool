@@ -5,8 +5,8 @@ locates, run stage 1 (:mod:`da.segmentation`) over the aligned range and
 stage 2 (:mod:`da.treebuild`) over the segments. When alignment fails —
 non-Greek text, or Greek that is not the NT — fall back to raw mode: split
 the paste into propositions on sentence punctuation (``.``, ``;``, ``·``),
-chain them in one n-ary Series bracket flagged for review, and let the user
-take it from there. No classification without morphology.
+chain them in one n-ary Series bracket, and let the user take it from there.
+No classification without morphology.
 """
 
 from __future__ import annotations
@@ -40,8 +40,8 @@ def first_pass(text: str) -> FirstPassResult:
     from .segmentation import segment
 
     segments = segment(alignment.start, alignment.end)
-    # An inexact alignment still builds with aligned=True: once located, the
-    # SBLGNT corpus text is authoritative — it is what the document references,
+    # An inexact alignment builds like an exact one: once located, the SBLGNT
+    # corpus text is authoritative — it is what the document references,
     # displays, and classifies, so its morphology describes the analyzed words
     # even where the paste (e.g. NA28) differed. The UI surfaces the
     # matched/total token count so the user knows their paste varied.
@@ -62,7 +62,7 @@ def _raw_document(text: str) -> dict:
     leaves = [{"kind": "prop", "ref": p["id"]} for p in props]
     tree = leaves[0] if len(leaves) == 1 else {
         "kind": "bracket", "rel": "Ser", "prominent": None,
-        "flag": "review", "children": leaves,
+        "children": leaves,
     }
     doc = {"schemaVersion": SCHEMA_VERSION, "propositions": props,
            "forest": [tree]}

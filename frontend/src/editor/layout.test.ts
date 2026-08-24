@@ -207,16 +207,6 @@ describe('layoutBrackets geometry', () => {
     ]);
   });
 
-  it('marks review-flagged brackets (color only — no marker geometry)', () => {
-    const forest = buildForest();
-    ((forest[0] as BracketNode).children[1] as BracketNode).flag = 'review';
-    const layout = layoutBrackets(forest, rows, X0, labelsFor);
-    const flags = new Map(layout.brackets.map((b) => [b.rel, b.review]));
-    expect(flags.get('Ser')).toBe(true);
-    expect(flags.get('CndE')).toBe(false);
-    expect(flags.get('Grnd')).toBe(false);
-  });
-
   it('lists brackets in document pre-order across the forest and reports maxColumn', () => {
     const layout = layoutBrackets(buildForest(), rows, X0, labelsFor);
     expect(layout.brackets.map((b) => b.rel)).toEqual(['CndE', 'FtIn', 'Adv', 'Ser', 'Grnd']);
