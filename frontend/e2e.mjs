@@ -1,135 +1,444 @@
-// End-to-end drive of datool: paste -> first pass -> create -> edit -> save -> reload.
-// Run from /home/user/datool/frontend (playwright resolves from its node_modules).
+// End-to-end drive of datool against the REWORKED editor UI.
+//
+//   home -> first pass -> create -> edit -> save -> reload
+//
+// The editor has no form controls: every gesture is a click on the SVG margin
+// overlay or on a row. The overlay's structure (see BracketLayer.tsx) is
+//
+//   svg.bracket-layer.interactive
+//     g.hit-layer    rect.bracket-hit[data-bracket-pos][data-rel]
+//     g.spine-layer  g.bracket[.selected][data-rel] > line …
+//     g.dot-layer    g.dot-group[data-dot][.connectable|.fixed][.selected]
+//     g.glyph-layer  g.star-hit > text.bracket-star
+//                    g.label-hit[data-label] > text.bracket-label
+//
+// Review state is carried by COLOR only (no marker): a bracket flagged for
+// review strokes its spine/labels amber (#b45309), a selected bracket strokes
+// them accent blue (#1d4ed8). So "amber brackets" are counted with :has().
+//
+// SVG groups overlap heavily (an outer bracket's hit rect spans its children),
+// so every overlay gesture is a dispatched event on the exact element rather
+// than a center-of-bbox click. Waiting is always waitForFunction/waitForSelector.
+//
+// Run from /home/user/datool/frontend:
+//   SHOTS=/tmp/shots CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome node e2e.mjs
 import { chromium } from 'playwright';
+import { mkdirSync } from 'node:fs';
 
 const SHOTS = process.env.SHOTS ?? '/tmp/e2e-shots';
 const BASE = 'http://127.0.0.1:5173';
+const API = 'http://127.0.0.1:8000';
 
-function fail(msg) {
+// Colors from layout.ts / BracketLayer.tsx.
+const AMBER = '#b45309'; // REVIEW_COLOR
+const ACCENT = '#1d4ed8';
+
+// Selectors for the parts of the overlay this script drives.
+const SEL = {
+  row: '.prop-row',
+  bracket: 'rect.bracket-hit',
+  dot: 'g.dot-group',
+  connectable: 'g.dot-group.connectable',
+  selectedDot: 'g.dot-group.selected',
+  star: 'g.star-hit',
+  label: 'g.label-hit',
+  amberBracket: `g.bracket:has(line[stroke="${AMBER}"])`,
+  amberLabel: `g.label-hit:has(text[fill="${AMBER}"])`,
+  accentLabel: `g.label-hit:has(text[fill="${ACCENT}"])`,
+  splitPopover: '.popover.split-popover',
+  menu: '.popover.menu-popover',
+};
+
+mkdirSync(SHOTS, { recursive: true });
+
+let shot = 0;
+const shots = [];
+let page;
+
+async function snap(name) {
+  shot += 1;
+  const file = `${SHOTS}/${String(shot).padStart(2, '0')}-${name}.png`;
+  // Park the pointer in dead space and drop focus first: hover-only chrome
+  // ("Merge below" is opacity 0 until :hover or :focus-visible) would else show
+  // up wherever the last gesture left the pointer or the focus ring. Popovers
+  // and selections are state-driven, so this disturbs nothing.
+  await page.mouse.move(1270, 980);
+  await page.evaluate(() => {
+    const el = document.activeElement;
+    if (el instanceof HTMLElement && el !== document.body) el.blur();
+  });
+  // …then let its 90ms opacity transition finish, so it is really gone.
+  await page
+    .waitForFunction(
+      () =>
+        [...document.querySelectorAll('.merge-below')].every(
+          (el) => Number(getComputedStyle(el).opacity) < 0.01,
+        ),
+      null,
+      { timeout: 3000 },
+    )
+    .catch(() => {});
+  await page.screenshot({ path: file, fullPage: true });
+  shots.push(file);
+  return file;
+}
+
+const problems = [];
+
+async function fail(msg) {
   console.error('E2E FAIL:', msg);
+  try {
+    await snap('FAILURE');
+  } catch {
+    /* the page may be gone */
+  }
   process.exit(1);
 }
 
-// In sandboxed environments Chromium is preinstalled; CHROMIUM_PATH overrides
-// (e.g. /opt/pw-browsers/chromium-*/chrome-linux/chrome).
+function ok(msg) {
+  console.log('  ok  ', msg);
+}
+
+function step(msg) {
+  console.log(`\n== ${msg}`);
+}
+
+/** Live count of a CSS selector (":has()" and friends run in the browser). */
+function countOf(sel) {
+  return page.evaluate((s) => document.querySelectorAll(s).length, sel);
+}
+
+/** Wait until `sel` matches exactly `want` nodes, else fail with the actual. */
+async function expectCount(sel, want, msg) {
+  try {
+    await page.waitForFunction(
+      ([s, n]) => document.querySelectorAll(s).length === n,
+      [sel, want],
+      { timeout: 8000 },
+    );
+  } catch {
+    await fail(`${msg}: expected ${want} × "${sel}", got ${await countOf(sel)}`);
+  }
+  ok(`${msg}: ${want} × ${sel}`);
+}
+
+async function expectNone(sel, msg) {
+  const n = await countOf(sel);
+  if (n !== 0) await fail(`${msg}: "${sel}" still present (${n})`);
+  ok(`${msg}: no ${sel}`);
+}
+
+/** Wait for an arbitrary browser-side predicate. */
+async function waitFor(fn, arg, msg) {
+  try {
+    await page.waitForFunction(fn, arg, { timeout: 8000 });
+  } catch {
+    await fail(msg);
+  }
+  ok(msg);
+}
+
+// ---------------------------------------------------------------------------
+
 const browser = await chromium.launch(
   process.env.CHROMIUM_PATH !== undefined
     ? { executablePath: process.env.CHROMIUM_PATH }
     : {},
 );
-const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-page.on('pageerror', (err) => console.error('PAGE ERROR:', err.message));
+page = await browser.newPage({ viewport: { width: 1280, height: 1000 } });
+page.on('pageerror', (err) => {
+  problems.push(`page error: ${err.message}`);
+  console.error('PAGE ERROR:', err.message);
+});
 page.on('console', (m) => {
-  if (m.type() === 'error') console.error('CONSOLE ERROR:', m.text());
+  if (m.type() === 'error') {
+    problems.push(`console error: ${m.text()}`);
+    console.error('CONSOLE ERROR:', m.text());
+  }
 });
 
 // Build the paste from the corpus itself (1 John 1:5-7 = words 124747..124816).
-const wordsRes = await page.request.get(
-  'http://127.0.0.1:8000/api/corpus/words?start=124747&end=124816',
-);
-if (!wordsRes.ok()) fail(`corpus fetch ${wordsRes.status()}`);
+const wordsRes = await page.request.get(`${API}/api/corpus/words?start=124747&end=124816`);
+if (!wordsRes.ok()) await fail(`corpus fetch ${wordsRes.status()}`);
 const words = await wordsRes.json();
 const paste = words.map((w) => w.text).join(' ');
 console.log('paste words:', words.length);
 
-// --- Home: paste and run the first pass -----------------------------------
+// --- (a) Home: paste, first pass, create -----------------------------------
+step('(a) home: paste -> Analyze -> Create');
 await page.goto(BASE);
 await page.waitForSelector('.paste-area');
 await page.fill('.paste-area', paste);
-await page.screenshot({ path: `${SHOTS}/1-home-paste.png` });
+await snap('home-paste');
 
 await page.click('button:has-text("Analyze")');
 await page.waitForSelector('.alignment-line');
-const alignment = await page.textContent('.alignment-line');
-console.log('alignment:', alignment);
-if (!alignment.includes('1 John 1:5–7')) fail(`unexpected alignment: ${alignment}`);
-if (!alignment.includes('(exact)')) fail('alignment not exact');
+const alignment = (await page.textContent('.alignment-line')) ?? '';
+console.log('  alignment:', alignment);
+if (!alignment.includes('1 John 1:5–7')) await fail(`unexpected alignment: ${alignment}`);
+if (!alignment.includes('(exact)')) await fail(`alignment not exact: ${alignment}`);
+ok('alignment line reads 1 John 1:5–7 (exact)');
 
 await page.click('button:has-text("Create")');
 await page.waitForURL(/\/analysis\//);
+const analysisUrl = page.url();
+ok(`created ${analysisUrl}`);
 
-// --- Editor: first-pass render --------------------------------------------
-await page.waitForSelector('.prop-row');
-const rowCount = await page.locator('.prop-row').count();
-console.log('proposition rows:', rowCount);
-if (rowCount !== 14) fail(`expected 14 rows, got ${rowCount}`);
-await page.waitForSelector('.bracket-hit');
-const bracketCount0 = await page.locator('.bracket-hit').count();
-const reviewCount0 = await page.locator('.bracket-hit:has(circle)').count();
-console.log('brackets:', bracketCount0, 'review-flagged:', reviewCount0);
-await page.screenshot({ path: `${SHOTS}/2-editor-first-pass.png`, fullPage: true });
+// --- (b) First-pass render --------------------------------------------------
+step('(b) first-pass render');
+await page.waitForSelector(SEL.row);
+await page.waitForSelector(SEL.bracket);
+await expectCount(SEL.row, 14, 'proposition rows');
 
-// --- Interactions ----------------------------------------------------------
-// (a) Confirm a review-flagged bracket.
-await page.locator('.bracket-hit:has(circle)').first().dispatchEvent('mousedown');
-await page.waitForSelector('.confirm-btn');
-await page.click('.confirm-btn');
-const reviewCount1 = await page.locator('.bracket-hit:has(circle)').count();
-console.log('review-flagged after confirm:', reviewCount1);
-if (reviewCount1 !== reviewCount0 - 1) fail('confirm did not clear the flag');
-
-// (b) Re-label a review bracket to Alternative (the interpretive override).
-await page.locator('.bracket-hit:has(circle)').first().dispatchEvent('mousedown');
-await page.waitForSelector('.bracket-controls .rel-select');
-await page.selectOption('.bracket-controls .rel-select', 'Alt');
-console.log('re-labeled a bracket to Alt');
-
-// (c) Wrap: select 5a (row 0) through 6e (row 9) -> two of the root's
-// three sentence packets -> wrap as Ground.
-await page.locator('.prop-row').nth(0).click();
-await page.locator('.prop-row').nth(9).click({ modifiers: ['Shift'] });
-const selectedRows = await page.locator('.prop-row.selected').count();
-console.log('selected rows:', selectedRows);
-if (selectedRows !== 10) fail(`expected 10 selected rows, got ${selectedRows}`);
-await page.selectOption('.editor-toolbar > .rel-select', 'Grnd');
-const bracketCount1 = await page.locator('.bracket-hit').count();
-console.log('brackets after wrap:', bracketCount1);
-if (bracketCount1 !== bracketCount0 + 1) fail('wrap did not add a bracket');
-
-// (d) Undo / redo round-trip.
-await page.click('button:has-text("Undo")');
-if ((await page.locator('.bracket-hit').count()) !== bracketCount0) fail('undo failed');
-await page.click('button:has-text("Redo")');
-if ((await page.locator('.bracket-hit').count()) !== bracketCount1) fail('redo failed');
-
-// (d2) Split a proposition by double-clicking a word, then merge it back.
-await page.locator('.prop-row').nth(6).locator('.word').nth(1).dblclick();
-if ((await page.locator('.prop-row').count()) !== 15) fail('split did not add a row');
-console.log('split a proposition');
-await page.locator('.prop-row').nth(6).click();
-await page.locator('.prop-row').nth(7).click({ modifiers: ['Shift'] });
-await page.click('button:has-text("Merge")');
-if ((await page.locator('.prop-row').count()) !== 14) fail('merge did not restore');
-console.log('merged it back');
-
-// (e) Move a star on a subordinate bracket.
-await page.locator('.bracket-hit').first().dispatchEvent('mousedown');
-await page.waitForSelector('.bracket-controls');
-const starButtons = await page.locator('.star-btn').count();
-if (starButtons > 0) {
-  await page.locator('.star-btn').first().click();
-  console.log('moved a star');
+const brackets0 = await countOf(SEL.bracket);
+const dots0 = await countOf(SEL.dot);
+const amber0 = await countOf(SEL.amberBracket);
+console.log(`  brackets: ${brackets0}  dots: ${dots0}  amber: ${amber0}`);
+if (brackets0 < 1) await fail('no brackets rendered');
+if (dots0 !== 14 + brackets0) {
+  await fail(`expected one dot per proposition and bracket (${14 + brackets0}), got ${dots0}`);
 }
-await page.screenshot({ path: `${SHOTS}/3-editor-after-edits.png`, fullPage: true });
+if (amber0 < 1) await fail('no review-flagged (amber) brackets in the first pass');
+ok(`brackets and dots present (${brackets0} brackets, ${dots0} dots, ${amber0} amber)`);
+await expectCount(SEL.connectable, 1, 'first pass is one connected tree: one root dot');
 
-// --- Save and reload --------------------------------------------------------
-await page.click('button:has-text("Save")');
-await page.waitForSelector('text=Saved', { timeout: 10_000 });
-console.log('saved');
+// The removed UI: selects, per-bracket star/confirm buttons, the row-selection
+// mode and the amber review circle that used to sit above a flagged bracket.
+for (const [sel, what] of [
+  ['.rel-select', 'relationship <select>'],
+  ['.star-btn', 'star buttons'],
+  ['.confirm-btn', 'confirm button'],
+  ['.bracket-controls', 'bracket controls bar'],
+  ['.prop-row.selected', 'row selection mode'],
+  ['.bracket-hit circle', 'review circle marker'],
+  [`circle[fill="${AMBER}"]`, 'amber marker circle'],
+]) {
+  await expectNone(sel, `old UI gone (${what})`);
+}
+
+const toolbarButtons = await page.locator('.editor-toolbar button').allTextContents();
+console.log('  toolbar buttons:', JSON.stringify(toolbarButtons));
+if (toolbarButtons.join('|') !== 'Undo|Redo') {
+  await fail(`toolbar should hold Undo and Redo only, got ${JSON.stringify(toolbarButtons)}`);
+}
+ok('toolbar has Undo and Redo only');
+await snap('editor-first-pass');
+
+// --- (c) Split after --------------------------------------------------------
+step('(c) split a proposition');
+const splitRow = page.locator(SEL.row).nth(6);
+const splitPid = await splitRow.getAttribute('data-pid');
+const splitLabel = (await splitRow.locator('.verse-label').textContent()) ?? '';
+console.log(`  splitting row 6 (${splitPid}, "${splitLabel}") after its 2nd word`);
+
+await splitRow.locator('.word.splittable').nth(1).click();
+await page.waitForSelector(SEL.splitPopover);
+const splitText = (await page.textContent(`${SEL.splitPopover} .popover-item`)) ?? '';
+if (splitText.trim() !== 'Split after') await fail(`unexpected popover: "${splitText}"`);
+ok('"Split after" popover appeared beside the word');
+await snap('split-popover');
+
+await page.click(`${SEL.splitPopover} .popover-item`);
+await expectCount(SEL.row, 15, 'rows after split');
+
+const newRow = page.locator(SEL.row).nth(7);
+const newPid = await newRow.getAttribute('data-pid');
+const newLabel = (await newRow.locator('.verse-label').textContent()) ?? '';
+console.log(`  new row: ${newPid} "${newLabel}"`);
+if (newLabel !== `${splitLabel}′`) {
+  await fail(`new row label should be "${splitLabel}′", got "${newLabel}"`);
+}
+ok(`new row carries the prime mark (${newLabel})`);
+
+// Both halves are now disconnected roots — their dots are connectable handles.
+for (const pid of [splitPid, newPid]) {
+  await expectCount(
+    `g.dot-group.connectable[data-dot="prop:${pid}"]`,
+    1,
+    `${pid} is a disconnected root (connectable dot handle)`,
+  );
+}
+const rootsAfterSplit = await countOf(SEL.connectable);
+console.log(`  roots after split: ${rootsAfterSplit}`);
+await snap('after-split');
+
+// --- (d) Merge below --------------------------------------------------------
+step('(d) merge the split back together');
+await page.locator(SEL.row).nth(6).hover();
+const mergeBtn = page.locator(SEL.row).nth(6).locator('.merge-below');
+await waitFor(
+  () => {
+    const el = document.querySelectorAll('.prop-row')[6]?.querySelector('.merge-below');
+    return el !== null && el !== undefined && getComputedStyle(el).opacity === '1';
+  },
+  null,
+  '"Merge below" revealed on row hover',
+);
+if ((await mergeBtn.textContent()) !== 'Merge below') await fail('merge button text changed');
+await mergeBtn.click();
+await expectCount(SEL.row, 14, 'rows after merge');
+const mergedLabel = await page.locator(SEL.row).nth(6).locator('.verse-label').textContent();
+if (mergedLabel !== splitLabel) await fail(`merged row label is "${mergedLabel}"`);
+ok(`merged row is ${splitPid} again ("${mergedLabel}")`);
+
+// --- (e) Dot connect --------------------------------------------------------
+step('(e) connect two adjacent roots by their dots');
+const bracketsBeforeConnect = await countOf(SEL.bracket);
+const rootsBeforeConnect = await countOf(SEL.connectable);
+console.log(`  brackets: ${bracketsBeforeConnect}  roots: ${rootsBeforeConnect}`);
+if (rootsBeforeConnect < 3) await fail('split/merge did not leave enough disconnected roots');
+
+// Connectable dots come out in forest-root order, so any two neighbours in
+// this list are adjacent roots — exactly what connectUnits accepts.
+const dotA = page.locator(SEL.connectable).nth(1);
+const dotB = page.locator(SEL.connectable).nth(2);
+const idA = await dotA.getAttribute('data-dot');
+const idB = await dotB.getAttribute('data-dot');
+console.log(`  connecting ${idA} + ${idB}`);
+
+await dotA.dispatchEvent('click');
+await expectCount(SEL.selectedDot, 1, 'first dot is selected');
+await expectCount(`g.dot-group.selected[data-dot="${idA}"]`, 1, `selection is on ${idA}`);
+await snap('dot-selected');
+
+await dotB.dispatchEvent('click', { shiftKey: true });
+await page.waitForSelector(SEL.menu);
+ok('shift-click connected the pair and auto-opened the relationship menu');
+await expectCount(SEL.bracket, bracketsBeforeConnect + 1, 'a new bracket appeared');
+await expectCount(SEL.connectable, rootsBeforeConnect - 1, 'the two roots became one');
+await snap('connect-menu');
+
+await expectCount('g.label-hit[data-label="G"]', 0, 'no Ground bracket yet');
+await page.click(`${SEL.menu} .menu-item:has(.menu-name:text-is("Ground"))`);
+await expectCount(SEL.menu, 0, 'menu closed after picking a relationship');
+await expectCount('g.label-hit[data-label="G"]', 1, 'the new bracket is labeled Ground (G)');
+const bracketsAfterConnect = await countOf(SEL.bracket);
+
+// --- (f) Star flip ----------------------------------------------------------
+step('(f) flip a star');
+await page.keyboard.press('Escape');
+const starCount = await countOf(SEL.star);
+if (starCount < 1) await fail('no stars to flip');
+const starBefore = await page
+  .locator(`${SEL.star} text.bracket-star`)
+  .first()
+  .getAttribute('y');
+console.log(`  ${starCount} stars; first star y=${starBefore}`);
+await page.locator(SEL.star).first().dispatchEvent('click');
+await waitFor(
+  (before) => {
+    const t = document.querySelector('g.star-hit text.bracket-star');
+    return t !== null && t.getAttribute('y') !== before;
+  },
+  starBefore,
+  'the star moved to the other end of its bracket',
+);
+const starAfter = await page
+  .locator(`${SEL.star} text.bracket-star`)
+  .first()
+  .getAttribute('y');
+console.log(`  star y: ${starBefore} -> ${starAfter}`);
+await expectCount(SEL.star, starCount, 'star count unchanged by the flip');
+
+// --- (g) Label menu + Confirm ----------------------------------------------
+step('(g) label menu opens and closes; Confirm clears a review flag');
+await page.keyboard.press('Escape');
+await page.locator(SEL.label).first().dispatchEvent('click');
+await page.waitForSelector(SEL.menu);
+ok('clicking a label opened the relationship menu');
+await page.keyboard.press('Escape');
+await expectCount(SEL.menu, 0, 'Escape closed the menu');
+
+const amberBefore = await countOf(SEL.amberBracket);
+console.log(`  amber (review-flagged) brackets: ${amberBefore}`);
+if (amberBefore < 1) await fail('no amber brackets left to confirm');
+await page.locator(SEL.amberLabel).first().dispatchEvent('click');
+await page.waitForSelector(`${SEL.menu} .menu-item.confirm`);
+ok('a review-flagged bracket offers Confirm');
+await page.click(`${SEL.menu} .menu-item.confirm`);
+await page.keyboard.press('Escape'); // drop the selection so colors read true
+await expectCount(SEL.amberBracket, amberBefore - 1, 'Confirm cleared one review flag');
+
+// --- (h) Disconnect ---------------------------------------------------------
+step('(h) disconnect the outermost bracket');
+const rootsBeforeDisconnect = await countOf(SEL.connectable);
+const bracketsBeforeDisconnect = await countOf(SEL.bracket);
+// Pre-order: the first hit rect is the outermost bracket of the first root.
+await page.locator(SEL.bracket).first().dispatchEvent('click');
+await waitFor(
+  (accent) => document.querySelectorAll(`g.bracket.selected line[stroke="${accent}"]`).length > 0,
+  ACCENT,
+  'the outermost bracket is selected by its box',
+);
+// Its labels now paint accent-blue, which is how we find its label menu.
+await page.locator(SEL.accentLabel).first().dispatchEvent('click');
+await page.waitForSelector(`${SEL.menu} .menu-item.action`);
+const actions = await page.locator(`${SEL.menu} .menu-item.action`).allTextContents();
+console.log('  menu actions:', JSON.stringify(actions));
+if (!actions.includes('Disconnect')) await fail('a root bracket did not offer Disconnect');
+await page.click(`${SEL.menu} .menu-item.action:text-is("Disconnect")`);
+await expectCount(SEL.bracket, bracketsBeforeDisconnect - 1, 'the bracket is gone');
+await expectCount(SEL.connectable, rootsBeforeDisconnect + 1, 'its children became roots');
+
+// --- (i) Undo / redo --------------------------------------------------------
+step('(i) undo / redo the disconnect');
+await page.click('.editor-toolbar button:has-text("Undo")');
+await expectCount(SEL.bracket, bracketsBeforeDisconnect, 'undo restored the bracket');
+await expectCount(SEL.connectable, rootsBeforeDisconnect, 'undo restored the root count');
+await page.click('.editor-toolbar button:has-text("Redo")');
+await expectCount(SEL.bracket, bracketsBeforeDisconnect - 1, 'redo removed it again');
+await expectCount(SEL.connectable, rootsBeforeDisconnect + 1, 'redo restored the root count');
+
+const rowsFinal = await countOf(SEL.row);
+const bracketsFinal = await countOf(SEL.bracket);
+const rootsFinal = await countOf(SEL.connectable);
+const amberFinal = await countOf(SEL.amberBracket);
+console.log(
+  `  final: rows ${rowsFinal}, brackets ${bracketsFinal}, roots ${rootsFinal}, amber ${amberFinal}` +
+    ` (connect made ${bracketsAfterConnect} brackets)`,
+);
+await snap('after-edits');
+
+// --- (j) Save and reload ----------------------------------------------------
+step('(j) save, reload, and check persistence');
+await page.click('.analysis-toolbar button:has-text("Save")');
+await page.waitForSelector('.analysis-toolbar >> text=/^Saved /', { timeout: 10_000 });
+ok('"Saved" indicator shown');
 
 await page.reload();
-await page.waitForSelector('.prop-row');
-const rowsAfter = await page.locator('.prop-row').count();
-const bracketsAfter = await page.locator('.bracket-hit').count();
-console.log('after reload: rows', rowsAfter, 'brackets', bracketsAfter);
-if (rowsAfter !== 14) fail('rows lost after reload');
-if (bracketsAfter !== bracketCount1) fail('edited structure not persisted');
-await page.screenshot({ path: `${SHOTS}/4-reloaded.png`, fullPage: true });
+await page.waitForSelector(SEL.row);
+await page.waitForSelector(SEL.bracket);
+await expectCount(SEL.row, rowsFinal, 'rows survived the reload');
+await expectCount(SEL.bracket, bracketsFinal, 'brackets survived the reload');
+await expectCount(SEL.connectable, rootsFinal, 'roots survived the reload');
+await expectCount(SEL.amberBracket, amberFinal, 'review flags survived the reload');
 
-// Home list shows the analysis.
+const stored = await page.request.get(`${API}/api/analyses/${analysisUrl.split('/').pop()}`);
+const storedDoc = (await stored.json()).document;
+console.log(
+  `  stored document: schemaVersion ${storedDoc.schemaVersion},` +
+    ` ${storedDoc.propositions.length} propositions, ${storedDoc.forest.length} roots`,
+);
+if (storedDoc.schemaVersion !== 2) await fail('server did not store schemaVersion 2');
+if (storedDoc.forest.length !== rootsFinal) {
+  await fail(`stored forest has ${storedDoc.forest.length} roots, editor shows ${rootsFinal}`);
+}
+ok('schemaVersion 2 forest round-tripped through the server');
+await snap('after-reload');
+
+// Home still lists it.
 await page.goto(BASE);
 await page.waitForSelector('.analysis-link');
-console.log('analysis listed on home');
+ok('analysis listed on home');
 
 await browser.close();
-console.log('E2E OK');
+
+if (problems.length > 0) {
+  console.error('\nE2E FAIL: page/console errors:');
+  for (const p of problems) console.error('  -', p);
+  process.exit(1);
+}
+
+console.log('\nscreenshots:');
+for (const f of shots) console.log('  ', f);
+console.log('\nE2E OK');

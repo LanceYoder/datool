@@ -21,10 +21,26 @@
 // is built and taken apart.
 
 import type { Editor } from '@tiptap/core';
+import { closeHistory } from '@tiptap/pm/history';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import type { Transaction } from '@tiptap/pm/state';
 import type { CorpusWord, TaxonomyEntry } from '../types';
 import { displayWordText } from './convert';
+
+/**
+ * Dispatch a command's single transaction as its own UNDO STEP.
+ *
+ * prosemirror-history groups transactions that arrive within its newGroupDelay
+ * (500ms) into one event — right for typing, wrong here: this editor has no
+ * text input at all (see editor.ts), so every transaction is a discrete
+ * structural gesture. Without closing the group first, two gestures made in
+ * quick succession — confirm a flag, then split a proposition — would undo
+ * together, which is the opposite of the "one gesture, one command, one undo
+ * step" rule this module is built on.
+ */
+function dispatch(editor: Editor, tr: Transaction): void {
+  editor.view.dispatch(closeHistory(tr));
+}
 
 /** U+2032 PRIME — suffixed to the label of a split's second half. */
 export const PRIME = '′';
@@ -81,7 +97,7 @@ function setBracketAttrs(
     ...node.attrs,
     ...changes,
   });
-  editor.view.dispatch(tr);
+  dispatch(editor, tr);
   return true;
 }
 
@@ -226,7 +242,7 @@ export function connectUnits(
     [first, second],
   );
 
-  editor.view.dispatch(state.tr.replaceWith(from, to + second.nodeSize, bracket));
+  dispatch(editor, state.tr.replaceWith(from, to + second.nodeSize, bracket));
   return from;
 }
 
@@ -242,7 +258,7 @@ export function disconnectRoot(editor: Editor, pos: number): boolean {
   const { state } = editor;
   if (state.doc.resolve(pos).depth !== 0) return false; // nested: not a root
 
-  editor.view.dispatch(state.tr.replaceWith(pos, pos + node.nodeSize, node.content));
+  dispatch(editor, state.tr.replaceWith(pos, pos + node.nodeSize, node.content));
   return true;
 }
 
@@ -277,7 +293,7 @@ function unzipInTransaction(tr: Transaction, pid: string): boolean {
 export function unzipToRoot(editor: Editor, pid: string): boolean {
   const tr = editor.state.tr;
   if (!unzipInTransaction(tr, pid)) return false;
-  if (tr.docChanged) editor.view.dispatch(tr);
+  if (tr.docChanged) dispatch(editor, tr);
   return true;
 }
 
@@ -388,7 +404,7 @@ export function splitProposition(
     type.create(attrsA),
     type.create(attrsB),
   ]);
-  editor.view.dispatch(tr);
+  dispatch(editor, tr);
   return true;
 }
 
@@ -464,7 +480,7 @@ export function mergeBelow(
   if (posA + nodeA.nodeSize !== posB) return false;
 
   tr.replaceWith(posA, posB + nodeB.nodeSize, type.create(merged));
-  editor.view.dispatch(tr);
+  dispatch(editor, tr);
   return true;
 }
 
