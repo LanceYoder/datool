@@ -74,7 +74,11 @@ analysis. Everything is built by hand:
 10. **Save / reload**: Save in the top bar, reload the page, reopen from the
     home list — the analysis must come back exactly as left.
 
-Word tooltips (hover a word) show the SBLGNT lemma and morphology.
+Above each Greek row, a muted line shows the English of the verses starting
+there (World English Bible, public domain) — display only. Clicking a word
+opens its info card: lemma with transliteration, a short English gloss
+(TBESG, STEPBible.org data by Tyndale House, CC BY 4.0), readable
+morphology, and the Split after button.
 
 ## Resetting
 

@@ -8,7 +8,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .corpus import format_ref, load_words
+from .corpus import format_ref, load_words, verses_for_range
 from .documents import DocumentError, validate_document
 from .models import Analysis
 from .serializers import (
@@ -145,6 +145,24 @@ class CorpusWordsView(APIView):
         if end - start + 1 > WORD_RANGE_CAP:
             return _errors([f"range exceeds the {WORD_RANGE_CAP}-word cap"])
         return Response([word_json(w) for w in words[start:end + 1]])
+
+
+class CorpusVersesView(APIView):
+    """English (WEB) reference text for the verses a word range touches."""
+
+    def get(self, request):
+        raw_start = request.query_params.get("start")
+        raw_end = request.query_params.get("end")
+        try:
+            start, end = int(raw_start), int(raw_end)
+        except (TypeError, ValueError):
+            return _errors(["start and end must be integers"])
+        words = load_words()
+        if not (0 <= start <= end < len(words)):
+            return _errors([f"need 0 <= start <= end < {len(words)}"])
+        if end - start + 1 > WORD_RANGE_CAP:
+            return _errors([f"range exceeds the {WORD_RANGE_CAP}-word cap"])
+        return Response(verses_for_range(start, end))
 
 
 class TaxonomyView(APIView):

@@ -8,7 +8,7 @@ directly so the validator and the API can never disagree.
 
 from rest_framework import serializers
 
-from .corpus import Alignment, Word
+from .corpus import Alignment, Word, gloss_for
 from .models import Analysis
 
 
@@ -32,6 +32,7 @@ class AnalysisDetailSerializer(AnalysisListSerializer):
 
 def word_json(word: Word) -> dict:
     """One corpus word as served by ``GET /api/corpus/words``."""
+    entry = gloss_for(word.lemma)
     return {
         "index": word.index,
         "text": word.text,
@@ -44,6 +45,9 @@ def word_json(word: Word) -> dict:
         "bookName": word.book_name,
         "chapter": word.chapter,
         "verse": word.verse,
+        # TBESG (STEPBible.org, CC BY 4.0): null when the lemma has no entry.
+        "translit": entry[0] if entry is not None else None,
+        "gloss": entry[1] if entry is not None else None,
     }
 
 

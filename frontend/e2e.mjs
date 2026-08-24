@@ -46,7 +46,7 @@ const SEL = {
   selectedDot: 'g.dot-group.selected',
   star: 'g.star-hit',
   label: 'g.label-hit',
-  splitPopover: '.popover.split-popover',
+  wordPopover: '.popover.word-popover',
   menu: '.popover.menu-popover',
 };
 
@@ -196,6 +196,14 @@ const blockLabel = (await page.locator(SEL.row).locator('.verse-label').textCont
 if (blockLabel !== '5–7') await fail(`block label should be "5–7", got "${blockLabel}"`);
 ok(`the block is labeled by its verse span (${blockLabel})`);
 
+// The English (WEB) reference line loads above the Greek — display only.
+await page.waitForSelector('.prop-row .english-line');
+const english0 = (await page.textContent('.prop-row .english-line')) ?? '';
+if (!english0.includes('God is light') || !english0.includes('fellowship')) {
+  await fail(`English reference line looks wrong: "${english0.slice(0, 120)}…"`);
+}
+ok('English (WEB) reference line shows above the Greek');
+
 // Confidence labeling is gone: nothing in the overlay is amber, and the
 // stored first pass carries no review flags.
 await expectNone(`[stroke="${AMBER}"], [fill="${AMBER}"]`, 'no amber/confidence coloring');
@@ -271,13 +279,18 @@ const splitLabel = (await splitRow.locator('.verse-label').textContent()) ?? '';
 console.log(`  splitting the block (${splitPid}, "${splitLabel}") after its 2nd word`);
 
 await splitRow.locator('.word.splittable').nth(1).click();
-await page.waitForSelector(SEL.splitPopover);
-const splitText = (await page.textContent(`${SEL.splitPopover} .popover-item`)) ?? '';
+await page.waitForSelector(SEL.wordPopover);
+const splitText = (await page.textContent(`${SEL.wordPopover} .popover-item`)) ?? '';
 if (splitText.trim() !== 'Split after') await fail(`unexpected popover: "${splitText}"`);
-ok('"Split after" popover appeared beside the word');
+// The popover doubles as the word-info card: lemma, gloss, morphology.
+const gloss = (await page.textContent(`${SEL.wordPopover} .word-gloss`).catch(() => null)) ?? '';
+const parse = (await page.textContent(`${SEL.wordPopover} .word-parse`).catch(() => null)) ?? '';
+if (gloss.trim() === '') await fail('word popover shows no gloss');
+if (parse.trim() === '') await fail('word popover shows no morphology');
+ok(`word popover shows info ("${gloss.trim()}" · "${parse.trim()}") plus Split after`);
 await snap('split-popover');
 
-await page.click(`${SEL.splitPopover} .popover-item`);
+await page.click(`${SEL.wordPopover} .popover-item`);
 await expectCount(SEL.row, 2, 'rows after split');
 
 const newRow = page.locator(SEL.row).nth(1);
@@ -290,6 +303,8 @@ console.log(`  labels after split: "${headLabel}" / "${newLabel}"`);
 if (headLabel !== '5') await fail(`head label should be "5", got "${headLabel}"`);
 if (newLabel !== '5–7') await fail(`tail label should be "5–7", got "${newLabel}"`);
 ok('labels re-derived from the verses (5 / 5–7 — no primes)');
+// The English lines re-attach: verse 5 on the head row, verses 6–7 on the tail.
+await expectCount('.prop-row .english-line', 2, 'English lines follow the verse starts');
 
 // Both halves are now disconnected roots.
 for (const pid of [splitPid, newPid]) {
@@ -386,8 +401,8 @@ for (const [rowIndex, want] of [
   [1, 3],
 ]) {
   await page.locator(SEL.row).nth(rowIndex).locator('.word.splittable').nth(1).click();
-  await page.waitForSelector(SEL.splitPopover);
-  await page.click(`${SEL.splitPopover} .popover-item`);
+  await page.waitForSelector(SEL.wordPopover);
+  await page.click(`${SEL.wordPopover} .popover-item`);
   await expectCount(SEL.row, want, `rows after split ${want - 1}`);
 }
 const bracketsBeforeConnect = await countOf(SEL.bracket);

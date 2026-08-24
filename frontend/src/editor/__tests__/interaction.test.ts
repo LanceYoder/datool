@@ -3,12 +3,14 @@ import type { BracketNode, TaxonomyEntry, TreeNode } from '../../types';
 import { layoutDots } from '../layout';
 import type { RowBox } from '../layout';
 import {
+  attachVerses,
   canSplitAfter,
   clampPopover,
   groupByFamily,
   mainPointRefs,
   parseDotId,
 } from '../interaction';
+import type { VerseText } from '../../types';
 import { TAXONOMY } from './fixtures';
 
 // The same forest layout.test.ts uses:
@@ -120,6 +122,44 @@ describe('mainPointRefs', () => {
     expect(mainPointRefs(buildForest())).toEqual([]); // three roots
     expect(mainPointRefs([p('p1')])).toEqual([]); // one root, but no tree
     expect(mainPointRefs([])).toEqual([]);
+  });
+});
+
+describe('attachVerses', () => {
+  const verse = (verse: number, start: number): VerseText => ({
+    book: 23, chapter: 1, verse, start, ref: `1 John 1:${verse}`, text: `v${verse} text`,
+  });
+
+  it('puts each verse on the row holding its first word', () => {
+    const props = [
+      { pid: 'a', srcStart: 100, srcEnd: 119 },
+      { pid: 'b', srcStart: 120, srcEnd: 139 },
+    ];
+    const out = attachVerses(props, [verse(5, 100), verse(6, 125)]);
+    expect(out.get('a')?.map((v) => v.verse)).toEqual([5]);
+    expect(out.get('b')?.map((v) => v.verse)).toEqual([6]);
+  });
+
+  it('clamps a verse starting before the analyzed range to the first row', () => {
+    const props = [{ pid: 'a', srcStart: 110, srcEnd: 139 }];
+    const out = attachVerses(props, [verse(5, 100), verse(6, 125)]);
+    expect(out.get('a')?.map((v) => v.verse)).toEqual([5, 6]);
+  });
+
+  it('pushes a verse landing in a source gap to the next corpus row', () => {
+    const props = [
+      { pid: 'a', srcStart: 100, srcEnd: 119 },
+      { pid: 'raw', srcStart: null, srcEnd: null },
+      { pid: 'b', srcStart: 130, srcEnd: 139 },
+    ];
+    // Verse 6 starts at 125 — inside the gap left by the raw proposition.
+    const out = attachVerses(props, [verse(6, 125)]);
+    expect(out.get('b')?.map((v) => v.verse)).toEqual([6]);
+    expect(out.has('raw')).toBe(false);
+  });
+
+  it('is empty for raw-only documents', () => {
+    expect(attachVerses([{ pid: 'x', srcStart: null, srcEnd: null }], [verse(5, 1)]).size).toBe(0);
   });
 });
 

@@ -106,6 +106,21 @@ export interface CorpusWord {
   bookName: string;
   chapter: number;
   verse: number;
+  /** TBESG transliteration (STEPBible.org, CC BY 4.0), null when unglossed. */
+  translit: string | null;
+  /** TBESG short English gloss, null when the lemma has no entry. */
+  gloss: string | null;
+}
+
+/** One English (WEB) verse from GET /api/corpus/verses. */
+export interface VerseText {
+  book: number;
+  chapter: number;
+  verse: number;
+  /** Corpus index of the verse's FIRST word (may precede the fetched range). */
+  start: number;
+  ref: string;
+  text: string;
 }
 
 export interface TaxonomyEntry {

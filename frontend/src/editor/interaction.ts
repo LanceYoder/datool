@@ -7,7 +7,7 @@
 // for the relationship menu, reading a dot id back apart, and keeping a
 // popover on screen.
 
-import type { TaxonomyEntry, TreeNode } from '../types';
+import type { TaxonomyEntry, TreeNode, VerseText } from '../types';
 
 /** Display names for the taxonomy's four families. */
 export const FAMILY_NAMES: Record<string, string> = {
@@ -93,6 +93,48 @@ export function mainPointRefs(forest: readonly TreeNode[]): string[] {
     }
   };
   walk(root);
+  return out;
+}
+
+/** A proposition's identity and corpus extent, for verse attachment. */
+export interface PropExtent {
+  pid: string;
+  srcStart: number | null;
+  srcEnd: number | null;
+}
+
+/**
+ * Which proposition ROW each English verse renders above: the row holding the
+ * verse's first word — clamped to the document's opening when the analyzed
+ * range starts mid-verse, and pushed to the next corpus row when the exact
+ * word fell into a gap (a degraded merge). Raw propositions never attract
+ * verses. Returns pid -> verses, verses in corpus order.
+ */
+export function attachVerses(
+  props: readonly PropExtent[],
+  verses: readonly VerseText[],
+): Map<string, VerseText[]> {
+  const corpus = props.filter(
+    (p): p is PropExtent & { srcStart: number; srcEnd: number } =>
+      typeof p.srcStart === 'number' && typeof p.srcEnd === 'number',
+  );
+  const out = new Map<string, VerseText[]>();
+  if (corpus.length === 0) return out;
+  const minStart = Math.min(...corpus.map((p) => p.srcStart));
+
+  for (const verse of verses) {
+    const at = Math.max(verse.start, minStart);
+    const holder =
+      corpus.find((p) => p.srcStart <= at && at <= p.srcEnd) ??
+      corpus.find((p) => p.srcStart > at);
+    if (holder === undefined) continue;
+    const list = out.get(holder.pid);
+    if (list === undefined) {
+      out.set(holder.pid, [verse]);
+    } else {
+      list.push(verse);
+    }
+  }
   return out;
 }
 

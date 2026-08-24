@@ -5,7 +5,8 @@
 // Every gesture is exactly ONE core command — nothing here recomputes labels,
 // re-indexes propositions or repairs structure:
 //
-//   click a word          "Split after" popover -> splitProposition
+//   click a word          word-info popover (lemma, morphology, gloss) with
+//                         "Split after" -> splitProposition when splittable
 //   click a dot           select that dot (EVERY dot is clickable, connected
 //                         or not — reconnecting dissolves the old connection);
 //                         clicking the selected dot again unselects it
@@ -42,8 +43,9 @@ import type {
   CorpusWord,
   Document as AnalysisDocument,
   TaxonomyEntry,
+  VerseText,
 } from '../types';
-import { errorMessages, getCorpusWords, getTaxonomy } from '../api';
+import { errorMessages, getCorpusVerses, getCorpusWords, getTaxonomy } from '../api';
 import { buildTextById, displayWordText, documentToNode, nodeToDocument } from './convert';
 import { editorExtensions } from './editor';
 import { EditorProposition } from './schema';
@@ -59,8 +61,15 @@ import {
 } from './commands';
 import { COL_W, STUB_W, computeColumns, layoutBrackets, layoutDots } from './layout';
 import type { DotGeom, RowBox } from './layout';
-import { canSplitAfter, clampPopover, mainPointRefs, parseDotId } from './interaction';
-import type { Point } from './interaction';
+import {
+  attachVerses,
+  canSplitAfter,
+  clampPopover,
+  mainPointRefs,
+  parseDotId,
+} from './interaction';
+import type { Point, PropExtent } from './interaction';
+import { describeParsing } from './morph';
 import BracketLayer from './BracketLayer';
 import type { PositionedBracket, ShakeState } from './BracketLayer';
 import RelationshipMenu from './RelationshipMenu';
@@ -71,7 +80,7 @@ const LABEL_GUTTER = 56; // px between the bracket columns and the row gutter
 const VERSE_LABEL_W = 72;
 
 /** Nominal popover boxes, used to keep them inside the shell. */
-const SPLIT_SIZE = { width: 150, height: 50 };
+const WORD_SIZE = { width: 280, height: 170 };
 const MENU_SIZE = { width: 260, height: 400 };
 
 /** How long a rejected connection shakes / the message stays up. */
@@ -90,8 +99,24 @@ interface RowContextValue {
    * These rows render red.
    */
   mainPids: ReadonlySet<string>;
-  /** A single click on a word: offer "Split after" beside it. */
-  onWordClick: (pid: string, ordinal: number, word: string, target: HTMLElement) => void;
+  /**
+   * English (WEB) verses rendered above each row — a verse sits on the row
+   * holding its first analyzed word. Display only.
+   */
+  versesByPid: ReadonlyMap<string, VerseText[]>;
+  /**
+   * A single click on ANY word: the word-info popover (lemma, morphology,
+   * gloss), plus "Split after" when the word is splittable. `index` is the
+   * corpus word index, null for raw text.
+   */
+  onWordClick: (
+    pid: string,
+    ordinal: number,
+    word: string,
+    index: number | null,
+    splittable: boolean,
+    target: HTMLElement,
+  ) => void;
   onMergeBelow: (pid: string) => void;
 }
 
@@ -101,14 +126,19 @@ const RowContext = createContext<RowContextValue | null>(null);
 function rowTokens(
   node: ReactNodeViewProps['node'],
   words: ReadonlyMap<number, CorpusWord>,
-): { key: string | number; display: string; hover?: string }[] {
+): { key: string | number; display: string; hover?: string; index?: number }[] {
   const { srcStart, srcEnd } = node.attrs as { srcStart: unknown; srcEnd: unknown };
   if (typeof srcStart === 'number' && typeof srcEnd === 'number') {
     const out = [];
     for (let i = srcStart; i <= srcEnd; i += 1) {
       const w = words.get(i);
       if (w !== undefined) {
-        out.push({ key: i, display: displayWordText(w.text), hover: `${w.lemma} · ${w.parsing}` });
+        out.push({
+          key: i,
+          display: displayWordText(w.text),
+          hover: `${w.lemma} · ${w.parsing}`,
+          index: i,
+        });
       }
     }
     if (out.length > 0) return out;
@@ -130,6 +160,8 @@ function PropositionRow({ node }: ReactNodeViewProps) {
   const color = isMain ? MAIN_POINT_COLOR : stored;
   const tokens = ctx !== null ? rowTokens(node, ctx.words) : [];
 
+  const verses = ctx?.versesByPid.get(pid);
+
   return (
     <NodeViewWrapper
       as="div"
@@ -137,52 +169,68 @@ function PropositionRow({ node }: ReactNodeViewProps) {
       data-pid={pid}
     >
       <span className="verse-label">{String(node.attrs.label)}</span>
-      <span className="prop-text greek" style={color !== undefined ? { color } : undefined}>
-        {ctx !== null
-          ? tokens.map((t, ordinal) => {
-              const splittable = canSplitAfter(ordinal, tokens.length);
-              // Morphology stays on the tooltip; the split hint joins it.
-              const title =
-                (t.hover !== undefined ? t.hover : '') +
-                (splittable ? `${t.hover !== undefined ? '\n' : ''}click: split after this word` : '');
-              return (
-                <span
-                  key={t.key}
-                  className={splittable ? 'word splittable' : 'word'}
-                  title={title === '' ? undefined : title}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={
-                    splittable
-                      ? (event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          ctx.onWordClick(pid, ordinal, t.display, event.currentTarget);
-                        }
-                      : undefined
-                  }
-                >
-                  {t.display}{' '}
-                </span>
-              );
-            })
-          : String(node.attrs.text)}
-        {/* Inside the text span, so it flows right after the last word. */}
-        {ctx !== null && ctx.lastPid !== pid && (
-          <button
-            type="button"
-            className="merge-below"
-            title="Merge this proposition with the one below it"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              ctx.onMergeBelow(pid);
-            }}
-          >
-            Merge below
-          </button>
+      <div className="prop-body">
+        {verses !== undefined && verses.length > 0 && (
+          <div className="english-line" contentEditable={false}>
+            {verses.map((v) => (
+              <span key={`${v.book}:${v.chapter}:${v.verse}`}>
+                <span className="ev">{v.verse}</span> {v.text}{' '}
+              </span>
+            ))}
+          </div>
         )}
-      </span>
+        <span className="prop-text greek" style={color !== undefined ? { color } : undefined}>
+          {ctx !== null
+            ? tokens.map((t, ordinal) => {
+                const splittable = canSplitAfter(ordinal, tokens.length);
+                // Morphology stays on the tooltip; the split hint joins it.
+                const title =
+                  (t.hover !== undefined ? t.hover : '') +
+                  (splittable
+                    ? `${t.hover !== undefined ? '\n' : ''}click: split after this word`
+                    : '');
+                return (
+                  <span
+                    key={t.key}
+                    className={splittable ? 'word splittable' : 'word'}
+                    title={title === '' ? undefined : title}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      ctx.onWordClick(
+                        pid,
+                        ordinal,
+                        t.display,
+                        t.index ?? null,
+                        splittable,
+                        event.currentTarget,
+                      );
+                    }}
+                  >
+                    {t.display}{' '}
+                  </span>
+                );
+              })
+            : String(node.attrs.text)}
+          {/* Inside the text span, so it flows right after the last word. */}
+          {ctx !== null && ctx.lastPid !== pid && (
+            <button
+              type="button"
+              className="merge-below"
+              title="Merge this proposition with the one below it"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                ctx.onMergeBelow(pid);
+              }}
+            >
+              Merge below
+            </button>
+          )}
+        </span>
+      </div>
     </NodeViewWrapper>
   );
 }
@@ -204,10 +252,12 @@ export interface AnalysisEditorProps {
 
 export default function AnalysisEditor({ document: baseDoc, onChange }: AnalysisEditorProps) {
   const [words, setWords] = useState<Map<number, CorpusWord> | null>(null);
+  const [verses, setVerses] = useState<VerseText[] | null>(null);
   const [taxonomy, setTaxonomy] = useState<TaxonomyEntry[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // One batched corpus fetch covering every corpus-sourced proposition.
+  // One batched corpus fetch covering every corpus-sourced proposition; the
+  // English reference verses ride the same range.
   useEffect(() => {
     let cancelled = false;
     let min = Infinity;
@@ -220,6 +270,7 @@ export default function AnalysisEditor({ document: baseDoc, onChange }: Analysis
     }
     if (min > max) {
       setWords(new Map());
+      setVerses([]);
     } else {
       getCorpusWords(min, max)
         .then((ws) => {
@@ -227,6 +278,14 @@ export default function AnalysisEditor({ document: baseDoc, onChange }: Analysis
         })
         .catch((err: unknown) => {
           if (!cancelled) setLoadError(errorMessages(err).join('; '));
+        });
+      // The English line is a nicety: failing to load it never blocks editing.
+      getCorpusVerses(min, max)
+        .then((vs) => {
+          if (!cancelled) setVerses(vs);
+        })
+        .catch(() => {
+          if (!cancelled) setVerses([]);
         });
     }
     getTaxonomy()
@@ -244,24 +303,40 @@ export default function AnalysisEditor({ document: baseDoc, onChange }: Analysis
   if (loadError !== null) {
     return <div className="error-box">{loadError}</div>;
   }
-  if (words === null || taxonomy === null) {
+  if (words === null || verses === null || taxonomy === null) {
     return <p className="muted">Loading…</p>;
   }
   return (
-    <EditorInner baseDoc={baseDoc} words={words} taxonomy={taxonomy} onChange={onChange} />
+    <EditorInner
+      baseDoc={baseDoc}
+      words={words}
+      verses={verses}
+      taxonomy={taxonomy}
+      onChange={onChange}
+    />
   );
 }
 
 interface InnerProps {
   baseDoc: AnalysisDocument;
   words: Map<number, CorpusWord>;
+  verses: VerseText[];
   taxonomy: TaxonomyEntry[];
   onChange: (doc: AnalysisDocument) => void;
 }
 
 /** The one floating thing on screen, if any. */
 type PopoverState =
-  | { kind: 'split'; pid: string; ordinal: number; word: string; at: Point }
+  | {
+      kind: 'word';
+      pid: string;
+      ordinal: number;
+      word: string;
+      /** Corpus index (null for raw text — no info to show). */
+      index: number | null;
+      splittable: boolean;
+      at: Point;
+    }
   | { kind: 'menu'; pos: number; at: Point | null };
 
 interface Overlay {
@@ -271,7 +346,7 @@ interface Overlay {
   height: number;
 }
 
-function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
+function EditorInner({ baseDoc, words, verses, taxonomy, onChange }: InnerProps) {
   const [selectedDotId, setSelectedDotId] = useState<string | null>(null);
   const [popover, setPopover] = useState<PopoverState | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
@@ -417,6 +492,26 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, docTick, baseDoc]);
 
+  /** Which row shows which English verse (re-attached after every edit). */
+  const versesByPid = useMemo(() => {
+    const extents: PropExtent[] = [];
+    if (editor !== null) {
+      editor.state.doc.descendants((node) => {
+        if (node.type.name === 'proposition') {
+          extents.push({
+            pid: String(node.attrs.pid),
+            srcStart: typeof node.attrs.srcStart === 'number' ? node.attrs.srcStart : null,
+            srcEnd: typeof node.attrs.srcEnd === 'number' ? node.attrs.srcEnd : null,
+          });
+          return false;
+        }
+        return true;
+      });
+    }
+    return attachVerses(extents, verses);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, docTick, verses]);
+
   // ---- Geometry -----------------------------------------------------------
   // Measure every row, then lay the whole FOREST out; layout brackets
   // (pre-order) zip index-for-index with the PM bracket positions.
@@ -429,7 +524,10 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     for (const el of shell.querySelectorAll<HTMLElement>('[data-pid]')) {
       const pid = el.dataset.pid;
       if (pid === undefined) continue;
-      const rect = el.getBoundingClientRect();
+      // Anchor ticks and dots to the GREEK line, not the whole row — the
+      // English reference line above it must not pull the geometry off.
+      const target = el.querySelector<HTMLElement>('.prop-text') ?? el;
+      const rect = target.getBoundingClientRect();
       const top = rect.top - shellRect.top;
       rows.set(pid, { y: top + rect.height / 2, top, bottom: top + rect.height });
     }
@@ -470,7 +568,8 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
       words,
       lastPid: pids.length > 0 ? (pids[pids.length - 1] ?? null) : null,
       mainPids,
-      onWordClick: (pid, ordinal, word, target) => {
+      versesByPid,
+      onWordClick: (pid, ordinal, word, index, splittable, target) => {
         const shell = shellRef.current;
         if (shell === null) return;
         const shellRect = shell.getBoundingClientRect();
@@ -478,9 +577,9 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
         const at = { x: rect.left - shellRect.left, y: rect.bottom - shellRect.top + 4 };
         setSelectedDotId(null);
         setPopover((prev) =>
-          prev !== null && prev.kind === 'split' && prev.pid === pid && prev.ordinal === ordinal
-            ? null // clicking the same word again dismisses the offer
-            : { kind: 'split', pid, ordinal, word, at },
+          prev !== null && prev.kind === 'word' && prev.pid === pid && prev.ordinal === ordinal
+            ? null // clicking the same word again dismisses the popover
+            : { kind: 'word', pid, ordinal, word, index, splittable, at },
         );
       },
       onMergeBelow: (pid) => {
@@ -489,7 +588,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
         mergeBelow(editor, pid, words);
       },
     }),
-    [words, pids, mainPids, editor],
+    [words, pids, mainPids, versesByPid, editor],
   );
 
   if (editor === null) return null;
@@ -589,24 +688,38 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
       width: shellRef.current?.clientWidth ?? overlay.margin,
       height: overlay.height,
     };
-    if (popover.kind === 'split') {
-      const at = clampPopover(popover.at, SPLIT_SIZE, bounds);
+    if (popover.kind === 'word') {
+      const at = clampPopover(popover.at, WORD_SIZE, bounds);
+      const info = popover.index !== null ? words.get(popover.index) : undefined;
       popoverNode = (
         <div
           ref={popoverRef}
-          className="popover split-popover"
+          className="popover word-popover"
           style={{ left: at.x, top: at.y }}
           role="menu"
         >
-          <button
-            type="button"
-            role="menuitem"
-            className="popover-item"
-            title={`Split this proposition after “${popover.word}”`}
-            onClick={() => onSplit(popover.pid, popover.ordinal)}
-          >
-            Split after
-          </button>
+          <div className="word-head greek">{popover.word}</div>
+          {info !== undefined && (
+            <div className="word-info">
+              <div className="word-lemma">
+                <span className="greek">{info.lemma}</span>
+                {info.translit !== null && <span className="muted"> ({info.translit})</span>}
+              </div>
+              {info.gloss !== null && <div className="word-gloss">{info.gloss}</div>}
+              <div className="word-parse muted">{describeParsing(info.pos, info.parsing)}</div>
+            </div>
+          )}
+          {popover.splittable && (
+            <button
+              type="button"
+              role="menuitem"
+              className="popover-item"
+              title={`Split this proposition after “${popover.word}”`}
+              onClick={() => onSplit(popover.pid, popover.ordinal)}
+            >
+              Split after
+            </button>
+          )}
         </div>
       );
     } else {

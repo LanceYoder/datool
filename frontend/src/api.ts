@@ -5,6 +5,7 @@ import type {
   Document,
   FirstPassResult,
   TaxonomyEntry,
+  VerseText,
 } from './types';
 
 /** Error thrown for non-2xx responses; `errors` carries the server's 400 {errors} list. */
@@ -87,6 +88,26 @@ export async function getCorpusWords(start: number, end: number): Promise<Corpus
   for (let from = start; from <= end; from += WORD_RANGE_CAP) {
     const to = Math.min(from + WORD_RANGE_CAP - 1, end);
     out.push(...(await request<CorpusWord[]>(`/api/corpus/words?start=${from}&end=${to}`)));
+  }
+  return out;
+}
+
+/** Fetch the English (WEB) verses touching an inclusive word range, chunked
+ * like getCorpusWords. A verse spanning a chunk boundary comes back from both
+ * chunks — the FIRST occurrence carries the true verse start, so later
+ * duplicates are dropped. */
+export async function getCorpusVerses(start: number, end: number): Promise<VerseText[]> {
+  const out: VerseText[] = [];
+  const seen = new Set<string>();
+  for (let from = start; from <= end; from += WORD_RANGE_CAP) {
+    const to = Math.min(from + WORD_RANGE_CAP - 1, end);
+    for (const verse of await request<VerseText[]>(`/api/corpus/verses?start=${from}&end=${to}`)) {
+      const key = `${verse.book}:${verse.chapter}:${verse.verse}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(verse);
+      }
+    }
   }
   return out;
 }

@@ -87,6 +87,8 @@ const corpusWord = (index: number, text: string, verse: number): CorpusWord => (
   bookName: '1 John',
   chapter: 1,
   verse,
+  translit: 'translit',
+  gloss: 'gloss',
 });
 
 export const CORPUS_WORDS: CorpusWord[] = [

@@ -238,9 +238,26 @@ div.error-box {
   flex: none;
 }
 
-.prop-text {
+.prop-body {
   flex: 1;
+  display: flex;
+  flex-direction: column;
   padding-left: 10px;
+}
+
+/* English (WEB) reference line above the Greek — display only. */
+.english-line {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--muted);
+  margin: 4px 0 0;
+}
+
+.english-line .ev {
+  font-weight: 700;
+  font-size: 0.72em;
+  vertical-align: 0.35em;
 }
 
 .word:hover {
@@ -407,6 +424,39 @@ div.error-box {
 .menu-item:hover {
   background: #eef2ff;
   border-color: transparent;
+}
+
+/* ---- Word-info popover ---- */
+
+.word-popover {
+  min-width: 15rem;
+  max-width: 22rem;
+  padding: 0.5rem 0.6rem 0.4rem;
+}
+
+.word-head {
+  font-size: 1.2rem;
+  margin-bottom: 0.15rem;
+}
+
+.word-info {
+  font-size: 0.9rem;
+  line-height: 1.45;
+  margin-bottom: 0.35rem;
+}
+
+.word-lemma .greek {
+  font-size: 1rem;
+}
+
+.word-gloss {
+  font-weight: 600;
+}
+
+.word-popover .popover-item {
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 5px 5px;
+  font-weight: 600;
 }
 
 .menu-popover {
