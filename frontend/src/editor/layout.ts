@@ -18,12 +18,12 @@ export const COL_W = 46;
 
 /**
  * How far left of the text column every PROPOSITION dot sits — a constant, so
- * a proposition's dot never moves as connections nest around it. Root
- * propositions also draw a stub across this distance (nested ones already have
- * their tick line passing under the dot). Always < COL_W, so the dot stays
- * clear of every bracket spine.
+ * a proposition's dot never moves as connections nest around it, and small,
+ * so the dot hugs its proposition. Root propositions also draw a stub across
+ * this distance (nested ones already have their tick line passing under the
+ * dot). Always < COL_W, so the dot stays clear of every bracket spine.
  */
-export const STUB_W = 34;
+export const STUB_W = 17;
 
 /** Amber used for brackets flagged for review (color only — no marker). */
 export const REVIEW_COLOR = '#b45309';

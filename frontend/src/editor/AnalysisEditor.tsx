@@ -7,8 +7,9 @@
 //
 //   click a word          "Split after" popover -> splitProposition
 //   click a dot           select that dot (EVERY dot is clickable, connected
-//                         or not — reconnecting dissolves the old connection)
-//   shift-click a dot     connectUnits(first, second) -> the relationship menu
+//                         or not — reconnecting dissolves the old connection);
+//                         clicking the selected dot again unselects it
+//   click a second dot    connectUnits(first, second) -> the relationship menu
 //                         opens on the new bracket; a rejected pair shakes and
 //                         keeps the first selection
 //   click a bracket box   select the bracket (inner rects paint last, so the
@@ -501,14 +502,19 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     setPopover(null);
   };
 
-  const onDotClick = (dot: DotGeom, shiftKey: boolean) => {
-    // Every dot is a live handle, connected or not: a plain click selects it,
-    // a shift-click connects it to the already-selected one (dissolving any
-    // old connections above either unit — connectUnits' job).
+  const onDotClick = (dot: DotGeom) => {
+    // Every dot is a live handle, connected or not: a click selects it, a
+    // click on the SAME dot unselects it, and a click on a second dot
+    // connects the two (dissolving any old connections above either unit —
+    // connectUnits' job). No modifier keys.
     setPopover(null);
-    if (!shiftKey || selectedDotId === null || selectedDotId === dot.id) {
+    if (selectedDotId === null) {
       setSelectedDotId(dot.id);
       setSelectedBracketPos(null);
+      return;
+    }
+    if (selectedDotId === dot.id) {
+      setSelectedDotId(null);
       return;
     }
     const posA = dotPos(selectedDotId);
@@ -641,7 +647,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
           </span>
         ) : (
           <span className="muted toolbar-hint">
-            Click a dot, then shift-click an adjacent one to connect
+            Click a dot, then click an adjacent one to connect
           </span>
         )}
       </div>

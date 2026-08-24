@@ -312,7 +312,14 @@ const dotHalfB = page.locator(`g.dot-group[data-dot="prop:${newPid}"]`);
 
 await dotHalfA.dispatchEvent('click');
 await expectCount(`g.dot-group.selected[data-dot="prop:${splitPid}"]`, 1, 'root dot selected');
-await dotHalfB.dispatchEvent('click', { shiftKey: true });
+
+// Clicking the selected dot again unselects it (no modifier keys anywhere).
+await dotHalfA.dispatchEvent('click');
+await expectCount(SEL.selectedDot, 0, 'clicking the selected dot unselects it');
+await dotHalfA.dispatchEvent('click');
+await expectCount(`g.dot-group.selected[data-dot="prop:${splitPid}"]`, 1, 'and re-selects on the next click');
+
+await dotHalfB.dispatchEvent('click');
 await page.waitForSelector(SEL.menu);
 await expectCount(SEL.bracket, bracketsBeforeC2 + 1, 'the halves connected into a bracket');
 await page.keyboard.press('Escape');
@@ -337,7 +344,7 @@ ok('connecting changed neither the dot size nor its distance from the row');
 await dotHalfA.dispatchEvent('click');
 await expectCount(`g.dot-group.selected[data-dot="prop:${splitPid}"]`, 1, 'a NESTED dot is selectable');
 await snap('nested-dot-selected');
-await dotHalfB.dispatchEvent('click', { shiftKey: true });
+await dotHalfB.dispatchEvent('click');
 await page.waitForSelector(SEL.menu);
 await expectCount(
   SEL.bracket,
@@ -392,9 +399,9 @@ await expectCount(SEL.selectedDot, 1, 'first dot is selected');
 await expectCount(`g.dot-group.selected[data-dot="${idA}"]`, 1, `selection is on ${idA}`);
 await snap('dot-selected');
 
-await dotB.dispatchEvent('click', { shiftKey: true });
+await dotB.dispatchEvent('click');
 await page.waitForSelector(SEL.menu);
-ok('shift-click connected the pair and auto-opened the relationship menu');
+ok('clicking the second dot connected the pair and auto-opened the relationship menu');
 await expectCount(SEL.bracket, bracketsBeforeConnect + 1, 'a new bracket appeared');
 await expectCount(SEL.rootDot, rootsBeforeConnect - 1, 'the two roots became one');
 await snap('connect-menu');

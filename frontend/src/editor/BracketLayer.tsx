@@ -47,7 +47,7 @@ export interface BracketLayerProps {
   selectedDotId: string | null;
   shake: ShakeState | null;
   onSelectBracket: (pos: number) => void;
-  onDotClick: (dot: DotGeom, shiftKey: boolean) => void;
+  onDotClick: (dot: DotGeom) => void;
   onLabelClick: (pos: number, at: Point) => void;
   onStarClick: (pos: number) => void;
 }
@@ -143,7 +143,7 @@ export default function BracketLayer({
               className={classes.join(' ')}
               data-dot={d.id}
               onMouseDown={swallow}
-              onClick={(event) => onDotClick(d, event.shiftKey)}
+              onClick={() => onDotClick(d)}
             >
               {d.stubX1 !== undefined && d.stubX2 !== undefined && (
                 <line
