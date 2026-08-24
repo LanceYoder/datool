@@ -83,7 +83,7 @@ export default function HomePage() {
         />
         <div className="row-actions">
           <button onClick={() => void runFirstPass()} disabled={busy || text.trim() === ''}>
-            Analyze
+            Locate
           </button>
           {result !== null && (
             <>

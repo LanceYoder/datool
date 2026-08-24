@@ -162,14 +162,14 @@ const words = await wordsRes.json();
 const paste = words.map((w) => w.text).join(' ');
 console.log('paste words:', words.length);
 
-// --- (a) Home: paste, first pass, create -----------------------------------
-step('(a) home: paste -> Analyze -> Create');
+// --- (a) Home: paste, locate, create ---------------------------------------
+step('(a) home: paste -> Locate -> Create');
 await page.goto(BASE);
 await page.waitForSelector('.paste-area');
 await page.fill('.paste-area', paste);
 await snap('home-paste');
 
-await page.click('button:has-text("Analyze")');
+await page.click('button:has-text("Locate")');
 await page.waitForSelector('.alignment-line');
 const alignment = (await page.textContent('.alignment-line')) ?? '';
 console.log('  alignment:', alignment);
@@ -182,21 +182,16 @@ await page.waitForURL(/\/analysis\//);
 const analysisUrl = page.url();
 ok(`created ${analysisUrl}`);
 
-// --- (b) First-pass render --------------------------------------------------
-step('(b) first-pass render');
+// --- (b) Initial entry: ONE block, no auto-analysis -------------------------
+step('(b) initial entry is one block of text — no propositions, no tree');
 await page.waitForSelector(SEL.row);
-await page.waitForSelector(SEL.bracket);
-await expectCount(SEL.row, 14, 'proposition rows');
-
-const brackets0 = await countOf(SEL.bracket);
-const dots0 = await countOf(SEL.dot);
-console.log(`  brackets: ${brackets0}  dots: ${dots0}`);
-if (brackets0 < 1) await fail('no brackets rendered');
-if (dots0 !== 14 + brackets0) {
-  await fail(`expected one dot per proposition and bracket (${14 + brackets0}), got ${dots0}`);
-}
-ok(`brackets and dots present (${brackets0} brackets, ${dots0} dots)`);
-await expectCount(SEL.rootDot, 1, 'first pass is one connected tree: one root dot');
+await expectCount(SEL.row, 1, 'exactly one proposition row');
+await expectCount(SEL.bracket, 0, 'the auto analyzer is off: no brackets');
+await expectCount(SEL.dot, 1, 'one dot for the one block');
+await expectCount(SEL.rootDot, 1, 'the block is a disconnected root');
+const blockLabel = (await page.locator(SEL.row).locator('.verse-label').textContent()) ?? '';
+if (blockLabel !== '5–7') await fail(`block label should be "5–7", got "${blockLabel}"`);
+ok(`the block is labeled by its verse span (${blockLabel})`);
 
 // Confidence labeling is gone: nothing in the overlay is amber, and the
 // stored first pass carries no review flags.
@@ -266,11 +261,11 @@ ok('toolbar has Undo and Redo only');
 await snap('editor-first-pass');
 
 // --- (c) Split after --------------------------------------------------------
-step('(c) split a proposition');
-const splitRow = page.locator(SEL.row).nth(6);
+step('(c) split the block');
+const splitRow = page.locator(SEL.row).nth(0);
 const splitPid = await splitRow.getAttribute('data-pid');
 const splitLabel = (await splitRow.locator('.verse-label').textContent()) ?? '';
-console.log(`  splitting row 6 (${splitPid}, "${splitLabel}") after its 2nd word`);
+console.log(`  splitting the block (${splitPid}, "${splitLabel}") after its 2nd word`);
 
 await splitRow.locator('.word.splittable').nth(1).click();
 await page.waitForSelector(SEL.splitPopover);
@@ -280,9 +275,9 @@ ok('"Split after" popover appeared beside the word');
 await snap('split-popover');
 
 await page.click(`${SEL.splitPopover} .popover-item`);
-await expectCount(SEL.row, 15, 'rows after split');
+await expectCount(SEL.row, 2, 'rows after split');
 
-const newRow = page.locator(SEL.row).nth(7);
+const newRow = page.locator(SEL.row).nth(1);
 const newPid = await newRow.getAttribute('data-pid');
 const newLabel = (await newRow.locator('.verse-label').textContent()) ?? '';
 console.log(`  new row: ${newPid} "${newLabel}"`);
@@ -361,11 +356,11 @@ await expectCount(`g.dot-group.root[data-dot="prop:${splitPid}"]`, 1, 'first hal
 
 // --- (d) Merge below --------------------------------------------------------
 step('(d) merge the split back together');
-await page.locator(SEL.row).nth(6).hover();
-const mergeBtn = page.locator(SEL.row).nth(6).locator('.merge-below');
+await page.locator(SEL.row).nth(0).hover();
+const mergeBtn = page.locator(SEL.row).nth(0).locator('.merge-below');
 await waitFor(
   () => {
-    const el = document.querySelectorAll('.prop-row')[6]?.querySelector('.merge-below');
+    const el = document.querySelectorAll('.prop-row')[0]?.querySelector('.merge-below');
     return el !== null && el !== undefined && getComputedStyle(el).opacity === '1';
   },
   null,
@@ -373,17 +368,27 @@ await waitFor(
 );
 if ((await mergeBtn.textContent()) !== 'Merge below') await fail('merge button text changed');
 await mergeBtn.click();
-await expectCount(SEL.row, 14, 'rows after merge');
-const mergedLabel = await page.locator(SEL.row).nth(6).locator('.verse-label').textContent();
+await expectCount(SEL.row, 1, 'back to one row after merge');
+const mergedLabel = await page.locator(SEL.row).nth(0).locator('.verse-label').textContent();
 if (mergedLabel !== splitLabel) await fail(`merged row label is "${mergedLabel}"`);
 ok(`merged row is ${splitPid} again ("${mergedLabel}")`);
 
 // --- (e) Dot connect --------------------------------------------------------
-step('(e) connect two adjacent roots by their dots');
+step('(e) build by hand: split twice, then connect two adjacent roots');
+// Two splits leave three disconnected roots to work with.
+for (const [rowIndex, want] of [
+  [0, 2],
+  [1, 3],
+]) {
+  await page.locator(SEL.row).nth(rowIndex).locator('.word.splittable').nth(1).click();
+  await page.waitForSelector(SEL.splitPopover);
+  await page.click(`${SEL.splitPopover} .popover-item`);
+  await expectCount(SEL.row, want, `rows after split ${want - 1}`);
+}
 const bracketsBeforeConnect = await countOf(SEL.bracket);
 const rootsBeforeConnect = await countOf(SEL.rootDot);
 console.log(`  brackets: ${bracketsBeforeConnect}  roots: ${rootsBeforeConnect}`);
-if (rootsBeforeConnect < 3) await fail('split/merge did not leave enough disconnected roots');
+if (rootsBeforeConnect !== 3) await fail('splitting twice did not leave three roots');
 
 // Root dots come out in forest-root order, so any two neighbours in this
 // list are adjacent roots — the plain (no unzip needed) connect case.
@@ -504,7 +509,6 @@ ok('"Saved" indicator shown');
 
 await page.reload();
 await page.waitForSelector(SEL.row);
-await page.waitForSelector(SEL.bracket);
 await expectCount(SEL.row, rowsFinal, 'rows survived the reload');
 await expectCount(SEL.bracket, bracketsFinal, 'brackets survived the reload');
 await expectCount(SEL.rootDot, rootsFinal, 'roots survived the reload');

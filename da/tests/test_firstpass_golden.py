@@ -1,20 +1,20 @@
-"""Golden tests for the first pass (docs/DESIGN.md §5).
+"""Golden tests for initial entry and the (dormant) analyzer.
 
-The passages come from the course's worked examples: 1 John 1:5–7
+``first_pass`` — what initial entry actually runs — is asserted to produce a
+ONE-BLOCK document: the automatic analyzer is switched off, so a located
+paste becomes a single corpus proposition and an unaligned paste a single
+raw one.
+
+The analyzer itself (``da.treebuild.build_document`` over hand-built,
+contract-shaped segments) stays fully tested here so it can be re-enabled
+later. Its passages come from the course's worked examples: 1 John 1:5–7
 (examples/da1.xlsx) and Hebrews 4:9–12 (Five Step walkthrough). We assert
 what an explicit connective settles (the confident calls) and only the
 best-guess default where the call is a judgment.
-
-Stage 1 (da/segmentation.py) is developed concurrently to the SEGMENT
-CONTRACT; the end-to-end tests skip while it does not exist yet, and
-contract-shaped hand-built segments cover ``build_document`` on the same
-passages so stage 2 is verified independently.
 """
 
 import json
 from dataclasses import dataclass
-
-import pytest
 
 from da.corpus import load_words
 from da.documents import main_point, validate_document
@@ -213,8 +213,9 @@ def test_build_document_1john_hand_segments():
     roundtrip(doc)
 
 
-def test_first_pass_1john_1_5_7():
-    pytest.importorskip("da.segmentation")
+def test_first_pass_1john_1_5_7_is_one_block():
+    """The automatic analyzer is OFF at entry: a located paste becomes ONE
+    corpus proposition spanning the whole passage, labeled by verse span."""
     words = load_words()
     text = " ".join(w.text for w in words[J_START:J_END + 1])
     result = first_pass(text)
@@ -222,10 +223,11 @@ def test_first_pass_1john_1_5_7():
     assert result.alignment.exact
     assert result.alignment.ref == "1 John 1:5–7"
     doc = result.document
-    assert [p["label"] for p in doc["propositions"]] == J_LABELS
-    assert [(p["source"]["start"], p["source"]["end"])
-            for p in doc["propositions"]] == J_SPANS
-    assert_1john_structure(doc)
+    assert doc["propositions"] == [{
+        "id": "p1", "label": "5–7",
+        "source": {"kind": "corpus", "start": J_START, "end": J_END},
+    }]
+    assert doc["forest"] == [{"kind": "prop", "ref": "p1"}]
     roundtrip(doc)
 
 
@@ -315,15 +317,19 @@ def test_build_document_hebrews_hand_segments():
     roundtrip(doc)
 
 
-def test_first_pass_hebrews_4_9_12():
-    pytest.importorskip("da.segmentation")
+def test_first_pass_hebrews_4_9_12_is_one_block():
     words = load_words()
     text = " ".join(w.text for w in words[H_START:H_END + 1])
     result = first_pass(text)
     assert result.alignment is not None
     assert result.alignment.ref == "Hebrews 4:9–12"
-    assert_hebrews_structure(result.document)
-    roundtrip(result.document)
+    doc = result.document
+    assert doc["propositions"] == [{
+        "id": "p1", "label": "9–12",
+        "source": {"kind": "corpus", "start": H_START, "end": H_END},
+    }]
+    assert doc["forest"] == [{"kind": "prop", "ref": "p1"}]
+    roundtrip(doc)
 
 
 # ---------------------------------------------------------------------------
@@ -340,18 +346,17 @@ def test_raw_mode_english_text():
     assert doc["forest"] == [{"kind": "prop", "ref": "p1"}]
 
 
-def test_raw_mode_non_nt_greek():
+def test_raw_mode_non_nt_greek_is_one_block():
     result = first_pass("ὁ ἄνθρωπος βλέπει τὸν κόσμον. ἡ γυνὴ γράφει.")
     assert result.alignment is None
     doc = result.document
     validate_document(doc)
-    assert [p["label"] for p in doc["propositions"]] == ["1", "2"]
-    assert all(p["source"]["kind"] == "raw" for p in doc["propositions"])
-    tree = the_root(doc)
-    assert tree["rel"] == "Ser"
-    assert tree["prominent"] is None
-    assert "flag" not in tree
-    assert leaf_refs(tree) == ["p1", "p2"]
+    assert doc["propositions"] == [{
+        "id": "p1", "label": "1",
+        "source": {"kind": "raw",
+                   "text": "ὁ ἄνθρωπος βλέπει τὸν κόσμον. ἡ γυνὴ γράφει."},
+    }]
+    assert doc["forest"] == [{"kind": "prop", "ref": "p1"}]
     roundtrip(doc)
 
 

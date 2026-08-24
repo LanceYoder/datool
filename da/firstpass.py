@@ -1,27 +1,24 @@
-"""The first pass: pasted text in, complete annotated analysis document out.
+"""Initial entry: pasted text in, a ONE-BLOCK analysis document out.
 
-Pipeline (docs/DESIGN.md §5): align the paste against the corpus; when it
-locates, run stage 1 (:mod:`da.segmentation`) over the aligned range and
-stage 2 (:mod:`da.treebuild`) over the segments. When alignment fails —
-non-Greek text, or Greek that is not the NT — fall back to raw mode: split
-the paste into propositions on sentence punctuation (``.``, ``;``, ``·``),
-chain them in one n-ary Series bracket, and let the user take it from there.
-No classification without morphology.
+The automatic analyzer (stage 1 segmentation + stage 2 tree construction,
+:mod:`da.segmentation` and :mod:`da.treebuild`) is switched OFF for initial
+entry: every analysis starts as the bare block of text — a single proposition,
+no tree — and all structure is built by hand in the editor. The analyzer
+modules and their tests remain in the codebase for a possible later opt-in.
+
+Corpus alignment still runs, because a located paste gets a corpus source
+(canonical SBLGNT text, per-word morphology tooltips) and a passage reference.
+A paste that does not align — non-Greek text, or Greek that is not the NT —
+becomes a single raw-source proposition instead.
 """
 
 from __future__ import annotations
 
-import re
 import unicodedata
 from dataclasses import dataclass
 
-from .corpus import Alignment, align
+from .corpus import Alignment, align, load_words
 from .documents import SCHEMA_VERSION, validate_document
-from .treebuild import build_document
-
-# NFC first (below) maps the Greek question mark U+037E to ';' and ano teleia
-# U+0387 to U+00B7, but both stay in the class as defense in depth.
-_SENTENCE_SPLIT = re.compile(r"[.;·;·]+")
 
 
 @dataclass
@@ -31,40 +28,44 @@ class FirstPassResult:
 
 
 def first_pass(text: str) -> FirstPassResult:
-    """Run the whole first pass over pasted text."""
+    """Locate the paste and wrap it as one block proposition."""
     alignment = align(text)
     if alignment is None:
         return FirstPassResult(_raw_document(text), None)
-    # Imported here, not at module top: stage 1 lives in its own module and
-    # raw-mode analysis must keep working even while it is being reworked.
-    from .segmentation import segment
+    return FirstPassResult(_block_document(alignment), alignment)
 
-    segments = segment(alignment.start, alignment.end)
-    # An inexact alignment builds like an exact one: once located, the SBLGNT
-    # corpus text is authoritative — it is what the document references,
-    # displays, and classifies, so its morphology describes the analyzed words
-    # even where the paste (e.g. NA28) differed. The UI surfaces the
-    # matched/total token count so the user knows their paste varied.
-    return FirstPassResult(build_document(segments), alignment)
+
+def _one_prop_document(label: str, source: dict) -> dict:
+    doc = {
+        "schemaVersion": SCHEMA_VERSION,
+        "propositions": [{"id": "p1", "label": label, "source": source}],
+        "forest": [{"kind": "prop", "ref": "p1"}],
+    }
+    validate_document(doc)
+    return doc
+
+
+def _block_document(alignment: Alignment) -> dict:
+    """One corpus-sourced proposition spanning the whole located range,
+    labeled with its verse span (splits then prime from it: 5–7, 5–7′, …)."""
+    words = load_words()
+    first = words[alignment.start]
+    last = words[alignment.end]
+    if (first.chapter, first.verse) == (last.chapter, last.verse):
+        label = str(first.verse)
+    elif first.chapter == last.chapter:
+        label = f"{first.verse}–{last.verse}"
+    else:
+        label = f"{first.chapter}:{first.verse}–{last.chapter}:{last.verse}"
+    return _one_prop_document(
+        label,
+        {"kind": "corpus", "start": alignment.start, "end": alignment.end},
+    )
 
 
 def _raw_document(text: str) -> dict:
-    """Punctuation-only segmentation for unaligned pastes."""
-    text = unicodedata.normalize("NFC", text)
-    chunks = [c.strip() for c in _SENTENCE_SPLIT.split(text) if c.strip()]
-    if not chunks:
+    """One raw-source proposition holding the whole unaligned paste."""
+    text = " ".join(unicodedata.normalize("NFC", text).split())
+    if not text:
         raise ValueError("no analyzable text in the paste")
-    props = [
-        {"id": f"p{i + 1}", "label": str(i + 1),
-         "source": {"kind": "raw", "text": chunk}}
-        for i, chunk in enumerate(chunks)
-    ]
-    leaves = [{"kind": "prop", "ref": p["id"]} for p in props]
-    tree = leaves[0] if len(leaves) == 1 else {
-        "kind": "bracket", "rel": "Ser", "prominent": None,
-        "children": leaves,
-    }
-    doc = {"schemaVersion": SCHEMA_VERSION, "propositions": props,
-           "forest": [tree]}
-    validate_document(doc)
-    return doc
+    return _one_prop_document("1", {"kind": "raw", "text": text})

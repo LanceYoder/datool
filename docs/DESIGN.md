@@ -196,6 +196,13 @@ Redistributing the files is how MorphGNT itself is distributed.
 
 ## 5. The first pass (rule-based, deterministic)
 
+> **Status: switched OFF at entry.** Initial entry now creates the located
+> passage as ONE block proposition (no segmentation, no tree) so all structure
+> is built by hand in the editor; `da/firstpass.py` only aligns. The analyzer
+> below lives on in `da/segmentation.py` + `da/treebuild.py` with its full
+> test suite, for a possible later opt-in. Review flags no longer exist in
+> documents (confidence labeling was removed from the product).
+
 No ML/LLM in v1. The honest 80/20: relations signaled by explicit connectives are the
 easy 80%; the rest is the user's interpretive work, and the pipeline's job there is to
 propose a structurally valid default and get out of the way.
