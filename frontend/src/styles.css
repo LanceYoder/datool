@@ -315,6 +315,60 @@ div.error-box {
   flex: 1;
 }
 
+/* Reader's display options — checkboxes, not buttons: they toggle a view,
+   they do not change the analysis. */
+.toolbar-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.color-settings {
+  margin-top: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-soft);
+  padding: 0.5rem 0.75rem 0.75rem;
+}
+
+.color-settings-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.color-settings-head strong {
+  flex: 1;
+}
+
+.color-settings-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0 1.5rem;
+}
+
+.color-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+  font-size: 0.9rem;
+}
+
+.color-row input[type='color'] {
+  flex: none;
+  width: 2rem;
+  height: 1.4rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+
 .toolbar-hint,
 .toolbar-flash {
   font-size: 0.9rem;

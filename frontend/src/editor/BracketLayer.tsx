@@ -11,6 +11,8 @@
 
 import type { BracketGeom, DotGeom } from './layout';
 import type { Point } from './interaction';
+import type { ViewSettings } from './viewSettings';
+import { relationColor } from './viewSettings';
 
 /** A laid-out bracket zipped with the ProseMirror position of its node. */
 export interface PositionedBracket extends BracketGeom {
@@ -64,6 +66,8 @@ export interface BracketLayerProps {
   onStarClick: (pos: number) => void;
   /** Remove the connection a ROOT bracket's dot names (its delete cross). */
   onDeleteBracket: (dot: DotGeom) => void;
+  /** Reader's display options — here, the per-relationship bracket colors. */
+  view: ViewSettings;
 }
 
 /** Never let a click in the overlay move the ProseMirror selection. */
@@ -82,13 +86,21 @@ export default function BracketLayer({
   onLabelClick,
   onStarClick,
   onDeleteBracket,
+  view,
 }: BracketLayerProps) {
   return (
     <svg className="bracket-layer interactive" width={width} height={height} style={{ left: 0 }}>
       <g className="spine-layer" pointerEvents="none">
         {brackets.map((b) => (
           <g key={b.pos} className="bracket" data-rel={b.rel}>
-            <line x1={b.x} y1={b.top} x2={b.x} y2={b.bottom} stroke={LINE} strokeWidth={1.8} />
+            <line
+              x1={b.x}
+              y1={b.top}
+              x2={b.x}
+              y2={b.bottom}
+              stroke={relationColor(view, b.rel)}
+              strokeWidth={1.8}
+            />
             {b.ticks.map((t) => (
               <line
                 key={t.childIndex}
@@ -96,7 +108,7 @@ export default function BracketLayer({
                 y1={t.y}
                 x2={t.x2}
                 y2={t.y}
-                stroke={LINE}
+                stroke={relationColor(view, b.rel)}
                 strokeWidth={1.5}
               />
             ))}
@@ -213,7 +225,7 @@ export default function BracketLayer({
                     className="bracket-label"
                     x={x}
                     y={y}
-                    fill={LINE}
+                    fill={relationColor(view, b.rel)}
                     textAnchor={mid ? 'end' : 'start'}
                   >
                     {l.text}
@@ -251,7 +263,7 @@ export default function BracketLayer({
                       className="bracket-star"
                       x={sx}
                       y={t.y - 5}
-                      fill={LINE}
+                      fill={relationColor(view, b.rel)}
                       textAnchor="start"
                     >
                       *

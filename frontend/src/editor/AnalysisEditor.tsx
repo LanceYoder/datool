@@ -25,6 +25,7 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -72,6 +73,9 @@ import { describeParsing } from './morph';
 import BracketLayer from './BracketLayer';
 import type { PositionedBracket, ShakeState } from './BracketLayer';
 import RelationshipMenu from './RelationshipMenu';
+import ColorSettings from './ColorSettings';
+import { loadViewSettings, saveViewSettings } from './viewSettings';
+import type { ViewSettings } from './viewSettings';
 
 const LABEL_GUTTER = 56; // px between the bracket columns and the row gutter
 
@@ -105,6 +109,8 @@ interface RowContextValue {
    * These rows render red.
    */
   mainPids: ReadonlySet<string>;
+  /** Reader's English-line toggle (viewSettings). */
+  showEnglish: boolean;
   /**
    * A single click on ANY word: the word-info popover (lemma, morphology,
    * gloss). `index` is the corpus word index, null for raw text. The popover
@@ -179,7 +185,7 @@ function PropositionRow({ node }: ReactNodeViewProps) {
     >
       {/* The English line spans the row above the label so the label's baseline
           is the GREEK's, not the reference text's. */}
-      {english.length > 0 && (
+      {ctx?.showEnglish === true && english.length > 0 && (
         <div className="english-line" contentEditable={false}>
           {english.map((seg, i) => (
             <span key={i}>
@@ -355,6 +361,10 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
   const [shake, setShake] = useState<ShakeState | null>(null);
   // docTick advances on every document change, layoutTick on every measurement
   // (they are separate so re-observing rows can never feed itself).
+  // Reader's display options (English line, bracket colors) — persisted per
+  // browser, never part of the analysis.
+  const [view, setView] = useState<ViewSettings>(loadViewSettings);
+  const [colorPanel, setColorPanel] = useState(false);
   const [docTick, setDocTick] = useState(0);
   const [layoutTick, setLayoutTick] = useState(0);
   const shellRef = useRef<HTMLDivElement | null>(null);
@@ -367,6 +377,11 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
   // built before it, so it reaches the command through this ref.
   const onSplitRef = useRef<(pid: string, ordinal: number) => void>(() => {});
   const shakeSeq = useRef(0);
+
+  const updateView = useCallback((next: ViewSettings) => {
+    setView(next);
+    saveViewSettings(next);
+  }, []);
 
   const taxonomyByCode = useMemo(
     () => new Map(taxonomy.map((t) => [t.code, t])),
@@ -582,6 +597,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
   const rowCtx = useMemo<RowContextValue>(
     () => ({
       words,
+      showEnglish: view.english,
       lastPid: pids.length > 0 ? (pids[pids.length - 1] ?? null) : null,
       mainPids,
       onWordClick: (pid, ordinal, word, index, splittable, target) => {
@@ -617,7 +633,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
         mergeBelow(editor, pid, words);
       },
     }),
-    [words, pids, mainPids, editor],
+    [words, pids, mainPids, editor, view.english],
   );
 
   if (editor === null) return null;
@@ -796,6 +812,27 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
         <button type="button" disabled={!editor.can().redo()} onClick={() => editor.commands.redo()}>
           Redo
         </button>
+        <label className="toolbar-toggle">
+          <input
+            type="checkbox"
+            checked={view.english}
+            onChange={(event) => updateView({ ...view, english: event.target.checked })}
+          />
+          English
+        </label>
+        <label className="toolbar-toggle">
+          <input
+            type="checkbox"
+            checked={view.colorCoding}
+            onChange={(event) => updateView({ ...view, colorCoding: event.target.checked })}
+          />
+          Color coding
+        </label>
+        {view.colorCoding && (
+          <button type="button" onClick={() => setColorPanel((open) => !open)}>
+            Colors…
+          </button>
+        )}
         <span className="toolbar-spacer" />
         {flash !== null ? (
           <span className="toolbar-flash" role="status">
@@ -807,6 +844,14 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
           </span>
         )}
       </div>
+      {colorPanel && view.colorCoding && (
+        <ColorSettings
+          taxonomy={taxonomy}
+          view={view}
+          onChange={(colors) => updateView({ ...view, colors })}
+          onClose={() => setColorPanel(false)}
+        />
+      )}
       <div
         ref={shellRef}
         className="editor-shell"
@@ -826,6 +871,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
             onLabelClick={onLabelClick}
             onStarClick={onStarClick}
             onDeleteBracket={onDeleteBracket}
+            view={view}
           />
         )}
         <EditorContent editor={editor} />
