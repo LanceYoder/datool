@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import type { Analysis, Document as AnalysisDocument } from '../types';
 import { deleteAnalysis, errorMessages, getAnalysis, updateAnalysis } from '../api';
 import AnalysisEditor from '../editor/AnalysisEditor';
+import { useUnsavedChanges } from '../unsavedChanges';
 
 export default function AnalysisPage() {
   const { id } = useParams<{ id: string }>();
@@ -57,6 +58,9 @@ export default function AnalysisPage() {
   }, []);
 
   const titleDirty = analysis !== null && title !== analysis.title;
+
+  // Let the header links confirm before navigating away from unsaved edits.
+  useUnsavedChanges(dirty || titleDirty);
 
   const save = async () => {
     if (id === undefined || draftRef.current === null) return;

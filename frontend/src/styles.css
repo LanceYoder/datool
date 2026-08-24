@@ -6,6 +6,9 @@
   --danger: #b91c1c;
   --bg: #ffffff;
   --bg-soft: #f9fafb;
+  /* Width of the verse-label gutter; mirrored by VERSE_LABEL_W in
+     editor/AnalysisEditor.tsx, which anchors the bracket layout to it. */
+  --verse-label-w: 72px;
 }
 
 * {
@@ -43,6 +46,24 @@ body {
   font-size: 1.1rem;
   color: var(--text);
   text-decoration: none;
+}
+
+.app-add {
+  margin-left: auto;
+  align-self: center;
+  padding: 0.35rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.app-add:hover {
+  border-color: var(--muted);
 }
 
 .app-main {
@@ -220,14 +241,21 @@ div.error-box {
   flex-direction: column;
 }
 
+/* A row stacks the English reference line above the label + Greek line, so
+   the label's baseline is the GREEK's. */
 .prop-row {
+  display: flex;
+  flex-direction: column;
+}
+
+.prop-line {
   display: flex;
   align-items: baseline;
 }
 
 .verse-label {
   flex: none;
-  width: 72px;
+  width: var(--verse-label-w);
   padding-right: 10px;
   text-align: right;
   color: var(--muted);
@@ -247,6 +275,8 @@ div.error-box {
 
 /* English (WEB) reference line above the Greek — display only. */
 .english-line {
+  /* Indented to the Greek's left edge: label column + .prop-body padding. */
+  padding-left: calc(var(--verse-label-w) + 10px);
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font-size: 0.92rem;
   line-height: 1.5;

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { AnalysisSummary, FirstPassResult } from '../types';
 import { createAnalysis, errorMessages, firstPass, listAnalyses } from '../api';
 
@@ -17,6 +17,8 @@ function alignmentLine(result: FirstPassResult): string {
 
 export default function HomePage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const pasteRef = useRef<HTMLTextAreaElement>(null);
   const [analyses, setAnalyses] = useState<AnalysisSummary[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
 
@@ -38,6 +40,12 @@ export default function HomePage() {
       cancelled = true;
     };
   }, []);
+
+  // Arriving via the header's + button: start typing the new passage right away.
+  const startNew = searchParams.get('new') !== null;
+  useEffect(() => {
+    if (startNew) pasteRef.current?.focus();
+  }, [startNew]);
 
   const runFirstPass = async () => {
     setBusy(true);
@@ -72,6 +80,7 @@ export default function HomePage() {
       <section className="card">
         <h2>New analysis</h2>
         <textarea
+          ref={pasteRef}
           className="greek paste-area"
           placeholder="Paste a Greek passage…"
           rows={5}

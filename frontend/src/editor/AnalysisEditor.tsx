@@ -58,7 +58,7 @@ import {
   setRelationship,
   splitProposition,
 } from './commands';
-import { COL_W, STUB_W, computeColumns, layoutBrackets, layoutDots } from './layout';
+import { COL_W, STUB_W, computeColumns, layoutBrackets, layoutDots, leafRefs } from './layout';
 import type { DotGeom, RowBox } from './layout';
 import {
   canSplitAfter,
@@ -75,7 +75,8 @@ import RelationshipMenu from './RelationshipMenu';
 
 const LABEL_GUTTER = 56; // px between the bracket columns and the row gutter
 
-/** Width of the .verse-label column (styles.css) — the layout's anchor. */
+/** Width of the .verse-label column (--verse-label-w in styles.css) — the
+ * layout's anchor. Keep the two in sync. */
 const VERSE_LABEL_W = 72;
 
 /** Nominal popover boxes, used to keep them inside the shell. */
@@ -168,68 +169,72 @@ function PropositionRow({ node }: ReactNodeViewProps) {
       className={isMain ? 'prop-row main-point' : 'prop-row'}
       data-pid={pid}
     >
-      <span className="verse-label">{String(node.attrs.label)}</span>
-      <div className="prop-body">
-        {english.length > 0 && (
-          <div className="english-line" contentEditable={false}>
-            {english.map((seg, i) => (
-              <span key={i}>
-                {seg.marker !== null && <span className="ev">{seg.marker}</span>} {seg.text}{' '}
-              </span>
-            ))}
-          </div>
-        )}
-        <span className="prop-text greek" style={color !== undefined ? { color } : undefined}>
-          {ctx !== null
-            ? tokens.map((t, ordinal) => {
-                const splittable = canSplitAfter(ordinal, tokens.length);
-                // Morphology stays on the tooltip; the split hint joins it.
-                const title =
-                  (t.hover !== undefined ? t.hover : '') +
-                  (splittable
-                    ? `${t.hover !== undefined ? '\n' : ''}click: split after this word`
-                    : '');
-                return (
-                  <span
-                    key={t.key}
-                    className={splittable ? 'word splittable' : 'word'}
-                    title={title === '' ? undefined : title}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      ctx.onWordClick(
-                        pid,
-                        ordinal,
-                        t.display,
-                        t.index ?? null,
-                        splittable,
-                        event.currentTarget,
-                      );
-                    }}
-                  >
-                    {t.display}{' '}
-                  </span>
-                );
-              })
-            : String(node.attrs.text)}
-          {/* Inside the text span, so it flows right after the last word. */}
-          {ctx !== null && ctx.lastPid !== pid && (
-            <button
-              type="button"
-              className="merge-below"
-              title="Merge this proposition with the one below it"
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                ctx.onMergeBelow(pid);
-              }}
-            >
-              Merge below
-            </button>
-          )}
-        </span>
+      {/* The English line spans the row above the label so the label's baseline
+          is the GREEK's, not the reference text's. */}
+      {english.length > 0 && (
+        <div className="english-line" contentEditable={false}>
+          {english.map((seg, i) => (
+            <span key={i}>
+              {seg.marker !== null && <span className="ev">{seg.marker}</span>} {seg.text}{' '}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="prop-line">
+        <span className="verse-label">{String(node.attrs.label)}</span>
+        <div className="prop-body">
+          <span className="prop-text greek" style={color !== undefined ? { color } : undefined}>
+            {ctx !== null
+              ? tokens.map((t, ordinal) => {
+                  const splittable = canSplitAfter(ordinal, tokens.length);
+                  // Morphology stays on the tooltip; the split hint joins it.
+                  const title =
+                    (t.hover !== undefined ? t.hover : '') +
+                    (splittable
+                      ? `${t.hover !== undefined ? '\n' : ''}click: split after this word`
+                      : '');
+                  return (
+                    <span
+                      key={t.key}
+                      className={splittable ? 'word splittable' : 'word'}
+                      title={title === '' ? undefined : title}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        ctx.onWordClick(
+                          pid,
+                          ordinal,
+                          t.display,
+                          t.index ?? null,
+                          splittable,
+                          event.currentTarget,
+                        );
+                      }}
+                    >
+                      {t.display}{' '}
+                    </span>
+                  );
+                })
+              : String(node.attrs.text)}
+            {/* Inside the text span, so it flows right after the last word. */}
+            {ctx !== null && ctx.lastPid !== pid && (
+              <button
+                type="button"
+                className="merge-below"
+                title="Merge this proposition with the one below it"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  ctx.onMergeBelow(pid);
+                }}
+              >
+                Merge below
+              </button>
+            )}
+          </span>
+        </div>
       </div>
     </NodeViewWrapper>
   );
@@ -340,6 +345,8 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
   const [docTick, setDocTick] = useState(0);
   const [layoutTick, setLayoutTick] = useState(0);
   const shellRef = useRef<HTMLDivElement | null>(null);
+  // The last overlay laid out from a complete set of row measurements.
+  const lastOverlay = useRef<Overlay | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const flashTimer = useRef<number | null>(null);
   const shakeSeq = useRef(0);
@@ -375,22 +382,36 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     [content],
   );
 
-  // Re-measure when the shell or any row changes size. Observing fires the
+  // Re-measure when the shell or any row changes size, and when rows enter or
+  // leave the document. A document change reaches the DOM in two steps —
+  // ProseMirror swaps the rows, then the React node views fill them in — so
+  // only the mutation announces a split's new row; without it the overlay
+  // would keep the geometry it had before the split. Observing fires the
   // callback once per target immediately, which is what first paints the
   // overlay; the effect itself must NOT depend on layoutTick or that initial
   // callback would re-arm itself forever.
+  //
+  // Both observers watch the ROWS, never the overlay: the overlay is redrawn
+  // from every tick, so watching it would feed itself.
   useEffect(() => {
     const shell = shellRef.current;
     if (shell === null) return;
-    const observer = new ResizeObserver(() => {
+    const remeasure = () => {
       setLayoutTick((t) => t + 1);
-    });
-    observer.observe(shell);
+    };
+    const sizes = new ResizeObserver(remeasure);
+    sizes.observe(shell);
     for (const row of shell.querySelectorAll<HTMLElement>('[data-pid]')) {
-      observer.observe(row);
+      sizes.observe(row);
+    }
+    const rowsEl = shell.querySelector<HTMLElement>('.ProseMirror');
+    const mounts = new MutationObserver(remeasure);
+    if (rowsEl !== null) {
+      mounts.observe(rowsEl, { childList: true, subtree: true });
     }
     return () => {
-      observer.disconnect();
+      sizes.disconnect();
+      mounts.disconnect();
     };
   }, [editor, docTick]);
 
@@ -491,7 +512,10 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
       if (pid === undefined) continue;
       // Anchor ticks and dots to the GREEK line, not the whole row — the
       // English reference line above it must not pull the geometry off.
-      const target = el.querySelector<HTMLElement>('.prop-text') ?? el;
+      // A row whose node view has not rendered yet has no .prop-text: leave
+      // it UNMEASURED rather than measuring the empty wrapper.
+      const target = el.querySelector<HTMLElement>('.prop-text');
+      if (target === null) continue;
       const rect = target.getBoundingClientRect();
       const top = rect.top - shellRect.top;
       rows.set(pid, { y: top + rect.height / 2, top, bottom: top + rect.height });
@@ -499,6 +523,15 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     if (rows.size === 0) return null;
 
     const current = nodeToDocument(editor.state.doc, baseDoc);
+    // A split or a merge changes the document a frame before its rows reach
+    // the DOM. Laying out then would place the new proposition's dot at y=0 —
+    // a phantom above the column — so keep the last good overlay until every
+    // proposition is measured; the re-measure below follows immediately.
+    for (const root of current.forest) {
+      for (const ref of leafRefs(root)) {
+        if (!rows.has(ref)) return lastOverlay.current;
+      }
+    }
     const { maxColumn } = computeColumns(current.forest);
     // The verse-label column (13a, 13b, …) is the workflow's anchor: pin its
     // center to the middle of the shell, so the tree has the whole left half
@@ -518,12 +551,13 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
       ...geom,
       pos: pmBrackets[geom.preorderIndex]?.pos ?? -1,
     }));
-    return {
+    lastOverlay.current = {
       brackets,
       dots: layoutDots(current.forest, rows, margin),
       margin,
       height: shellRect.height,
     };
+    return lastOverlay.current;
     // docTick + layoutTick drive re-measurement.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, docTick, layoutTick, baseDoc, taxonomyByCode]);
