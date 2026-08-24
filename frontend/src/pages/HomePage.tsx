@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { AnalysisSummary, DeletedAnalysisSummary, FirstPassResult } from '../types';
+import { normalizeDocument, withoutConnections } from '../editor/convert';
+import { fitsWidth } from '../editor/layout';
 import {
   createAnalysis,
   deleteAnalysis,
@@ -10,6 +12,14 @@ import {
   listDeletedAnalyses,
   restoreAnalysis,
 } from '../api';
+
+/** How long typing must pause before the passage is located. */
+const LOCATE_DELAY_MS = 450;
+
+/** Width the analysis will have on this screen — the app's own column. */
+function shellWidth(): number {
+  return Math.min(window.innerWidth, 1600) - 64;
+}
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -36,6 +46,8 @@ export default function HomePage() {
   const [result, setResult] = useState<FirstPassResult | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const locateSeq = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,18 +100,39 @@ export default function HomePage() {
     if (startNew) pasteRef.current?.focus();
   }, [startNew]);
 
-  const runFirstPass = async () => {
-    setBusy(true);
-    setErrors([]);
-    setResult(null);
-    try {
-      setResult(await firstPass(text));
-    } catch (err) {
-      setErrors(errorMessages(err));
-    } finally {
-      setBusy(false);
+  // Locating happens WHILE you type: a pause long enough to have finished the
+  // reference (or the paste) runs it, and the newest keystroke always wins —
+  // an earlier answer arriving late is dropped rather than shown.
+  useEffect(() => {
+    const wanted = text.trim();
+    if (wanted === '') {
+      setResult(null);
+      setErrors([]);
+      setLocating(false);
+      return;
     }
-  };
+    setLocating(true);
+    const seq = ++locateSeq.current;
+    const timer = window.setTimeout(() => {
+      firstPass(wanted)
+        .then((found) => {
+          if (seq !== locateSeq.current) return;
+          setResult(found);
+          setErrors([]);
+        })
+        .catch((err: unknown) => {
+          if (seq !== locateSeq.current) return;
+          setResult(null);
+          setErrors(errorMessages(err));
+        })
+        .finally(() => {
+          if (seq === locateSeq.current) setLocating(false);
+        });
+    }, LOCATE_DELAY_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [text]);
 
   const create = async () => {
     if (result === null) return;
@@ -107,7 +140,14 @@ export default function HomePage() {
     setErrors([]);
     try {
       const title = result.alignment?.ref ?? 'Untitled analysis';
-      const created = await createAnalysis({ title, document: result.document });
+      // A proposed tree too wide to draw is never stored: the analysis starts
+      // from its propositions instead. Deciding here — before it is saved —
+      // is what keeps it from coming back.
+      const proposed = normalizeDocument(result.document);
+      const document = fitsWidth(proposed.forest, shellWidth())
+        ? proposed
+        : withoutConnections(proposed);
+      const created = await createAnalysis({ title, document });
       navigate(`/analysis/${created.id}`);
     } catch (err) {
       setErrors(errorMessages(err));
@@ -132,21 +172,20 @@ export default function HomePage() {
           }}
         />
         <div className="row-actions">
-          <button onClick={() => void runFirstPass()} disabled={busy || text.trim() === ''}>
-            Locate
+          <button
+            className="primary"
+            onClick={() => void create()}
+            disabled={busy || result === null}
+          >
+            Create
           </button>
+          {result !== null && <span className="alignment-line">{alignmentLine(result)}</span>}
           {result === null && (
             <span className="muted alignment-line">
-              A reference finds the passage in the SBLGNT; anything else is matched as pasted text.
+              {locating
+                ? 'Locating…'
+                : 'A reference finds the passage in the SBLGNT; anything else is matched as pasted text.'}
             </span>
-          )}
-          {result !== null && (
-            <>
-              <span className="alignment-line">{alignmentLine(result)}</span>
-              <button className="primary" onClick={() => void create()} disabled={busy}>
-                Create
-              </button>
-            </>
           )}
         </div>
         {errors.length > 0 && (

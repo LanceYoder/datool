@@ -8,6 +8,7 @@ import {
   documentToNode,
   nodeToDocument,
   normalizeDocument,
+  withoutConnections,
 } from '../convert';
 import { buildEditor, getDocument, setDocument } from '../editor';
 import {
@@ -152,5 +153,24 @@ describe('documentToNode / nodeToDocument', () => {
     expect(out.propositions.map((p) => p.id)).toEqual(['p1', 'p2', 'p3', 'p4', 'p5']);
     expect(out.propositions[2]?.color).toBe('#1d4ed8');
     expect(out.propositions[4]?.source).toEqual({ kind: 'raw', text: RAW_1JOHN_1_6E });
+  });
+});
+
+describe('withoutConnections', () => {
+  it('leaves every proposition a root, in document order', () => {
+    const doc = firstJohn16();
+    const flat = withoutConnections(doc);
+    expect(flat.forest).toEqual(doc.propositions.map((p) => ({ kind: 'prop', ref: p.id })));
+    expect(flat.propositions).toEqual(doc.propositions);
+    expect(flat.schemaVersion).toBe(2);
+  });
+
+  it('flattens a legacy v1 tree too, and never mutates its input', () => {
+    const v1 = firstJohn16V1();
+    const before = JSON.stringify(v1);
+    const flat = withoutConnections(v1);
+    expect(flat.forest.every((node) => node.kind === 'prop')).toBe(true);
+    expect(flat.forest).toHaveLength(v1.propositions.length);
+    expect(JSON.stringify(v1)).toBe(before);
   });
 });

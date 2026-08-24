@@ -353,11 +353,12 @@ export function disconnectRoot(editor: Editor, pos: number): boolean {
  * Remove EVERY connection in the document: each bracket is dissolved until
  * the forest is nothing but its propositions, in document order. The
  * propositions themselves — their text, their splits, their labels — are
- * untouched, and the whole clearing is ONE undo step.
+ * untouched, and the whole clearing is ONE undo step — or none at all, when
+ * `undoable` is false.
  *
  * Returns false when there was nothing to clear.
  */
-export function clearConnections(editor: Editor): boolean {
+export function clearConnections(editor: Editor, undoable = true): boolean {
   const { state } = editor;
   const props: PMNode[] = [];
   state.doc.forEach(function collect(node) {
@@ -370,6 +371,10 @@ export function clearConnections(editor: Editor): boolean {
   // Nothing to do when every proposition is already a root of its own.
   if (props.length === state.doc.childCount) return false;
   const tr = state.tr.replaceWith(0, state.doc.content.size, props);
+  // `undoable: false` keeps the clearing out of the history entirely — for the
+  // automatic one, where a tree the window cannot draw must not be one
+  // keystroke away from coming back.
+  if (!undoable) tr.setMeta('addToHistory', false);
   dispatch(editor, tr);
   return true;
 }

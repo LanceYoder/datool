@@ -29,6 +29,35 @@ export const COL_W = 72;
  */
 export const STUB_W = 17;
 
+/**
+ * Space between the bracket columns and the verse-label gutter — the margin's
+ * own padding, so the innermost spine never touches the labels.
+ */
+export const LABEL_GUTTER = 56;
+
+/**
+ * Narrowest the text column may be squeezed to before a tree counts as too
+ * wide to draw. A tree needing more than what is left over runs its brackets
+ * off one edge of the window and the words off the other.
+ */
+export const MIN_TEXT_W = 420;
+
+/** Width the bracket columns of `forest` need, in px, gutter included. */
+export function bracketWidth(forest: readonly TreeNode[], colW: number = COL_W): number {
+  const { maxColumn } = computeColumns(forest);
+  return Math.max(maxColumn * colW, STUB_W) + LABEL_GUTTER;
+}
+
+/**
+ * Whether a forest can be drawn in `availableWidth` px while leaving the text
+ * a readable column. The editor asks this of the document it loads, and the
+ * new-analysis page asks it of what the analyzer proposes — a tree that
+ * cannot be drawn is never worth keeping.
+ */
+export function fitsWidth(forest: readonly TreeNode[], availableWidth: number): boolean {
+  return bracketWidth(forest) <= availableWidth - MIN_TEXT_W;
+}
+
 /** A measured proposition row: its center y plus its top and bottom edges. */
 export interface RowBox {
   /** Row center y — the connection point for ticks and dots. */

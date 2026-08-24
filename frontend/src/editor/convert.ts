@@ -54,6 +54,19 @@ export function normalizeDocument(document: AnalysisDocument): DocumentV2 {
  */
 const SIGLA = /[⸀⸁⸂⸃⸄⸅⸆⸇⸈⸉⸊°][0-9]?/g;
 
+/**
+ * The same document with every connection removed: each proposition becomes a
+ * root of its own. Used where a proposed tree cannot be drawn at all — the
+ * propositions are what matter, and a tree nobody can see is worse than none.
+ */
+export function withoutConnections(document: AnalysisDocument): DocumentV2 {
+  const normalized = normalizeDocument(document);
+  return {
+    ...normalized,
+    forest: normalized.propositions.map((p) => ({ kind: 'prop', ref: p.id })),
+  };
+}
+
 export function displayWordText(text: string): string {
   return text.replace(SIGLA, '');
 }

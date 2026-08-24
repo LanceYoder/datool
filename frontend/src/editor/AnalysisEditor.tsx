@@ -61,7 +61,16 @@ import {
   splitProposition,
   unzipToRoot,
 } from './commands';
-import { COL_W, STUB_W, computeColumns, layoutBrackets, layoutDots, leafRefs } from './layout';
+import {
+  COL_W,
+  LABEL_GUTTER,
+  STUB_W,
+  computeColumns,
+  fitsWidth,
+  layoutBrackets,
+  layoutDots,
+  leafRefs,
+} from './layout';
 import type { DotGeom, RowBox } from './layout';
 import {
   canSplitAfter,
@@ -80,8 +89,6 @@ import HelpPanel from './HelpPanel';
 import { loadViewSettings, saveViewSettings } from './viewSettings';
 import type { ViewSettings } from './viewSettings';
 
-const LABEL_GUTTER = 56; // px between the bracket columns and the row gutter
-
 /** Width of the .verse-label column (--verse-label-w in styles.css) — the
  * layout's anchor. Keep the two in sync. */
 const VERSE_LABEL_W = 72;
@@ -93,16 +100,8 @@ const MENU_SIZE = { width: 272, height: 400 };
 /** Clear space kept between the relationship menu and the text column. */
 const TEXT_GAP = 12;
 
-/**
- * Narrowest the text column may be squeezed to before a tree counts as too
- * wide for the screen. A tree deeper than the space left over cannot be read
- * at all — its brackets run off one edge and push the words off the other.
- */
-const MIN_TEXT_W = 420;
-
 /** What the reader is told when a too-wide tree is cleared, and for how long. */
-const TOO_WIDE_MESSAGE =
-  'That tree was wider than this window — connections cleared. Undo to bring it back.';
+const TOO_WIDE_MESSAGE = 'That tree was wider than this window — connections cleared.';
 const TOO_WIDE_MS = 8000;
 
 /** How long a rejected connection shakes / the message stays up. */
@@ -604,7 +603,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     const need = Math.max(maxColumn * COL_W, STUB_W) + LABEL_GUTTER;
     const centered = Math.round(shellRect.width / 2 - VERSE_LABEL_W / 2);
     const margin = Math.max(need, centered);
-    const fits = need <= shellRect.width - MIN_TEXT_W;
+    const fits = fitsWidth(current.forest, shellRect.width);
     const layout = layoutBrackets(
       current.forest,
       rows,
@@ -630,14 +629,15 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
 
   // A tree deeper than the screen is wide draws itself off both edges: the
   // analysis reads as empty. Rather than show that, drop the connections the
-  // document ARRIVED with and say so — the propositions are untouched, and one
-  // undo brings the tree back on a wider window. Only ever the loaded
+  // document ARRIVED with and say so. The propositions are untouched; the
+  // clearing itself stays OUT of the history, so a tree this window cannot
+  // draw is not one keystroke from coming back. Only ever the loaded
   // document: a tree built by hand is the analyst's, however wide it grows.
   useEffect(() => {
     if (editor === null || overlay === null || widthChecked.current) return;
     widthChecked.current = true;
     if (overlay.fits || findBrackets(editor.state.doc).length === 0) return;
-    clearConnections(editor);
+    clearConnections(editor, false);
     setFlash(TOO_WIDE_MESSAGE);
     if (flashTimer.current !== null) window.clearTimeout(flashTimer.current);
     flashTimer.current = window.setTimeout(() => {
