@@ -447,18 +447,31 @@ def _verse_letter(i: int) -> str:
 
 
 def _propositions(segments: Sequence, words) -> list[dict]:
-    verse_keys = []
+    """One proposition per segment, labeled exactly as the editor re-derives
+    labels on split/merge (relabelCorpusInTransaction): a segment within one
+    verse is labeled by the verse, lettered (11a, 11b, …) when the verse holds
+    several; a segment spanning verses is labeled by its span ("10–12",
+    "1:28–2:3" across chapters) and never consumes a letter."""
+    keyed: list[tuple[object, str]] = []
+    counts: Counter = Counter()
     for seg in segments:
-        w = words[seg.start]
-        verse_keys.append((w.book, w.chapter, w.verse))
-    counts = Counter(verse_keys)
-    props: list[dict] = []
+        first, last = words[seg.start], words[seg.end]
+        if (first.book, first.chapter, first.verse) == (last.book, last.chapter, last.verse):
+            key = (first.book, first.chapter, first.verse)
+            label = str(first.verse)
+            counts[key] += 1
+        elif (first.book, first.chapter) == (last.book, last.chapter):
+            key, label = None, f"{first.verse}–{last.verse}"
+        else:
+            key, label = None, f"{first.chapter}:{first.verse}–{last.chapter}:{last.verse}"
+        keyed.append((key, label))
+
     seen: Counter = Counter()
-    for i, seg in enumerate(segments):
-        key = verse_keys[i]
-        verse = str(key[2])
-        label = verse if counts[key] == 1 else verse + _verse_letter(seen[key])
-        seen[key] += 1
+    props: list[dict] = []
+    for i, (seg, (key, label)) in enumerate(zip(segments, keyed)):
+        if key is not None and counts[key] > 1:
+            label += _verse_letter(seen[key])
+            seen[key] += 1
         props.append({
             "id": f"p{i + 1}",
             "label": label,

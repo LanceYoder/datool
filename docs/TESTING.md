@@ -46,15 +46,19 @@ morphology, no passage reference).
 
 ## What to test (the editor)
 
-An analysis starts **pre-split into clause propositions** (automatic
-segmentation from the morphology) but with **no connections** — the tree
-itself is built by hand:
+An analysis arrives **fully analyzed**: automatic segmentation splits the
+passage into clause propositions and the automatic analyzer connects them
+into one labeled tree — a first-pass *proposal*. Everything about it is
+editable; what to test is overriding it:
 
 1. **Create**: paste the passage → **Locate** (should read
-   `1 John 1:5–7 — 70/70 tokens matched (exact)`) → **Create**.
-2. **Split**: click any word → **Split after**. Labels re-derive from the
-   corpus verses (11a, 11b, …; spans like 10–12 for units crossing verses;
-   only raw non-NT text takes a prime ′). Split the block into clauses.
+   `1 John 1:5–7 — 70/70 tokens matched (exact)`) → **Create**. The tree
+   appears already built, with the main point(s) in red.
+2. **Split**: click any word → **Split after**. Splitting a connected
+   proposition pulls it out of the tree first (the brackets over it
+   dissolve), leaving the halves loose. Labels re-derive from the corpus
+   verses (11a, 11b, …; spans like 10–12 for units crossing verses; only raw
+   non-NT text takes a prime ′).
 3. **Connect**: click a unit's dot (the small circle left of it), then click
    an adjacent unit's dot. The pair joins and the relationship menu opens.
    Clicking a selected dot unselects it. Only adjacent units connect — an
@@ -66,10 +70,11 @@ itself is built by hand:
 6. **Star**: click a `*` to move prominence to the other member (the letter
    labels follow the star).
 7. **Merge**: hover a row — **Merge below** appears after its last word.
-8. **Main point**: once every proposition is connected into ONE tree, the
+8. **Main point**: while every proposition is connected into ONE tree, the
    proposition the star walk lands on (from the top of the tree, following
-   the stars) turns red — the passage's main point. It follows the stars as
-   you flip them, and clears if you disconnect anything.
+   the stars) shows red — the passage's main point. It follows the stars as
+   you flip them, clears if you disconnect anything, and returns when the
+   tree is whole again.
 9. **Undo/Redo**: toolbar buttons or Ctrl/Cmd-Z, Ctrl/Cmd-Shift-Z. Each
    gesture is exactly one undo step.
 10. **Save / reload**: Save in the top bar, reload the page, reopen from the

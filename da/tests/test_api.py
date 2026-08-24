@@ -184,11 +184,9 @@ class TestFirstPass:
         body = response.json()
         document, alignment = body["document"], body["alignment"]
         assert document["schemaVersion"] == 2
-        # Pre-split, disconnected: one forest root per proposition.
+        # Fully analyzed: every proposition connected into one tree.
         assert document["propositions"]
-        assert document["forest"] == [
-            {"kind": "prop", "ref": p["id"]} for p in document["propositions"]
-        ]
+        assert len(document["forest"]) == 1
         assert alignment is not None
         assert alignment["ref"] == "John 1:1"
         assert alignment["exact"] is True

@@ -1,16 +1,16 @@
-"""Golden tests for initial entry and the (dormant) analyzer.
+"""Golden tests for initial entry: the full automatic analyzer.
 
-``first_pass`` — what initial entry actually runs — is asserted to produce a
-ONE-BLOCK document: the automatic analyzer is switched off, so a located
-paste becomes a single corpus proposition and an unaligned paste a single
-raw one.
+``first_pass`` — what initial entry actually runs — segments a located paste
+into clause propositions (stage 1) and connects them into one labeled tree
+(stage 2); an unaligned paste splits on punctuation into disconnected raw
+propositions (no morphology, no proposed structure).
 
-The analyzer itself (``da.treebuild.build_document`` over hand-built,
-contract-shaped segments) stays fully tested here so it can be re-enabled
-later. Its passages come from the course's worked examples: 1 John 1:5–7
-(examples/da1.xlsx) and Hebrews 4:9–12 (Five Step walkthrough). We assert
-what an explicit connective settles (the confident calls) and only the
-best-guess default where the call is a judgment.
+The analyzer is also tested over hand-built, contract-shaped segments so the
+classifier's calls are pinned independently of live segmentation. Passages
+come from the course's worked examples: 1 John 1:5–7 (examples/da1.xlsx) and
+Hebrews 4:9–12 (Five Step walkthrough). We assert what an explicit
+connective settles (the confident calls) and only the best-guess default
+where the call is a judgment.
 """
 
 import json
@@ -213,10 +213,10 @@ def test_build_document_1john_hand_segments():
     roundtrip(doc)
 
 
-def test_first_pass_1john_1_5_7_pre_splits_disconnected():
-    """Auto-splitting is ON, auto-relationing OFF: a located paste becomes
-    one proposition per clause segment, verse-lettered, every one its own
-    forest root (no brackets)."""
+def test_first_pass_1john_1_5_7_builds_full_tree():
+    """The full analyzer runs at entry: a located paste becomes one
+    proposition per clause segment, verse-lettered, all connected into a
+    single labeled tree."""
     words = load_words()
     text = " ".join(w.text for w in words[J_START:J_END + 1])
     result = first_pass(text)
@@ -225,18 +225,16 @@ def test_first_pass_1john_1_5_7_pre_splits_disconnected():
     assert result.alignment.ref == "1 John 1:5–7"
     doc = result.document
     props = doc["propositions"]
-    assert [p["label"] for p in props] == [
-        "5a", "5b", "5c", "5d", "5e",
-        "6a", "6b", "6c", "6d", "6e",
-        "7a", "7b", "7c", "7d",
-    ]
+    assert [p["label"] for p in props] == J_LABELS
     # The segments exactly tile the passage.
     assert props[0]["source"]["start"] == J_START
     assert props[-1]["source"]["end"] == J_END
     for a, b in zip(props, props[1:]):
         assert a["source"]["end"] + 1 == b["source"]["start"]
-    # Disconnected: one prop root per segment, in order.
-    assert doc["forest"] == [{"kind": "prop", "ref": p["id"]} for p in props]
+    # Live segmentation reproduces the hand-built segments here, so the
+    # classifier's pinned structure holds end to end.
+    assert [(p["source"]["start"], p["source"]["end"]) for p in props] == J_SPANS
+    assert_1john_structure(doc)
     roundtrip(doc)
 
 
@@ -326,7 +324,7 @@ def test_build_document_hebrews_hand_segments():
     roundtrip(doc)
 
 
-def test_first_pass_hebrews_4_9_12_pre_splits_disconnected():
+def test_first_pass_hebrews_4_9_12_builds_full_tree():
     words = load_words()
     text = " ".join(w.text for w in words[H_START:H_END + 1])
     result = first_pass(text)
@@ -335,11 +333,13 @@ def test_first_pass_hebrews_4_9_12_pre_splits_disconnected():
     doc = result.document
     props = doc["propositions"]
     # Live segmentation also splits verse 12 at the adverbial participle
-    # διϊκνούμενος (the hand-built stage-2 segments keep v12 whole).
+    # διϊκνούμενος (the hand-built stage-2 segments keep v12 whole); the
+    # structure helper locates brackets by whole-verse spans, so it holds
+    # either way.
     assert [p["label"] for p in props] == [
         "9", "10a", "10b", "11a", "11b", "12a", "12b",
     ]
-    assert doc["forest"] == [{"kind": "prop", "ref": p["id"]} for p in props]
+    assert_hebrews_structure(doc)
     roundtrip(doc)
 
 

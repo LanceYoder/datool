@@ -185,16 +185,31 @@ await page.waitForURL(/\/analysis\//);
 const analysisUrl = page.url();
 ok(`created ${analysisUrl}`);
 
-// --- (b) Initial entry: pre-split clauses, NO tree ---------------------------
-step('(b) initial entry: auto-split into clause propositions, no connections');
+// --- (b) Initial entry: the full first pass (pre-split + tree) ---------------
+step('(b) initial entry: clause propositions connected into one labeled tree');
 await page.waitForSelector(SEL.row);
 await expectCount(SEL.row, 14, 'one row per clause segment (1 Jn 1:5–7 = 14)');
-await expectCount(SEL.bracket, 0, 'auto-relationing is off: no brackets');
-await expectCount(SEL.dot, 14, 'one dot per proposition');
-await expectCount(SEL.rootDot, 14, 'every proposition is a disconnected root');
+// Auto-relationing runs at entry: the exact tree shape is pinned by the
+// backend goldens, so here we only require a real proposal, dynamically.
+const bracketsEntry = await countOf(SEL.bracket);
+console.log(`  entry brackets: ${bracketsEntry}`);
+if (bracketsEntry < 5) {
+  await fail(`auto-relationing should propose a real tree, got ${bracketsEntry} brackets`);
+}
+ok(`auto-relationing proposed ${bracketsEntry} brackets`);
+await expectCount(SEL.dot, 14 + bracketsEntry, 'one dot per proposition and per bracket');
+await expectCount(SEL.rootDot, 1, 'the whole passage arrives as ONE tree');
 const blockLabel = (await page.locator(SEL.row).nth(0).locator('.verse-label').textContent()) ?? '';
 if (blockLabel !== '5a') await fail(`first row label should be "5a", got "${blockLabel}"`);
 ok(`rows carry verse-letter labels (first is ${blockLabel})`);
+
+// A complete tree (one root) means the star walk already paints the
+// passage's main point(s) red at entry — coordinate tops may fan to several.
+await waitFor(
+  () => document.querySelectorAll('.prop-row.main-point').length >= 1,
+  null,
+  'the completed entry tree shows its main point in red',
+);
 
 // The English reference line — built word-by-word from EACH row's own Greek
 // (TAGNT contextual renderings) — loads above the text. Display only.
@@ -322,7 +337,9 @@ if (!tailEnglish.includes('message')) {
 }
 ok('the English is divided exactly at the split point');
 
-// Both halves are now disconnected roots.
+// Splitting a NESTED proposition unzips it out of the tree first (its
+// ancestor brackets along the path dissolve), so both halves land as
+// disconnected roots.
 for (const pid of [splitPid, newPid]) {
   await expectCount(
     `g.dot-group.root[data-dot="prop:${pid}"]`,
@@ -414,7 +431,12 @@ step('(e) connect two adjacent roots by their dots');
 const bracketsBeforeConnect = await countOf(SEL.bracket);
 const rootsBeforeConnect = await countOf(SEL.rootDot);
 console.log(`  brackets: ${bracketsBeforeConnect}  roots: ${rootsBeforeConnect}`);
-if (rootsBeforeConnect !== 14) await fail('the pre-split roots are not all loose');
+// The split/merge round trip above left several loose roots (the unzip
+// dissolved the brackets over verse 5); the exact number is the analyzer's
+// business — we just need enough of them to drive the connect gestures.
+if (rootsBeforeConnect < 3) {
+  await fail(`need at least three loose roots for the connect steps, got ${rootsBeforeConnect}`);
+}
 
 // Root dots come out in forest-root order, so any two neighbours in this
 // list are adjacent roots — the plain (no unzip needed) connect case.
@@ -461,7 +483,7 @@ while (looseRoots > 1) {
   );
   looseRoots -= 1;
 }
-ok('all fourteen propositions connected into one tree (all Ground)');
+ok('every loose root reconnected into one tree (all Ground)');
 await expectCount(SEL.rootDot, 1, 'everything is one tree now');
 await expectCount('.prop-row.main-point', 1, 'exactly one proposition is the main point');
 await waitFor(
@@ -503,15 +525,16 @@ await waitFor(
 );
 await expectNone(SEL.menu, 'the star click did NOT open the relationship menu');
 // The red main point follows the star: the top bracket's prominence moved to
-// its other side — the last-connected proposition, i.e. the final row.
-await expectCount('.prop-row.main-point', 1, 'still exactly one main point');
+// its other side — the last-connected packet. That packet keeps its own
+// entry-tree structure, so its star walk may fan across several rows;
+// assert the landing row, not a count.
 await waitFor(
   () => {
     const rows = document.querySelectorAll('.prop-row');
     return rows[rows.length - 1]?.classList.contains('main-point') === true;
   },
   null,
-  'the main point followed the star to the other side (last row)',
+  'the main point followed the star to the other side (ends at the last row)',
 );
 const starAfter = await page
   .locator(`${SEL.star} text.bracket-star`)
@@ -540,6 +563,7 @@ await expectCount(SEL.menu, 0, 'Escape closed the menu');
 step('(h) disconnect the outermost bracket');
 const rootsBeforeDisconnect = await countOf(SEL.rootDot);
 const bracketsBeforeDisconnect = await countOf(SEL.bracket);
+const mainBeforeDisconnect = await countOf('.prop-row.main-point');
 // Label groups render in document pre-order, so the FIRST label in the DOM
 // belongs to the first bracket — necessarily a ROOT bracket (its ancestors
 // would precede it). A root bracket's menu offers Disconnect.
@@ -558,7 +582,11 @@ step('(i) undo / redo the disconnect');
 await page.click('.editor-toolbar button:has-text("Undo")');
 await expectCount(SEL.bracket, bracketsBeforeDisconnect, 'undo restored the bracket');
 await expectCount(SEL.rootDot, rootsBeforeDisconnect, 'undo restored the root count');
-await expectCount('.prop-row.main-point', 1, 'undo brought the main point back');
+await expectCount(
+  '.prop-row.main-point',
+  mainBeforeDisconnect,
+  'undo brought the main point back',
+);
 await page.click('.editor-toolbar button:has-text("Redo")');
 await expectCount(SEL.bracket, bracketsBeforeDisconnect - 1, 'redo removed it again');
 await expectCount(SEL.rootDot, rootsBeforeDisconnect + 1, 'redo restored the root count');
