@@ -6,7 +6,8 @@
 // overlay or on a row. The overlay's structure (see BracketLayer.tsx) is
 //
 //   svg.bracket-layer.interactive
-//     g.spine-layer  g.bracket[.selected][data-rel] > line …   (inert)
+//     g.spine-layer  g.bracket[data-rel] > line | path …       (inert; the
+//                    notebook skin draws its spines and ticks as bowed paths)
 //     g.dot-layer    g.dot-group[data-dot][.root][.selected]  (every dot is a
 //                    live, same-sized handle; .root marks disconnected units)
 //     g.glyph-layer  g.label-hit[data-label] > text.bracket-label
@@ -33,9 +34,30 @@ const SHOTS = process.env.SHOTS ?? '/tmp/e2e-shots';
 const BASE = process.env.BASE ?? 'http://127.0.0.1:5173';
 const API = process.env.API ?? 'http://127.0.0.1:8000';
 
-// Colors that must NOT appear anywhere in the overlay.
-const AMBER = '#b45309'; // the removed review/confidence color
-const ACCENT = '#1d4ed8'; // allowed on selected DOTS only, never on branches
+// Colors that must NOT appear anywhere in the overlay. BracketLayer hands its
+// ink to SVG through inline `style` (so a skin can repaint the tree with CSS
+// variables), which means these are checked against the COMPUTED stroke/fill,
+// not against a presentation attribute.
+const AMBER = 'rgb(180, 83, 9)'; // #b45309, the removed review/confidence color
+const ACCENT = 'rgb(29, 78, 216)'; // #1d4ed8 — selected DOTS only, never branches
+
+/** Every element in the overlay painted in `color`, as a count. */
+function paintedWith(selector, color) {
+  return page.evaluate(
+    ([sel, want]) =>
+      [...document.querySelectorAll(sel)].filter((el) => {
+        const s = getComputedStyle(el);
+        return s.stroke === want || s.fill === want;
+      }).length,
+    [selector, color],
+  );
+}
+
+async function expectNonePainted(selector, color, msg) {
+  const n = await paintedWith(selector, color);
+  if (n !== 0) await fail(`${msg}: ${n} × "${selector}" painted ${color}`);
+  ok(`${msg}: nothing in ${selector} is ${color}`);
+}
 
 // Selectors for the parts of the overlay this script drives.
 const SEL = {
@@ -251,7 +273,7 @@ await expectCount('.english-line .ev', 3, 'verse markers at each verse start (5,
 
 // Confidence labeling is gone: nothing in the overlay is amber, and the
 // stored first pass carries no review flags.
-await expectNone(`[stroke="${AMBER}"], [fill="${AMBER}"]`, 'no amber/confidence coloring');
+await expectNonePainted('.bracket-layer *', AMBER, 'no amber/confidence coloring');
 
 // Uniform dot geometry: one radius for every dot, and one x for every
 // proposition dot — nesting depth must never move or shrink a dot.
@@ -573,8 +595,9 @@ ok('clicking a label opened the relationship menu');
 // Confidence labeling is gone: no Confirm item, and opening a menu paints no
 // branch blue (the accent belongs to selected dots only).
 await expectNone(`${SEL.menu} .menu-item.confirm`, 'no Confirm item in the menu');
-await expectNone(
-  `g.spine-layer line[stroke="${ACCENT}"]`,
+await expectNonePainted(
+  'g.spine-layer line, g.spine-layer path',
+  ACCENT,
   'no blue selected-branch stroke while a menu is open',
 );
 await page.keyboard.press('Escape');
@@ -705,7 +728,7 @@ await page.waitForSelector(SEL.row);
 await expectCount(SEL.row, rowsFinal, 'rows survived the reload');
 await expectCount(SEL.bracket, bracketsFinal, 'brackets survived the reload');
 await expectCount(SEL.rootDot, rootsFinal, 'roots survived the reload');
-await expectNone(`[stroke="${AMBER}"], [fill="${AMBER}"]`, 'still no amber after the reload');
+await expectNonePainted('.bracket-layer *', AMBER, 'still no amber after the reload');
 await expectCount('.section-band', 2, 'the color blocks survived the reload');
 const reloadColors = await page.evaluate(() =>
   [...document.querySelectorAll('.section-band')].map((b) => getComputedStyle(b).backgroundColor),

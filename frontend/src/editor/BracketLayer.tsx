@@ -14,6 +14,7 @@ import type { BracketGeom, DotGeom } from './layout';
 import type { Point } from './interaction';
 import type { ViewSettings } from './viewSettings';
 import { relationColor } from './viewSettings';
+import { useTheme } from '../theme';
 
 /** A laid-out bracket zipped with the ProseMirror position of its node. */
 export interface PositionedBracket extends BracketGeom {
@@ -26,9 +27,28 @@ export interface ShakeState {
   seq: number;
 }
 
-const LINE = '#374151';
-const ACCENT = '#1d4ed8';
-const MUTED = '#9ca3af';
+// The tree's ink, as CSS variables rather than literals: a skin repaints the
+// whole overlay by redefining them (themes.css), and the geometry never moves.
+// They are handed to SVG through inline `style`, not through presentation
+// attributes — only a style declaration is guaranteed to resolve var().
+const LINE = 'var(--tree-line, #374151)';
+const ACCENT = 'var(--tree-accent, #1d4ed8)';
+const MUTED = 'var(--tree-muted, #9ca3af)';
+const DOT_FILL = 'var(--tree-dot-fill, #fff)';
+const DOT_STROKE = 'var(--tree-dot-stroke, var(--tree-line, #374151))';
+/** Labels and stars may take an ink of their own — a manuscript writes its
+ * letters in one color and gilds its stars in another. */
+const LABEL_INK = 'var(--tree-label, var(--tree-line, #374151))';
+const STAR_INK = 'var(--tree-star, var(--tree-line, #374151))';
+
+/**
+ * What a bracket is drawn in: its relationship's color while color coding is
+ * on, and otherwise the skin's ink. `fallback` is the variable to fall back
+ * to — the line's, the label's or the star's.
+ */
+function ink(view: ViewSettings, rel: string, fallback: string): string {
+  return view.colorCoding ? relationColor(view, rel) : fallback;
+}
 
 /** Every dot is this size, whatever it belongs to and however it is nested. */
 const DOT_R = 5;
@@ -74,6 +94,76 @@ function starPath(cx: number, cy: number, r: number): string {
   return `M${points.join('L')}Z`;
 }
 
+/**
+ * A repeatable wobble in [-1, 1] from a seed — the same star comes out the
+ * same way on every render, which is the difference between a drawn hand and
+ * a twitch.
+ */
+function wobble(seed: number): number {
+  const x = Math.sin(seed * 127.1 + 43.7) * 43758.5453;
+  return (x - Math.floor(x)) * 2 - 1;
+}
+
+/**
+ * A line as a hand draws it: bowed off its chord, and a touch long at both
+ * ends, the way a stroke overruns the corner it was aiming for. The bow is
+ * seeded from the line's own endpoints, so a spine bends the same way on
+ * every render and does not shiver when the document changes elsewhere.
+ *
+ * Generated geometry, not a displacement filter: a filter shifts neighbouring
+ * pixels of a 1.5px line by different amounts and eats the line away in
+ * places, which is why the ticks came out dashed.
+ */
+function handLine(x1: number, y1: number, x2: number, y2: number): string {
+  const seed = x1 * 0.37 + y1 * 0.71 + x2 * 1.13 + y2 * 0.29;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const length = Math.hypot(dx, dy) || 1;
+  // Long strokes bend more than short ones, but never by more than a couple
+  // of pixels — this is a steady hand, not a shaky one.
+  const bow = Math.min(2.6, length * 0.02) * wobble(seed);
+  const over = 1.2;
+  const ux = dx / length;
+  const uy = dy / length;
+  const ax = x1 - ux * over + uy * 0.6 * wobble(seed + 3);
+  const ay = y1 - uy * over - ux * 0.6 * wobble(seed + 3);
+  const bx = x2 + ux * over + uy * 0.6 * wobble(seed + 7);
+  const by = y2 + uy * over - ux * 0.6 * wobble(seed + 7);
+  const mx = (ax + bx) / 2 - uy * bow;
+  const my = (ay + by) / 2 + ux * bow;
+  return (
+    `M${ax.toFixed(2)},${ay.toFixed(2)} ` +
+    `Q${mx.toFixed(2)},${my.toFixed(2)} ${bx.toFixed(2)},${by.toFixed(2)}`
+  );
+}
+
+/**
+ * The star as a pen draws it: one unbroken stroke around a pentagram, its five
+ * points off a true circle and its strokes bowed, closing a little past where
+ * it began — nobody's hand shuts the loop exactly.
+ */
+function penStarPath(cx: number, cy: number, r: number): string {
+  const point = (i: number): [number, number] => {
+    const angle = (Math.PI * 2 * i) / 5 - Math.PI / 2 + 0.05 * wobble(i);
+    const radius = r * (1.05 + 0.1 * wobble(i + 9));
+    return [cx + radius * Math.cos(angle), cy + radius * Math.sin(angle)];
+  };
+  const order = [0, 2, 4, 1, 3, 0];
+  const [x0, y0] = point(order[0]!);
+  let d = `M${x0.toFixed(2)},${y0.toFixed(2)}`;
+  for (let i = 1; i < order.length; i += 1) {
+    const [xa, ya] = point(order[i - 1]!);
+    const [xb, yb] = point(order[i]!);
+    // Bow each stroke off its chord: a ruled line is the one thing a pen
+    // never draws.
+    const bow = 0.06 * wobble(i + 21);
+    const mx = (xa + xb) / 2 - (yb - ya) * bow;
+    const my = (ya + yb) / 2 + (xb - xa) * bow;
+    d += `Q${mx.toFixed(2)},${my.toFixed(2)} ${xb.toFixed(2)},${yb.toFixed(2)}`;
+  }
+  return d;
+}
+
 export interface BracketLayerProps {
   brackets: PositionedBracket[];
   dots: DotGeom[];
@@ -117,6 +207,41 @@ function swallow(event: { preventDefault: () => void }): void {
   event.preventDefault();
 }
 
+/**
+ * One line of the tree: ruled, or — in the notebook — drawn. Both carry the
+ * same endpoints; only the path between them differs.
+ */
+function Stroke({
+  x1,
+  y1,
+  x2,
+  y2,
+  width,
+  color,
+  pen,
+}: {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  width: number;
+  color: string;
+  pen: boolean;
+}) {
+  if (pen) {
+    return (
+      <path
+        d={handLine(x1, y1, x2, y2)}
+        fill="none"
+        style={{ stroke: color }}
+        strokeWidth={width + 0.5}
+        strokeLinecap="round"
+      />
+    );
+  }
+  return <line x1={x1} y1={y1} x2={x2} y2={y2} style={{ stroke: color }} strokeWidth={width} />;
+}
+
 export default function BracketLayer({
   brackets,
   dots,
@@ -132,29 +257,55 @@ export default function BracketLayer({
   view,
 }: BracketLayerProps) {
   const selectedDot = dots.find((d) => d.id === selectedDotId);
+  // The notebook is drawn, not ruled: its skin puts the whole overlay through
+  // the wobble filter below, and its stars are struck with a pen instead of
+  // being filled in.
+  const pen = useTheme() === 'notebook';
 
   return (
     <svg className="bracket-layer interactive" width={width} height={height} style={{ left: 0 }}>
+      {/* Referenced from themes.css by the notebook skin, and applied there to
+          the DOTS alone: a ring drawn by hand is never quite a circle. The
+          lines get their wobble from handLine instead — a filter thins a
+          hairline where it displaces it, and the ticks came out dashed. */}
+      <defs>
+        <filter id="datool-pen" x="-5%" y="-5%" width="110%" height="110%">
+          {/* One long, smooth octave. Faster noise displaces neighbouring
+              pixels of a hairline by different amounts and breaks the line
+              into dashes; a low frequency bends the whole stroke instead. */}
+          <feTurbulence
+            type="fractalNoise"
+            baseFrequency="0.011"
+            numOctaves="1"
+            seed="5"
+            result="noise"
+          />
+          <feDisplacementMap in="SourceGraphic" in2="noise" scale="3.4" xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+      </defs>
+
       <g className="spine-layer" pointerEvents="none">
         {brackets.map((b) => (
           <g key={b.pos} className="bracket" data-rel={b.rel}>
-            <line
+            <Stroke
               x1={b.x}
               y1={b.top}
               x2={b.x}
               y2={b.bottom}
-              stroke={relationColor(view, b.rel)}
-              strokeWidth={1.8}
+              width={1.8}
+              color={ink(view, b.rel, LINE)}
+              pen={pen}
             />
             {b.ticks.map((t) => (
-              <line
+              <Stroke
                 key={t.childIndex}
                 x1={t.x1}
                 y1={t.y}
                 x2={t.x2}
                 y2={t.y}
-                stroke={relationColor(view, b.rel)}
-                strokeWidth={1.5}
+                width={1.5}
+                color={ink(view, b.rel, LINE)}
+                pen={pen}
               />
             ))}
           </g>
@@ -203,7 +354,7 @@ export default function BracketLayer({
                   y1={d.y}
                   x2={d.stubX2}
                   y2={d.y}
-                  stroke={selected ? ACCENT : MUTED}
+                  style={{ stroke: selected ? ACCENT : MUTED }}
                   strokeWidth={1}
                 />
               )}
@@ -213,8 +364,10 @@ export default function BracketLayer({
                 cx={d.x}
                 cy={d.y}
                 r={DOT_R}
-                fill={selected ? ACCENT : '#fff'}
-                stroke={selected ? ACCENT : LINE}
+                style={{
+                  fill: selected ? ACCENT : DOT_FILL,
+                  stroke: selected ? ACCENT : DOT_STROKE,
+                }}
                 strokeWidth={1.6}
               />
             </g>
@@ -254,7 +407,7 @@ export default function BracketLayer({
                     className="bracket-label"
                     x={x}
                     y={y}
-                    fill={relationColor(view, b.rel)}
+                    style={{ fill: ink(view, b.rel, LABEL_INK) }}
                     textAnchor={mid ? 'end' : 'start'}
                   >
                     {l.text}
@@ -288,10 +441,26 @@ export default function BracketLayer({
                     onClick={() => onStarClick(b.pos)}
                   >
                     <circle cx={sx + STAR_R} cy={t.y - STAR_RISE} r={12} fill="transparent" />
+                    {/* Struck with a pen in the notebook, filled in everywhere
+                        else — the same star, in the hand of the page. */}
                     <path
                       className="bracket-star"
-                      d={starPath(sx + STAR_R, t.y - STAR_RISE, STAR_R)}
-                      fill={relationColor(view, b.rel)}
+                      d={
+                        pen
+                          ? penStarPath(sx + STAR_R, t.y - STAR_RISE, STAR_R)
+                          : starPath(sx + STAR_R, t.y - STAR_RISE, STAR_R)
+                      }
+                      style={
+                        pen
+                          ? {
+                              fill: 'none',
+                              stroke: ink(view, b.rel, STAR_INK),
+                              strokeWidth: 1.6,
+                              strokeLinecap: 'round',
+                              strokeLinejoin: 'round',
+                            }
+                          : { fill: ink(view, b.rel, STAR_INK) }
+                      }
                     />
                   </g>
                 );

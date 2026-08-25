@@ -9,6 +9,16 @@
   /* Width of the verse-label gutter; mirrored by VERSE_LABEL_W in
      editor/AnalysisEditor.tsx, which anchors the bracket layout to it. */
   --verse-label-w: 72px;
+
+  /* The tree's ink. BracketLayer draws with these and nothing else, so a skin
+     (themes.css) repaints the whole overlay without moving a single line of
+     it. --tree-label and --tree-star are left unset here: labels and stars
+     take the line's color unless a skin says otherwise. */
+  --tree-line: #374151;
+  --tree-accent: var(--accent);
+  --tree-muted: #9ca3af;
+  --tree-dot-fill: #ffffff;
+  --tree-dot-stroke: var(--tree-line);
 }
 
 * {
@@ -48,8 +58,39 @@ body {
   text-decoration: none;
 }
 
-.app-add {
+/* The design picker pushes everything after it to the right edge. */
+.theme-switch {
   margin-left: auto;
+  align-self: center;
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-soft);
+}
+
+.theme-option {
+  padding: 0.2rem 0.7rem;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.3;
+}
+
+.theme-option:hover:not(.on) {
+  color: var(--text);
+  background: var(--bg);
+}
+
+.theme-option.on {
+  background: var(--accent);
+  color: #fff;
+}
+
+.app-add {
   align-self: center;
   padding: 0.35rem 0.9rem;
   border: 1px solid var(--border);
@@ -824,6 +865,7 @@ div.error-box {
   }
 
   .app-header,
+  .theme-switch,
   .editor-toolbar,
   .analysis-toolbar button,
   .notes-tools,
