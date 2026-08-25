@@ -4,9 +4,10 @@
 // own.
 
 /**
- * Two columns: what you do to the TREE, and what you do to the PROPOSITIONS
- * themselves. Undo and redo are not here — the toolbar carries them, and the
- * shortcuts are the ones every application uses.
+ * Two columns: what you do to the TREE, and what you do to the PASSAGE —
+ * dividing and joining its propositions, and the color blocks over them.
+ * Undo and redo are not here: the toolbar carries them, and the shortcuts
+ * are the ones every application uses.
  */
 const COLUMNS: { what: string; how: string }[][] = [
   [
@@ -21,6 +22,8 @@ const COLUMNS: { what: string; how: string }[][] = [
   [
     { what: 'Split a proposition', how: 'Right-click the word it should end on' },
     { what: 'Join two propositions', how: 'Right-click the last word of the upper one' },
+    { what: 'Begin a color block', how: 'Hover the strip on the right, then click the +' },
+    { what: 'Join two blocks', how: 'Hover their division on the strip, then click the −' },
   ],
 ];
 
