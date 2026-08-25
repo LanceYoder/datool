@@ -735,6 +735,38 @@ await page.goto(BASE);
 await page.waitForSelector('.analysis-link');
 ok('analysis listed on home');
 
+// --- (k) The Minimal / Full toggle ------------------------------------------
+step('(k) Full auto-analysis: a typed reference arrives as one proposed tree');
+await page.waitForSelector('.level-toggle');
+const levelLabels = await page.locator('.level-toggle button').allTextContents();
+if (levelLabels.join('|') !== 'Minimal|Full') {
+  await fail(`unexpected level toggle: ${JSON.stringify(levelLabels)}`);
+}
+const minimalOn = await page
+  .locator('.level-toggle button:has-text("Minimal")')
+  .getAttribute('aria-checked');
+if (minimalOn !== 'true') await fail('Minimal should be the default level');
+ok('the toggle defaults to Minimal');
+
+await page.click('.level-toggle button:has-text("Full")');
+await page.fill('.paste-area', 'Heb 4:9-12');
+await waitFor(
+  () => document.querySelector('.alignment-line')?.textContent?.includes('Hebrews 4:9–12') === true,
+  null,
+  'the typed reference located itself',
+);
+await page.click('button:has-text("Create"):not([disabled])');
+await page.waitForURL(/\/analysis\//);
+await page.waitForSelector(SEL.row);
+await expectCount(SEL.row, 7, 'Hebrews 4:9–12 = 7 clause rows');
+await expectCount(SEL.rootDot, 1, 'Full: the whole passage proposed as ONE tree');
+await waitFor(
+  () => document.querySelectorAll('.prop-row.main-point').length >= 1,
+  null,
+  'the complete proposal shows its main point in red',
+);
+await snap('full-analysis');
+
 await browser.close();
 
 if (problems.length > 0) {

@@ -1,15 +1,15 @@
 """Initial entry: pasted text OR a typed reference in, a first-pass
 analysis out.
 
-The automatic analyzer runs in CONFIDENT-ONLY mode for located passages.
-Stage 1 (:mod:`da.segmentation`) splits the passage into clause propositions;
-stage 2 (:mod:`da.treebuild`) then draws ONLY the connections it is
+The automatic analyzer has two levels, the caller's choice. MINIMAL (the
+default) draws ONLY the connections stage 2 (:mod:`da.treebuild`) is
 deterministically right about — explicit-marker calls the golden diagrams
 have never contradicted (γάρ grounds, ὅτι-content after a verb of saying,
-conditional protases, ὡς-class comparisons, ὥστε results, οὐ … ἀλλά) — and
-leaves everything else disconnected for the analyst. The full classifier
-(every judgment call included) stays in the codebase behind
-``build_document(confident_only=False)``.
+conditional protases, ὡς-class comparisons, ὥστε results, οὐ … ἀλλά,
+sentence-closing relatives, διό) — and leaves everything else disconnected
+for the analyst. MAXIMAL runs the full classifier: every judgment call
+included, the whole passage proposed as one tree. Stage 1
+(:mod:`da.segmentation`) pre-splits into clause propositions either way.
 
 Two ways in, one result. Text that reads as a REFERENCE ("Eph 1:3-14",
 "1 jn 1:5 to 7", typos and abbreviations included — see
@@ -43,31 +43,33 @@ class FirstPassResult:
     alignment: Alignment | None
 
 
-def first_pass(text: str) -> FirstPassResult:
-    """Locate the input — reference or paste — and analyze it."""
+def first_pass(text: str, maximal: bool = False) -> FirstPassResult:
+    """Locate the input — reference or paste — and analyze it. ``maximal``
+    runs the full classifier; the default draws only the sure connections."""
     if looks_like_reference(text):
         # resolve() raises ReferenceError (a ValueError) for a reference that
         # names no real passage; the view turns that into a 400 the same way
         # it does an unanalyzable paste.
         reference = resolve(text)
         return FirstPassResult(
-            _analyzed(reference.start, reference.end),
+            _analyzed(reference.start, reference.end, maximal),
             _reference_alignment(reference),
         )
     alignment = align(text)
     if alignment is None:
         return FirstPassResult(_raw_document(text), None)
-    return FirstPassResult(_analyzed(alignment.start, alignment.end), alignment)
+    return FirstPassResult(_analyzed(alignment.start, alignment.end, maximal),
+                           alignment)
 
 
-def _analyzed(start: int, end: int) -> dict:
-    """Segment a corpus range into clauses and draw the sure connections."""
+def _analyzed(start: int, end: int, maximal: bool) -> dict:
+    """Segment a corpus range into clauses and draw its connections."""
     # Imported here, not at module top: the analyzer lives in its own modules
     # and raw-mode entry must keep working even while they are being reworked.
     from .segmentation import segment
     from .treebuild import build_document
 
-    return build_document(segment(start, end), confident_only=True)
+    return build_document(segment(start, end), confident_only=not maximal)
 
 
 def _reference_alignment(reference) -> Alignment:

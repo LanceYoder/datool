@@ -21,8 +21,9 @@ import pytest
 
 from da.corpus import align, load_words
 from da.documents import main_point, validate_document
+from da.segmentation import segment
 from da.taxonomy import RELATIONSHIPS
-from da.treebuild import _propositions
+from da.treebuild import _propositions, build_document
 
 EXAMPLES = Path(__file__).resolve().parent.parent.parent / "examples"
 DIAGRAMS = sorted(EXAMPLES.glob("*.json"))
@@ -106,3 +107,48 @@ def test_diagram_propositions(path):
     assert [p["label"] for p in _propositions(segments, words)] == [
         p["label"] for p in props
     ]
+
+
+def _bracket_set(doc) -> set:
+    """Every bracket as (rel, starred child index, child word-spans)."""
+    sources = {p["id"]: p["source"] for p in doc["propositions"]}
+
+    def span(node):
+        if node["kind"] == "prop":
+            s = sources[node["ref"]]
+            return (s["start"], s["end"])
+        return (span(node["children"][0])[0], span(node["children"][-1])[1])
+
+    out = set()
+
+    def walk(node):
+        if node["kind"] != "bracket":
+            return
+        out.add((node["rel"], node.get("prominent"),
+                 tuple(span(c) for c in node["children"])))
+        for child in node["children"]:
+            walk(child)
+
+    for root in doc["forest"]:
+        walk(root)
+    return out
+
+
+@pytest.mark.parametrize("path", DIAGRAMS, ids=lambda p: p.stem)
+def test_confident_mode_never_contradicts_the_diagram(path):
+    """The standing audit for every NEW diagram: confident-only mode may keep
+    a bracket only if this diagram drew it EXACTLY (relationship, star, and
+    grouping). Adding a worked example to examples/ automatically tightens
+    the sure-call table in da/treebuild.py against it."""
+    golden = load(path)
+    if golden["language"] != "greek":
+        pytest.skip("an English diagram gives the analyzer no morphology")
+    props = golden["document"]["propositions"]
+    start = props[0]["source"]["start"]
+    end = props[-1]["source"]["end"]
+    student = _bracket_set(golden["document"])
+    kept = _bracket_set(build_document(segment(start, end), confident_only=True))
+    stray = kept - student
+    assert not stray, (
+        f"confident mode kept brackets the diagram does not draw: {sorted(stray)}"
+    )

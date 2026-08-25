@@ -249,8 +249,10 @@ def _dependent_call(seg, j: int, segs: Sequence, words) -> tuple[str, bool, bool
     lemma = _L(op.lemma)
     if op.kind == "rel":
         # The relative clause interprets its antecedent's clause: Ft → In*.
-        # Not sure: descriptive vs. restrictive is the reader's call.
-        return "FtIn", True, False
+        # Sure: Eph 3:11, 3:13 and Eph 1:13 all draw exactly this; none of
+        # the worked diagrams reads a split-off relative any other way. (A
+        # relative whose packet grows by a καί still cascades to unsure.)
+        return "FtIn", False, True
     if op.kind == "appos":
         # Apposition / attributive-article phrase restates: Ft → In*.
         return "FtIn", True, False
@@ -347,6 +349,16 @@ def _assemble_sentence(indexed_segs: list[tuple[int, "Segment"]], words) -> dict
         call = _dependent_call(seg, j, segs, words)
         if call is not None and not (kind == "coord"):
             rel, review, sure = call
+            if kind == "rel" and sure:
+                # A relative's RELATIONSHIP is sure; its SCOPE only sometimes.
+                # The Eph 1:13-14 diagram tucks a trailing εἰς-phrase inside
+                # the relative's packet where this builder wraps outside it,
+                # and chained relatives (Eph 3:11-12) scope to the nearest
+                # clause rather than the packet. Airtight only when the
+                # relative CLOSES its sentence and pairs with a single bare
+                # clause — nothing can extend or re-scope it after that.
+                sure = (j == len(segs) - 1 and bool(stack)
+                        and stack[-1]["kind"] == "prop")
             if stack:
                 top = stack.pop()
                 stack.append(_sub(rel, top, leaf, dep_child=1, review=review,
@@ -356,8 +368,11 @@ def _assemble_sentence(indexed_segs: list[tuple[int, "Segment"]], words) -> dict
                                    review=review, sure=sure)
             else:
                 # Sentence opens with a dependent unit (initial participle,
-                # causal ὅτι, …): hold it forward like a protasis.
-                held = _Held(leaf, rel, review, sure)
+                # causal ὅτι, …): hold it forward like a protasis. A
+                # sentence-INITIAL ὥστε is the inferential construction (the
+                # 1 Thess 4:18 diagram draws Ὥστε παρακαλεῖτε as ∴), not the
+                # result clause the CE call is sure about — never sure here.
+                held = _Held(leaf, rel, review, sure and rel != "CE")
             continue
 
         if kind == "coord" and not fresh:
@@ -444,8 +459,9 @@ def _sentence_join(prev_segs: list, cur_segs: list, words) -> tuple[str, bool, b
             # γάρ grounds what precedes: 4/4 exact (1 Thess ×2, Hebrews ×2).
             return "Grnd", False, True  # star on the supported (previous) side
         if conn in INFERENCE:
-            # Not sure: the Acts diagram draws C/E where οὖν says ∴.
-            return "Inf", False, False  # star on the new (inferred) side
+            # διό is sure — its sense is forced, and Eph 3:13 draws it
+            # exactly. οὖν is not: the Acts diagram draws a μὲν οὖν as C/E.
+            return "Inf", False, conn == _L("διό")
         if conn in DE:
             prev_has_men = any(_has_lemma(s, words, MEN) for s in prev_segs)
             return ("Alt", False, True) if prev_has_men else ("Ser", True, False)

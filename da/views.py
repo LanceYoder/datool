@@ -146,13 +146,18 @@ class FirstPassView(APIView):
         text = payload.get("text") if isinstance(payload, dict) else None
         if not isinstance(text, str) or not text.strip():
             return _errors(["text must be a non-empty string"])
+        # The auto-analysis level: false/absent = minimal (sure joins only),
+        # true = maximal (the full classifier).
+        maximal = payload.get("maximal", False) if isinstance(payload, dict) else False
+        if not isinstance(maximal, bool):
+            return _errors(["maximal must be a boolean"])
         # Imported at call time: the first-pass service is a separate module;
         # the rest of the API must not go down with it, and tests may stub it.
         from .documents import DocumentError
         from .firstpass import first_pass
 
         try:
-            result = first_pass(text)
+            result = first_pass(text, maximal=maximal)
         except DocumentError:
             # build_document's self-validation failing is a builder bug, not
             # bad input — let it surface as a 500, never a 400 blaming the user.

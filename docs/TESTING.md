@@ -46,16 +46,20 @@ morphology, no passage reference).
 
 ## What to test (the editor)
 
-An analysis arrives **pre-split into clause propositions**, with **only the
-deterministic connections drawn** — the joins an explicit marker settles and
-the worked examples have never contradicted (γάρ grounds, ὅτι-content after
-a verb of saying, conditionals, ὡς-comparisons, ὥστε results, οὐ…ἀλλά).
-Everything else — every καί, every asyndeton, every judgment call — is left
-loose for the analyst. The tree is yours to build:
+An analysis arrives **pre-split into clause propositions**; how much of the
+tree comes pre-drawn is the **Minimal / Full** toggle next to Create
+(remembered per browser). **Minimal** (default) draws only the deterministic
+connections — the joins an explicit marker settles and the worked examples
+have never contradicted (γάρ grounds, ὅτι-content after a verb of saying,
+conditionals, ὡς-comparisons, ὥστε results, οὐ…ἀλλά, sentence-closing
+relatives, διό); every καί, every asyndeton, every judgment call is left
+loose for the analyst. **Full** proposes a complete labeled tree — every
+judgment call included — to be corrected rather than built:
 
 1. **Create**: paste the passage (or just type a reference like `1 Jn 1:5-7`)
-   — it locates itself while you type — then **Create**. In 1 John 1:5–7
-   exactly one connection arrives pre-drawn: the ὡς comparison in verse 7.
+   — it locates itself while you type — pick Minimal or Full, then
+   **Create**. In 1 John 1:5–7, Minimal pre-draws exactly one connection:
+   the ὡς comparison in verse 7.
 2. **Word info**: click any word for its card — lemma with transliteration,
    a short gloss, readable morphology, and the word's English here.
 3. **Split**: RIGHT-click a word → the proposition divides after it.

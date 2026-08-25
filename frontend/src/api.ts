@@ -85,8 +85,8 @@ export function restoreAnalysis(id: string): Promise<Analysis> {
   return request<Analysis>(`/api/analyses/${encodeURIComponent(id)}/restore`, 'POST');
 }
 
-export function firstPass(text: string): Promise<FirstPassResult> {
-  return request<FirstPassResult>('/api/first-pass', 'POST', { text });
+export function firstPass(text: string, maximal = false): Promise<FirstPassResult> {
+  return request<FirstPassResult>('/api/first-pass', 'POST', { text, maximal });
 }
 
 /** Server-side cap on one corpus words request (see da/views.py). */
