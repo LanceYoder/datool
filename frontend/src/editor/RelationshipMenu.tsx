@@ -65,7 +65,7 @@ export default function RelationshipMenu({ taxonomy, current, onPick }: Relation
               <div key={entry.code} className="menu-row">
                 {/* The line is the positioning context for the "i", so the
                     open description below never pulls it off center. */}
-                <div className="menu-line">
+                <div className={isCurrent ? 'menu-line current' : 'menu-line'}>
                   <button
                     type="button"
                     role="menuitem"

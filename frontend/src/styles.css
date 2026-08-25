@@ -566,8 +566,7 @@ div.error-box {
   white-space: nowrap;
 }
 
-.popover-item:hover,
-.menu-item:hover {
+.popover-item:hover {
   background: #eef2ff;
   border-color: transparent;
 }
@@ -645,9 +644,17 @@ div.error-box {
 /* A row is one relationship: the line (the item plus its "i"), and — when
    opened — the description beneath it. The "i" rides the LINE's right edge, so
    an open description never pulls it off center. */
+/* The highlight belongs to the LINE, not to the item inside it: hovering a
+   relationship lights the whole row, its "i" included. */
 .menu-line {
   display: flex;
   align-items: baseline;
+  border-radius: 5px;
+}
+
+.menu-line:hover,
+.menu-line.current {
+  background: #eef2ff;
 }
 
 .menu-item {
@@ -697,11 +704,7 @@ div.error-box {
   white-space: normal;
 }
 
-.menu-item.current {
-  background: #eef2ff;
-}
-
-.menu-item.current .menu-name {
+.menu-line.current .menu-name {
   color: var(--text);
 }
 
