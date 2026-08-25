@@ -935,28 +935,33 @@ div.error-box {
   opacity: 0.85;
 }
 
-/* The + / − rides the boundary the pointer is nearest. */
+/* The + / − rides the boundary the pointer is nearest, sitting directly ON
+   the band column: a solid round button with a white ring, so it reads over
+   any band color (and over the seam between two). */
 .section-control {
   position: absolute;
-  right: 18px;
+  right: -3px; /* centers the 20px button on the 14px band */
   transform: translateY(-50%);
-  width: 1.4rem;
-  height: 1.4rem;
+  width: 20px;
+  height: 20px;
   padding: 0;
+  border: none;
   border-radius: 50%;
-  background: #fff;
-  font-size: 1rem;
+  color: #fff;
+  font-size: 14px;
   font-weight: 700;
   line-height: 1;
-  box-shadow: 0 1px 4px rgb(15 23 42 / 20%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 0 0 2px #fff, 0 1px 4px rgb(15 23 42 / 35%);
 }
 
 .section-control.remove {
-  color: var(--danger);
-  border-color: var(--danger);
+  background: var(--danger);
 }
 
 .section-control.add {
-  color: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent);
 }

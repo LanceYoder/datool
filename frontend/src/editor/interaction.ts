@@ -126,10 +126,9 @@ export function parseDotId(id: string): DotRef | null {
  * Otherwise empty.
  *
  * The walk follows the prominent (starred) child through subordinate
- * brackets and fans out across a coordinate bracket's whole packet — except
- * Progression, which climaxes: its point is its LAST member (the course's
- * worked diagrams underline only the final step of a P). Mirrors the
- * server's main_point.
+ * brackets and fans out across a coordinate bracket's whole packet —
+ * Progression included (the Mark 4:10–12 diagram highlights BOTH members of
+ * its final P). Mirrors the server's main_point.
  */
 export function mainPointRefs(forest: readonly TreeNode[]): string[] {
   const root = forest.length === 1 ? forest[0] : undefined;
@@ -142,11 +141,7 @@ export function mainPointRefs(forest: readonly TreeNode[]): string[] {
     }
     const prom = node.prominent;
     const target =
-      prom !== null && prom !== undefined
-        ? node.children[prom]
-        : node.rel === 'Prog'
-          ? node.children[node.children.length - 1]
-          : undefined;
+      prom !== null && prom !== undefined ? node.children[prom] : undefined;
     if (target !== undefined) {
       walk(target);
     } else {

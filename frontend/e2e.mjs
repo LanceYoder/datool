@@ -660,6 +660,31 @@ await page.click('.editor-toolbar button:has-text("Undo")');
 await expectCount('.section-band', 2, 'undo restored the block break');
 ok('block gestures are single undo steps in the shared history');
 
+// Sticky colors: divide again lower down, then remove the FIRST division —
+// the bottom block must KEEP its own color, not shift to the freed one.
+const boundaryY6 = await page.evaluate(() => {
+  const row = document.querySelectorAll('.prop-row')[6];
+  return row.getBoundingClientRect().top;
+});
+await page.mouse.move(stripX, boundaryY6);
+await page.waitForSelector('.section-control.add');
+await page.locator('.section-control.add').click();
+await expectCount('.section-band', 3, 'a third block began lower down');
+await page.mouse.move(stripX, boundaryY);
+await page.waitForSelector('.section-control.remove');
+await page.locator('.section-control.remove').click();
+await expectCount('.section-band', 2, 'the first division removed again');
+const stickyColors = await page.evaluate(() =>
+  [...document.querySelectorAll('.section-band')].map((b) => getComputedStyle(b).backgroundColor),
+);
+// Dusty blue is the THIRD palette color: the lower block took it as the
+// third block on screen and keeps it after the removal above — a
+// position-derived scheme would repaint it sage.
+if (stickyColors[1] !== 'rgb(129, 153, 180)') {
+  await fail(`the lower block should keep dusty blue, got ${stickyColors.join(' / ')}`);
+}
+ok(`blocks keep their colors when others are removed (${stickyColors.join(' / ')})`);
+
 const rowsFinal = await countOf(SEL.row);
 const bracketsFinal = await countOf(SEL.bracket);
 const rootsFinal = await countOf(SEL.rootDot);
@@ -682,6 +707,12 @@ await expectCount(SEL.bracket, bracketsFinal, 'brackets survived the reload');
 await expectCount(SEL.rootDot, rootsFinal, 'roots survived the reload');
 await expectNone(`[stroke="${AMBER}"], [fill="${AMBER}"]`, 'still no amber after the reload');
 await expectCount('.section-band', 2, 'the color blocks survived the reload');
+const reloadColors = await page.evaluate(() =>
+  [...document.querySelectorAll('.section-band')].map((b) => getComputedStyle(b).backgroundColor),
+);
+if (reloadColors[1] !== 'rgb(129, 153, 180)') {
+  await fail(`the reloaded lower block lost its stored color: ${reloadColors.join(' / ')}`);
+}
 
 const stored = await page.request.get(`${API}/api/analyses/${analysisUrl.split('/').pop()}`);
 const storedDoc = (await stored.json()).document;
@@ -695,6 +726,9 @@ if (storedDoc.forest.length !== rootsFinal) {
 }
 if (!Array.isArray(storedDoc.sections) || storedDoc.sections.length !== 1) {
   await fail(`stored document should carry ONE block break, got ${JSON.stringify(storedDoc.sections)}`);
+}
+if (storedDoc.sections[0].color !== 2) {
+  await fail(`the stored break should keep color 2, got ${JSON.stringify(storedDoc.sections[0])}`);
 }
 ok('schemaVersion 2 forest and the block break round-tripped through the server');
 await snap('after-reload');

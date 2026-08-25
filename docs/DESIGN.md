@@ -152,9 +152,9 @@ automatically; the editor's right-edge strip adds and removes them by hand.
 
 Star walk: root `prominent: 1` → the Series packet → coordinate FAN, so the walk
 continues into each member. Main point: **6d + 6e jointly** ("we are lying and do
-not practice the truth") — matching the student's analysis. One coordinate is the
-exception: a Progression climaxes, so the walk takes only its LAST member (the
-worked diagrams underline only the final step of a P).
+not practice the truth") — matching the student's analysis. Every coordinate fans,
+Progression included (the Mark 4:10–12 diagram highlights BOTH members of its
+final P).
 
 First-pass vs. student on this verse: the pipeline gets the ἐάν conditional, the
 ὅτι content clause, and the 6d/6e Series right on its own. The καί before περιπατῶμεν

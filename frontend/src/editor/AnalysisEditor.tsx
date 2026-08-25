@@ -88,7 +88,7 @@ import type { PositionedBracket, ShakeState } from './BracketLayer';
 import RelationshipMenu from './RelationshipMenu';
 import ColorSettings from './ColorSettings';
 import SectionStrip from './SectionStrip';
-import { sectionColor, sectionIndexByPid, sectionsOf } from './sections';
+import { normalizeBreaks, sectionColor, sectionColorByPid, sectionsOf } from './sections';
 import HelpPanel from './HelpPanel';
 import { loadViewSettings, saveViewSettings } from './viewSettings';
 import type { ViewSettings } from './viewSettings';
@@ -128,7 +128,7 @@ interface RowContextValue {
   showEnglish: boolean;
   /** Reader's verb-bolding toggle (viewSettings). */
   showVerbs: boolean;
-  /** Color block per pid, or null while color blocking is off. */
+  /** Each pid's block COLOR (stored per block), or null while blocks are off. */
   sectionOf: ReadonlyMap<string, number> | null;
   /**
    * A single click on ANY word: the word-info popover (lemma, morphology,
@@ -604,11 +604,11 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
   }, [editor, docTick]);
 
   /** Color-block breaks — the DOC attr the section commands maintain. */
-  const breaks = useMemo<string[]>(() => {
-    const stored = editor?.state.doc.attrs.sections;
-    return Array.isArray(stored) ? (stored as string[]) : [];
+  const breaks = useMemo(
+    () => normalizeBreaks(editor?.state.doc.attrs.sections),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor, docTick]);
+    [editor, docTick],
+  );
 
   /** The completed analysis's main point (empty while the forest is loose). */
   const mainPids = useMemo<ReadonlySet<string>>(() => {
@@ -730,7 +730,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
       words,
       showEnglish: view.english,
       showVerbs: view.verbs,
-      sectionOf: view.blocks ? sectionIndexByPid(pids, breaks) : null,
+      sectionOf: view.blocks ? sectionColorByPid(pids, breaks) : null,
       lastPid: pids.length > 0 ? (pids[pids.length - 1] ?? null) : null,
       mainPids,
       onWordClick: (pid, ordinal, word, index, splittable, target) => {

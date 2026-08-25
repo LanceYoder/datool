@@ -402,12 +402,12 @@ class TestMainPoint:
         doc["forest"][0]["prominent"] = None
         assert main_point(doc) == ["p2", "p4", "p5"]
 
-    def test_progression_climaxes_at_its_last_member(self):
-        # Progression is the one coordinate that does NOT fan: the worked
-        # diagrams underline only the final step of a P.
+    def test_progression_fans_like_any_coordinate(self):
+        # The Mark 4:10-12 diagram highlights BOTH members of its final P, so
+        # Progression fans exactly like Series.
         doc = valid_doc()
         doc["forest"][0]["children"][1]["rel"] = "Prog"
-        assert main_point(doc) == ["p5"]
+        assert main_point(doc) == ["p4", "p5"]
 
     def test_single_prop_doc(self):
         doc = {
@@ -436,8 +436,25 @@ class TestSections:
 
     def test_later_propositions_may_begin_a_block(self):
         doc = partial_doc()
+        doc["sections"] = [{"start": "p2", "color": 1}, {"start": "p4", "color": 5}]
+        validate_document(doc)
+
+    def test_legacy_pid_strings_still_validate(self):
+        doc = partial_doc()
         doc["sections"] = ["p2", "p4"]
         validate_document(doc)
+
+    def test_colors_must_be_non_negative_integers(self):
+        doc = partial_doc()
+        doc["sections"] = [{"start": "p2", "color": -1}]
+        assert problems_of(doc) == [
+            "sections[0].color must be a non-negative integer"]
+        doc["sections"] = [{"start": "p2", "color": "sage"}]
+        assert problems_of(doc) == [
+            "sections[0].color must be a non-negative integer"]
+        doc["sections"] = [{"start": "p2", "color": True}]
+        assert problems_of(doc) == [
+            "sections[0].color must be a non-negative integer"]
 
     def test_the_first_proposition_cannot_begin_one(self):
         doc = partial_doc()
@@ -446,10 +463,11 @@ class TestSections:
 
     def test_must_name_real_propositions(self):
         doc = partial_doc()
-        doc["sections"] = ["nope", 7]
+        doc["sections"] = ["nope", {"start": "gone", "color": 2}, 7]
         assert problems_of(doc) == [
             "sections[0] must name a proposition",
             "sections[1] must name a proposition",
+            "sections[2] must be a pid or {start, color}",
         ]
 
     def test_no_duplicates_and_no_going_backwards(self):
