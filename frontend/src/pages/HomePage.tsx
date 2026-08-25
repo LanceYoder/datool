@@ -83,6 +83,20 @@ export default function HomePage() {
     }
   };
 
+  // Deleting belongs to the LIST, not to the analysis you are working in: it
+  // is soft, so what it really does is move the row down into the trash.
+  const remove = async (item: AnalysisSummary) => {
+    if (!window.confirm(`Delete “${item.title}”? It moves to Recently deleted.`)) return;
+    setErrors([]);
+    try {
+      await deleteAnalysis(item.id);
+      setAnalyses(await listAnalyses());
+      setDeleted(await listDeletedAnalyses());
+    } catch (err) {
+      setErrors(errorMessages(err));
+    }
+  };
+
   const purge = async (item: DeletedAnalysisSummary) => {
     if (!window.confirm(`Delete “${item.title}” for good? This cannot be undone.`)) return;
     setErrors([]);
@@ -205,12 +219,20 @@ export default function HomePage() {
         {analyses !== null && analyses.length > 0 && (
           <ul className="analysis-list">
             {analyses.map((a) => (
-              <li key={a.id}>
+              <li key={a.id} className="analysis-row">
                 <Link to={`/analysis/${a.id}`} className="analysis-link">
                   <span className="analysis-title">{a.title}</span>
                   <span className="muted">{a.passageRef}</span>
                   <span className="muted analysis-date">{formatDate(a.updatedAt)}</span>
                 </Link>
+                <button
+                  type="button"
+                  className="danger analysis-delete"
+                  title={`Delete “${a.title}”`}
+                  onClick={() => void remove(a)}
+                >
+                  Delete
+                </button>
               </li>
             ))}
           </ul>

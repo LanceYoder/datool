@@ -205,6 +205,33 @@ button.danger {
   background: var(--bg-soft);
 }
 
+/* A row is the analysis plus the one thing you can do to it from here.
+   Deleting lives on the LIST, never inside the analysis being worked on. */
+.analysis-row {
+  display: flex;
+  align-items: center;
+}
+
+.analysis-row .analysis-link {
+  flex: 1;
+  min-width: 0;
+}
+
+.analysis-delete {
+  flex: none;
+  margin-right: 0.6rem;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.8rem;
+  opacity: 0;
+}
+
+/* Kept out of sight until the row is reached for — and never hidden from the
+   keyboard. */
+.analysis-row:hover .analysis-delete,
+.analysis-delete:focus-visible {
+  opacity: 1;
+}
+
 .analysis-title {
   font-weight: 600;
 }
