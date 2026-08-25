@@ -1,0 +1,198 @@
+{
+  "reference": "Ephesians 3:8–13",
+  "language": "english",
+  "source": "hand-drawn bracket diagram (NT 003 worked example)",
+  "mainPoint": [
+    "p10"
+  ],
+  "document": {
+    "schemaVersion": 2,
+    "propositions": [
+      {
+        "id": "p1",
+        "label": "1",
+        "source": {
+          "kind": "raw",
+          "text": "8 To me, the very least of all the saints, this grace was given,"
+        }
+      },
+      {
+        "id": "p2",
+        "label": "2",
+        "source": {
+          "kind": "raw",
+          "text": "to preach to the Gentiles the fathomless riches of Christ,"
+        }
+      },
+      {
+        "id": "p3",
+        "label": "3",
+        "source": {
+          "kind": "raw",
+          "text": "9 and to bring to light for everyone"
+        }
+      },
+      {
+        "id": "p4",
+        "label": "4",
+        "source": {
+          "kind": "raw",
+          "text": "what is the plan of the mystery hidden for ages by God, who created all things,"
+        }
+      },
+      {
+        "id": "p5",
+        "label": "5",
+        "source": {
+          "kind": "raw",
+          "text": "10 so that through the church the manifold wisdom of God might now be made known to the rulers and authorities in the heavenly places, according to the eternal purpose"
+        }
+      },
+      {
+        "id": "p6",
+        "label": "6",
+        "source": {
+          "kind": "raw",
+          "text": "which he accomplished in Christ Jesus our Lord,"
+        }
+      },
+      {
+        "id": "p7",
+        "label": "7",
+        "source": {
+          "kind": "raw",
+          "text": "12 in whom we have boldness and access with confidence through faith in him."
+        }
+      },
+      {
+        "id": "p8",
+        "label": "8",
+        "source": {
+          "kind": "raw",
+          "text": "13 So I ask you"
+        }
+      },
+      {
+        "id": "p9",
+        "label": "9",
+        "source": {
+          "kind": "raw",
+          "text": "not to lose heart over my sufferings for you,"
+        }
+      },
+      {
+        "id": "p10",
+        "label": "10",
+        "source": {
+          "kind": "raw",
+          "text": "which is your glory."
+        }
+      }
+    ],
+    "forest": [
+      {
+        "kind": "bracket",
+        "rel": "Inf",
+        "prominent": 1,
+        "children": [
+          {
+            "kind": "bracket",
+            "rel": "MEd",
+            "prominent": 1,
+            "children": [
+              {
+                "kind": "bracket",
+                "rel": "MEd",
+                "prominent": 1,
+                "children": [
+                  {
+                    "kind": "prop",
+                    "ref": "p1"
+                  },
+                  {
+                    "kind": "bracket",
+                    "rel": "FtIn",
+                    "prominent": 1,
+                    "children": [
+                      {
+                        "kind": "bracket",
+                        "rel": "Ser",
+                        "prominent": null,
+                        "children": [
+                          {
+                            "kind": "prop",
+                            "ref": "p2"
+                          },
+                          {
+                            "kind": "prop",
+                            "ref": "p3"
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "prop",
+                        "ref": "p4"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "bracket",
+                "rel": "GnSp",
+                "prominent": 1,
+                "children": [
+                  {
+                    "kind": "prop",
+                    "ref": "p5"
+                  },
+                  {
+                    "kind": "bracket",
+                    "rel": "FtIn",
+                    "prominent": 1,
+                    "children": [
+                      {
+                        "kind": "prop",
+                        "ref": "p6"
+                      },
+                      {
+                        "kind": "prop",
+                        "ref": "p7"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "bracket",
+            "rel": "FtIn",
+            "prominent": 1,
+            "children": [
+              {
+                "kind": "prop",
+                "ref": "p8"
+              },
+              {
+                "kind": "bracket",
+                "rel": "FtIn",
+                "prominent": 1,
+                "children": [
+                  {
+                    "kind": "prop",
+                    "ref": "p9"
+                  },
+                  {
+                    "kind": "prop",
+                    "ref": "p10"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

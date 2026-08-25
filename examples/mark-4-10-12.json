@@ -1,0 +1,229 @@
+{
+  "reference": "Mark 4:10–12",
+  "language": "greek",
+  "source": "hand-drawn bracket diagram (NT 003 worked example)",
+  "mainPoint": [
+    "p10",
+    "p11"
+  ],
+  "document": {
+    "schemaVersion": 2,
+    "propositions": [
+      {
+        "id": "p1",
+        "label": "10a",
+        "source": {
+          "kind": "corpus",
+          "start": 20258,
+          "end": 20262
+        }
+      },
+      {
+        "id": "p2",
+        "label": "10b",
+        "source": {
+          "kind": "corpus",
+          "start": 20263,
+          "end": 20272
+        }
+      },
+      {
+        "id": "p3",
+        "label": "11a",
+        "source": {
+          "kind": "corpus",
+          "start": 20273,
+          "end": 20275
+        }
+      },
+      {
+        "id": "p4",
+        "label": "11b",
+        "source": {
+          "kind": "corpus",
+          "start": 20276,
+          "end": 20283
+        }
+      },
+      {
+        "id": "p5",
+        "label": "11c",
+        "source": {
+          "kind": "corpus",
+          "start": 20284,
+          "end": 20292
+        }
+      },
+      {
+        "id": "p6",
+        "label": "12a",
+        "source": {
+          "kind": "corpus",
+          "start": 20293,
+          "end": 20295
+        }
+      },
+      {
+        "id": "p7",
+        "label": "12b",
+        "source": {
+          "kind": "corpus",
+          "start": 20296,
+          "end": 20298
+        }
+      },
+      {
+        "id": "p8",
+        "label": "12c",
+        "source": {
+          "kind": "corpus",
+          "start": 20299,
+          "end": 20301
+        }
+      },
+      {
+        "id": "p9",
+        "label": "12d",
+        "source": {
+          "kind": "corpus",
+          "start": 20302,
+          "end": 20304
+        }
+      },
+      {
+        "id": "p10",
+        "label": "12e",
+        "source": {
+          "kind": "corpus",
+          "start": 20305,
+          "end": 20306
+        }
+      },
+      {
+        "id": "p11",
+        "label": "12f",
+        "source": {
+          "kind": "corpus",
+          "start": 20307,
+          "end": 20309
+        }
+      }
+    ],
+    "forest": [
+      {
+        "kind": "bracket",
+        "rel": "MEd",
+        "prominent": 1,
+        "children": [
+          {
+            "kind": "bracket",
+            "rel": "FtIn",
+            "prominent": 1,
+            "children": [
+              {
+                "kind": "bracket",
+                "rel": "SR",
+                "prominent": 1,
+                "children": [
+                  {
+                    "kind": "bracket",
+                    "rel": "Tmp",
+                    "prominent": 1,
+                    "children": [
+                      {
+                        "kind": "prop",
+                        "ref": "p1"
+                      },
+                      {
+                        "kind": "prop",
+                        "ref": "p2"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "prop",
+                    "ref": "p3"
+                  }
+                ]
+              },
+              {
+                "kind": "bracket",
+                "rel": "Alt",
+                "prominent": null,
+                "children": [
+                  {
+                    "kind": "prop",
+                    "ref": "p4"
+                  },
+                  {
+                    "kind": "prop",
+                    "ref": "p5"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "bracket",
+            "rel": "MEd",
+            "prominent": 1,
+            "children": [
+              {
+                "kind": "bracket",
+                "rel": "Ser",
+                "prominent": null,
+                "children": [
+                  {
+                    "kind": "bracket",
+                    "rel": "Adv",
+                    "prominent": 1,
+                    "children": [
+                      {
+                        "kind": "prop",
+                        "ref": "p6"
+                      },
+                      {
+                        "kind": "prop",
+                        "ref": "p7"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "bracket",
+                    "rel": "Adv",
+                    "prominent": 1,
+                    "children": [
+                      {
+                        "kind": "prop",
+                        "ref": "p8"
+                      },
+                      {
+                        "kind": "prop",
+                        "ref": "p9"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "bracket",
+                "rel": "Prog",
+                "prominent": null,
+                "children": [
+                  {
+                    "kind": "prop",
+                    "ref": "p10"
+                  },
+                  {
+                    "kind": "prop",
+                    "ref": "p11"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
