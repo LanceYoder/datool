@@ -6,6 +6,7 @@
 // bands themselves are inert.
 
 import { useState } from 'react';
+import type { SectionBreak } from '../types';
 import type { RowBox } from './layout';
 import type { Section } from './sections';
 import { sectionColor } from './sections';
@@ -17,8 +18,8 @@ export interface SectionStripProps {
   pids: readonly string[];
   /** Measured rows, by pid — what gives each band its top and bottom. */
   rowBoxes: ReadonlyMap<string, RowBox>;
-  /** Pids that currently begin a block. */
-  breaks: readonly string[];
+  /** The breaks that currently begin a block. */
+  breaks: readonly SectionBreak[];
   height: number;
   onAdd: (pid: string) => void;
   onRemove: (pid: string) => void;
@@ -63,7 +64,7 @@ export default function SectionStrip({
     setHover(nearest);
   };
 
-  const isBreak = hover !== null && breaks.includes(hover.pid);
+  const isBreak = hover !== null && breaks.some((b) => b.start === hover.pid);
 
   return (
     <div
@@ -82,7 +83,7 @@ export default function SectionStrip({
             style={{
               top: box.top,
               height: Math.max(2, box.bottom - box.top),
-              background: sectionColor(section.index).strip,
+              background: sectionColor(section.color).strip,
             }}
           />
         );

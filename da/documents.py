@@ -12,7 +12,8 @@ The document shape (see docs/DESIGN.md §3, §7):
         ...
       ],
       "forest": [node, ...],       # >= 1 roots, in proposition order
-      "sections": [str, ...]       # optional: pids that BEGIN a color block
+      "sections": [{"start": str, "color": int}, ...]   # optional color blocks
+                                   # (legacy: plain pid strings still load)
     }
 
     node := {"kind": "prop", "ref": str}
@@ -133,9 +134,12 @@ def validate_document(doc, corpus_size: int | None = None) -> None:
         if "color" in p and not isinstance(p["color"], str):
             problems.append(f"{where}.color must be a string")
 
-    # Color blocks: the pids at which a new block begins. Divisions of the
+    # Color blocks: the pids at which a new block begins, each with the
+    # palette color the block KEEPS for as long as it exists. Divisions of the
     # passage the analyst drew, so they are stored with the analysis — but the
     # first proposition never starts one, because the document already does.
+    # Documents written before colors were stored carry plain pid strings;
+    # both shapes validate.
     sections = doc.get("sections")
     if sections is not None:
         if not isinstance(sections, list):
@@ -144,8 +148,20 @@ def validate_document(doc, corpus_size: int | None = None) -> None:
             order = {pid: i for i, pid in enumerate(prop_ids)}
             seen: set[str] = set()
             previous = -1
-            for i, pid in enumerate(sections):
+            for i, entry in enumerate(sections):
                 where = f"sections[{i}]"
+                if isinstance(entry, str):
+                    pid = entry  # legacy shape: color was derived from position
+                elif isinstance(entry, dict):
+                    pid = entry.get("start")
+                    color = entry.get("color")
+                    if (not isinstance(color, int) or isinstance(color, bool)
+                            or color < 0):
+                        problems.append(
+                            f"{where}.color must be a non-negative integer")
+                else:
+                    problems.append(f"{where} must be a pid or {{start, color}}")
+                    continue
                 if not isinstance(pid, str) or pid not in order:
                     problems.append(f"{where} must name a proposition")
                     continue
@@ -224,10 +240,10 @@ def _walk_tree(node, where: str, leaves: list[str], problems: list[str]) -> None
 def main_point(doc) -> list[str]:
     """Proposition ids of the main point: follow the stars from the single
     root. A subordinate bracket walks into its starred child; a coordinate
-    bracket fans — the walk CONTINUES into every member — except Progression,
-    which climaxes: its point is its last member (the course's worked
-    diagrams underline only the final step of a P). Mirrors the client's
-    mainPointRefs, which paints these rows red.
+    bracket fans — the walk CONTINUES into every member (the Mark 4:10-12
+    diagram highlights BOTH members of its final Progression, so Progression
+    fans like any other coordinate). Mirrors the client's mainPointRefs,
+    which paints these rows red.
 
     A forest with more than one root is a partly connected analysis — nothing
     supports everything else yet, so there is no main point: return []."""
@@ -241,8 +257,6 @@ def main_point(doc) -> list[str]:
             out.append(node["ref"])
         elif node.get("prominent") is not None:
             walk(node["children"][node["prominent"]])
-        elif node.get("rel") == "Prog":
-            walk(node["children"][-1])
         else:
             for child in node["children"]:
                 walk(child)

@@ -28,9 +28,9 @@ import type { Editor } from '@tiptap/core';
 import { closeHistory } from '@tiptap/pm/history';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import type { Transaction } from '@tiptap/pm/state';
-import type { CorpusWord, TaxonomyEntry } from '../types';
+import type { CorpusWord, SectionBreak, TaxonomyEntry } from '../types';
 import { displayWordText } from './convert';
-import { addBreak, removeBreak } from './sections';
+import { addBreak, normalizeBreaks, removeBreak } from './sections';
 
 /**
  * Dispatch a command's single transaction as its own UNDO STEP.
@@ -688,13 +688,16 @@ function pidsInOrder(doc: PMNode): string[] {
   return propositionsInOrder(doc).map((p) => String(p.node.attrs.pid));
 }
 
-function currentBreaks(doc: PMNode): string[] {
-  return Array.isArray(doc.attrs.sections) ? (doc.attrs.sections as string[]) : [];
+function currentBreaks(doc: PMNode): SectionBreak[] {
+  return normalizeBreaks(doc.attrs.sections);
 }
 
-function setBreaks(editor: Editor, next: string[]): boolean {
+function setBreaks(editor: Editor, next: SectionBreak[]): boolean {
   const current = currentBreaks(editor.state.doc);
-  if (next.length === current.length && next.every((pid, i) => pid === current[i])) {
+  if (
+    next.length === current.length &&
+    next.every((b, i) => b.start === current[i]?.start && b.color === current[i]?.color)
+  ) {
     return false; // nothing to change: dispatch nothing, no empty undo step
   }
   dispatch(editor, editor.state.tr.setDocAttribute('sections', next));

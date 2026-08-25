@@ -599,19 +599,19 @@ describe('addSectionBreak / removeSectionBreak', () => {
     expect(ed.state.doc.attrs.sections).toEqual([]);
 
     expect(addSectionBreak(ed, 'b')).toBe(true);
-    expect(ed.state.doc.attrs.sections).toEqual(['b']);
-    expect(nodeToDocument(ed.state.doc, doc).sections).toEqual(['b']);
+    expect(ed.state.doc.attrs.sections).toEqual([{ start: 'b', color: 1 }]);
+    expect(nodeToDocument(ed.state.doc, doc).sections).toEqual([{ start: 'b', color: 1 }]);
 
     expect(ed.commands.undo()).toBe(true);
     expect(ed.state.doc.attrs.sections).toEqual([]);
     expect(ed.commands.redo()).toBe(true);
-    expect(ed.state.doc.attrs.sections).toEqual(['b']);
+    expect(ed.state.doc.attrs.sections).toEqual([{ start: 'b', color: 1 }]);
 
     expect(removeSectionBreak(ed, 'b')).toBe(true);
     expect(ed.state.doc.attrs.sections).toEqual([]);
     expect('sections' in nodeToDocument(ed.state.doc, doc)).toBe(false);
     expect(ed.commands.undo()).toBe(true);
-    expect(ed.state.doc.attrs.sections).toEqual(['b']);
+    expect(ed.state.doc.attrs.sections).toEqual([{ start: 'b', color: 1 }]);
   });
 
   it('dispatches nothing for a no-op: first proposition, unknown pid, repeat', () => {
@@ -630,7 +630,7 @@ describe('addSectionBreak / removeSectionBreak', () => {
     const ed = open(doc);
     expect(addSectionBreak(ed, 'b')).toBe(true);
     expect(splitProposition(ed, propPos(ed, 'b'), 1, null)).toBe(true);
-    expect(nodeToDocument(ed.state.doc, doc).sections).toEqual(['b']);
+    expect(nodeToDocument(ed.state.doc, doc).sections).toEqual([{ start: 'b', color: 1 }]);
   });
 
   it('merging across a break dissolves it on emit — and undoing the merge restores it', () => {
@@ -641,7 +641,17 @@ describe('addSectionBreak / removeSectionBreak', () => {
     expect('sections' in nodeToDocument(ed.state.doc, doc)).toBe(false);
     // The attr still names 'b' (pruning is emit-only), so undo brings it back.
     expect(ed.commands.undo()).toBe(true);
-    expect(nodeToDocument(ed.state.doc, doc).sections).toEqual(['b']);
+    expect(nodeToDocument(ed.state.doc, doc).sections).toEqual([{ start: 'b', color: 1 }]);
+  });
+
+  it('a block keeps its color when the block above it is removed', () => {
+    const doc = looseDoc(); // props a, b, c
+    const ed = open(doc);
+    expect(addSectionBreak(ed, 'b')).toBe(true); // block b takes color 1
+    expect(addSectionBreak(ed, 'c')).toBe(true); // block c takes color 2
+    expect(removeSectionBreak(ed, 'b')).toBe(true);
+    // c's block still wears ITS color, not a re-derived one.
+    expect(nodeToDocument(ed.state.doc, doc).sections).toEqual([{ start: 'c', color: 2 }]);
   });
 });
 

@@ -28,7 +28,7 @@ import type {
   Proposition,
   TreeNode,
 } from '../types';
-import { pruneBreaks } from './sections';
+import { normalizeBreaks, pruneBreaks } from './sections';
 
 /**
  * Bring any stored document to the v2 shape: `forest` is the list of ordered
@@ -157,8 +157,9 @@ export function documentToNode(
   return {
     type: 'doc',
     // Color-block breaks ride the doc node itself (see schema.ts), so the
-    // strip's gestures share the history with every other command.
-    attrs: { sections: normalized.sections ?? [] },
+    // strip's gestures share the history with every other command. Legacy
+    // pid-string lists normalize to {start, color} here, on the way in.
+    attrs: { sections: normalizeBreaks(normalized.sections) },
     content: normalized.forest.map(build),
   };
 }
@@ -243,9 +244,10 @@ export function nodeToDocument(
   // can strand a break's pid, and a stranded break must never reach the
   // server. The attr itself keeps the stale pid — undoing the merge brings
   // the break back — pruning happens only here, on the way out.
-  const breaks = Array.isArray(pmDoc.attrs.sections)
-    ? pruneBreaks(pmDoc.attrs.sections as string[], propositions.map((p) => p.id))
-    : [];
+  const breaks = pruneBreaks(
+    normalizeBreaks(pmDoc.attrs.sections),
+    propositions.map((p) => p.id),
+  );
   if (breaks.length > 0) out.sections = breaks;
   return out;
 }

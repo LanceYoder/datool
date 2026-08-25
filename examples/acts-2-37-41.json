@@ -3,7 +3,10 @@
   "language": "greek",
   "source": "hand-drawn bracket diagram over the ESV, photographed; rows mapped to the same clauses in the SBLGNT",
   "mainPoint": [
+    "p6",
+    "p7",
     "p8",
+    "p15",
     "p16"
   ],
   "document": {
@@ -326,5 +329,6 @@
         ]
       }
     ]
-  }
+  },
+  "mainPointNote": "The drawing's red pen underlines only 38d and 41b - the final steps of the two Progressions - but its walk-line runs through the WHOLE climactic packet, and the Mark 4:10-12 diagram highlights both members of a P, so the formal walk fans: the underlines are the student's emphasis within it."
 }

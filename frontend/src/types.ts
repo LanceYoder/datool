@@ -64,15 +64,25 @@ export interface BracketNode {
 
 export type TreeNode = PropRefNode | BracketNode;
 
+/** A stored color block: the pid that begins it, and the palette color it
+ * keeps for as long as it exists. */
+export interface SectionBreak {
+  start: string;
+  color: number;
+}
+
 export interface Document {
   schemaVersion: 1 | 2;
   propositions: Proposition[];
   /**
-   * Color blocks: the proposition ids that BEGIN one, in order. The document
-   * always opens inside its first block, so the first proposition is never
-   * listed; absent or empty means the passage is one undivided block.
+   * Color blocks: the breaks that BEGIN one, in proposition order. The
+   * document always opens inside its first block (first palette color), so
+   * the first proposition is never listed; absent or empty means the passage
+   * is one undivided block. Documents written before colors were stored may
+   * carry plain pid strings (see normalizeBreaks); the editor always writes
+   * {start, color}.
    */
-  sections?: string[];
+  sections?: (SectionBreak | string)[];
   /** v1 only: the single connected root. Absent in v2. */
   tree?: TreeNode;
   /** v2: ordered forest roots. Absent in v1. */

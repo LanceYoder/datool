@@ -77,8 +77,8 @@ editable; what to test is overriding it:
 8. **Star**: click a `*` to move prominence to the other member (the letter
    labels follow the star).
 9. **Main point**: while every proposition is connected into ONE tree, the
-   star walk from the top (coordinate brackets fan; a Progression takes its
-   last member — the climax) shows red. It follows the stars as you flip
+   star walk from the top (fanning out across coordinate brackets) shows
+   red. It follows the stars as you flip
    them, clears if you disconnect anything, and returns when the tree is
    whole again.
 10. **Color blocks**: the passage sits on one muted background with a

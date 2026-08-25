@@ -3,9 +3,10 @@
   "language": "greek",
   "source": "hand-drawn bracket diagram (NT 003 worked example)",
   "mainPoint": [
+    "p10",
     "p11"
   ],
-  "mainPointNote": "12f only, per the Progression-climax rule (a P's point is its final member — the Acts 2:37-41 drawing underlines only the last step of both its Progressions). VERIFY against this diagram's drawing: if it underlines 12e AND 12f, Progression should fan instead, and this file plus main_point (da/documents.py) and mainPointRefs (frontend interaction.ts) must change together.",
+  "mainPointNote": "The drawing highlights 12e AND 12f - both members of the final Progression (confirmed against the photo). This is what settled the walk rule: a coordinate fans, Progression included.",
   "document": {
     "schemaVersion": 2,
     "propositions": [

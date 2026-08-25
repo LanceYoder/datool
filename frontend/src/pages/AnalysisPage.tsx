@@ -149,13 +149,17 @@ export default function AnalysisPage() {
         <button className="danger" onClick={() => void remove()} disabled={busy || analysis === null}>
           Delete
         </button>
-        {/* Save state is for the screen only — the print sheet drops it. */}
-        {(dirty || titleDirty || notesDirty) && (
-          <span className="muted save-state">Unsaved changes</span>
-        )}
-        {savedAt !== null && errors.length === 0 && !dirty && (
-          <span className="muted save-state">Saved {savedAt.toLocaleTimeString()}</span>
-        )}
+        {/* Save state is for the screen only — the print sheet drops it. The
+            span is ALWAYS mounted at a fixed width: the title input flexes to
+            fill the row, so a status that came and went would make the whole
+            toolbar (and everything under it) shift on the first edit. */}
+        <span className="muted save-state" role="status">
+          {dirty || titleDirty || notesDirty
+            ? 'Unsaved changes'
+            : savedAt !== null && errors.length === 0
+              ? `Saved ${savedAt.toLocaleTimeString()}`
+              : ''}
+        </span>
       </div>
       {errors.length > 0 && (
         <ul className="error-box">
