@@ -158,7 +158,9 @@ export default function AnalysisPage() {
         <>
           <p className="muted passage-ref">{analysis.passageRef}</p>
           <AnalysisEditor document={initialDoc} onChange={onDocumentChange} />
-          <section className="notes-panel">
+          {/* has-notes is what the print sheet reads: an empty box prints
+              nothing rather than a blank page. */}
+          <section className={notes.trim() === '' ? 'notes-panel' : 'notes-panel has-notes'}>
             <h2>Notes</h2>
             <NotesEditor value={notes} onChange={setNotes} />
           </section>

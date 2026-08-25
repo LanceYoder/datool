@@ -862,11 +862,21 @@ div.error-box {
     -webkit-print-color-adjust: exact;
   }
 
-  /* Scale set per page from the analysis's real width (see AnalysisPage). */
+  /* Scale set per page from the analysis's real width (see AnalysisPage).
+     ZOOM, not transform: a transformed box is laid out at its original size
+     and then drawn smaller, so the page it belongs to is paginated as if
+     nothing had shrunk — which is what left a printed page half empty with
+     its last rows cut off. Zoom scales the layout itself, so the break falls
+     where the reader sees it fall. */
   .editor-shell {
-    transform: scale(var(--print-scale, 1));
-    transform-origin: top left;
-    width: calc(100% / var(--print-scale, 1));
+    zoom: var(--print-scale, 1);
+  }
+
+  /* The color-block strip is an editing control, and its bands are one tall
+     absolutely-positioned column that no page break can divide. The blocks
+     still print: every row carries its color as a background. */
+  .section-strip {
+    display: none;
   }
 
   /* A proposition — its English line, label and Greek — never splits across
@@ -875,7 +885,14 @@ div.error-box {
     break-inside: avoid;
   }
 
+  /* Notes print on their own page — when there are any. An empty box would
+     otherwise print a blank page after every analysis. */
   .notes-panel {
+    display: none;
+  }
+
+  .notes-panel.has-notes {
+    display: block;
     break-before: page;
     margin-top: 1rem;
   }
