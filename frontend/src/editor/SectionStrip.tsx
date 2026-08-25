@@ -6,6 +6,7 @@
 // bands themselves are inert.
 
 import { useState } from 'react';
+import type { CSSProperties } from 'react';
 import type { SectionBreak } from '../types';
 import type { RowBox } from './layout';
 import type { Section } from './sections';
@@ -80,11 +81,15 @@ export default function SectionStrip({
           <div
             key={section.pids[0]}
             className="section-band"
-            style={{
-              top: box.top,
-              height: Math.max(2, box.bottom - box.top),
-              background: sectionColor(section.color).strip,
-            }}
+            style={
+              {
+                top: box.top,
+                height: Math.max(2, box.bottom - box.top),
+                // Published, not painted — see PropositionRow: a skin decides
+                // how heavily the block reads down the edge of its page.
+                '--band-bg': sectionColor(section.color).strip,
+              } as CSSProperties
+            }
           />
         );
       })}

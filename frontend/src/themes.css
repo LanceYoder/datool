@@ -310,6 +310,24 @@
   letter-spacing: 0.03em;
 }
 
+/* ---- The analyst's blocks, as a wash of pigment ----
+   The palette's pale backgrounds were mixed for white paper and vanish on
+   vellum, so the book washes the block on with its SATURATED colour at low
+   strength instead. Translucent on purpose: the grain of the page and the
+   scribe's ruling have to read through a tinted section, the way a wash sits
+   on parchment rather than covering it. */
+
+[data-theme='book'] .prop-row {
+  background: color-mix(in srgb, var(--block-ink, transparent) 27%, transparent);
+}
+
+/* Down the edge, the block is a painted tab — full strength, ruled in gold. */
+[data-theme='book'] .section-band {
+  opacity: 0.88;
+  border-radius: 1px;
+  box-shadow: inset 0 0 0 1px rgb(176 141 46 / 50%);
+}
+
 [data-theme='book'] .word:hover {
   background: rgb(176 141 46 / 22%);
 }
@@ -587,6 +605,28 @@
   font-family: 'Caveat', cursive;
   font-size: 17px;
   font-weight: 600;
+}
+
+/* ---- The analyst's blocks, as a pass of highlighter ----
+   Drawn ON the ruled sheet, not under it: the rules and the red margin have
+   to run straight through a block. A marker never lays down evenly either,
+   so the pass is a shade lighter where it starts and stops. */
+
+[data-theme='notebook'] .prop-row {
+  background: linear-gradient(
+    92deg,
+    color-mix(in srgb, var(--block-ink, transparent) 11%, transparent) 0%,
+    color-mix(in srgb, var(--block-ink, transparent) 25%, transparent) 3%,
+    color-mix(in srgb, var(--block-ink, transparent) 19%, transparent) 62%,
+    color-mix(in srgb, var(--block-ink, transparent) 26%, transparent) 97%,
+    color-mix(in srgb, var(--block-ink, transparent) 9%, transparent) 100%
+  );
+}
+
+/* The margin stripe is the same marker, run down the edge of the page. */
+[data-theme='notebook'] .section-band {
+  opacity: 0.62;
+  border-radius: 7px;
 }
 
 [data-theme='notebook'] .word:hover {
@@ -910,6 +950,22 @@
   font-weight: 500;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+/* ---- The analyst's blocks, quieted ----
+   White paper is what the palette was mixed for, so the colours stay as they
+   are and only lose a little weight — enough that a block reads as a change
+   of ground rather than as a panel laid on top of one. The stripe squares off
+   with everything else here. */
+
+[data-theme='slate'] .prop-row {
+  background: color-mix(in srgb, var(--block-bg, transparent) 66%, transparent);
+}
+
+[data-theme='slate'] .section-band {
+  width: 10px;
+  border-radius: 0;
+  opacity: 0.9;
 }
 
 [data-theme='slate'] .word:hover {

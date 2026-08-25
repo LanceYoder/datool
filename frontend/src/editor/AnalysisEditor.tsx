@@ -213,16 +213,24 @@ function PropositionRow({ node }: ReactNodeViewProps) {
       : [];
 
   // The block's color sits behind the whole row — English line included, so a
-  // block reads as one band of the passage.
+  // block reads as one band of the passage. The row PUBLISHES the color rather
+  // than painting with it: both strengths, the pale wash and the saturated
+  // ink, so each skin can lay the block on at the weight its page wants (a
+  // pastel sized for white paper disappears on vellum). styles.css paints the
+  // original with --block-bg; the other skins reach for --block-ink.
   const section = ctx?.sectionOf?.get(pid);
-  const background = section === undefined ? undefined : sectionColor(section).background;
+  const block = section === undefined ? undefined : sectionColor(section);
 
   return (
     <NodeViewWrapper
       as="div"
       className={isMain ? 'prop-row main-point' : 'prop-row'}
       data-pid={pid}
-      style={background === undefined ? undefined : { background }}
+      style={
+        block === undefined
+          ? undefined
+          : ({ '--block-bg': block.background, '--block-ink': block.strip } as CSSProperties)
+      }
     >
       {/* The English line spans the row above the label so the label's baseline
           is the GREEK's, not the reference text's. */}

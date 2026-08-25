@@ -341,6 +341,10 @@ div.error-box {
 .prop-row {
   display: flex;
   flex-direction: column;
+  /* The analyst's block, laid on at this design's weight. The row publishes
+     --block-bg and --block-ink (AnalysisEditor); painting is the sheet's job,
+     so a skin can wash the block over its paper instead of covering it. */
+  background: var(--block-bg, transparent);
 }
 
 .prop-line {
@@ -1080,6 +1084,7 @@ div.error-box {
   width: 14px;
   border-radius: 2px;
   opacity: 0.85;
+  background: var(--band-bg, transparent);
 }
 
 /* The + / − rides the boundary the pointer is nearest, sitting directly ON
