@@ -14,10 +14,15 @@
 //                         opens on the new bracket; a rejected pair shakes and
 //                         keeps the first selection
 //   click a label         the relationship menu: all 18 relationships grouped
-//                         by family, plus Disconnect (root brackets only)
+//                         by family, each with its key and its definition
 //   click a star          flipStar (the labels follow the star)
-//   hover a row           "Merge below" on every proposition but the last
-//   toolbar               Undo / Redo, and nothing else
+//   right-click a dot     remove the connections there (Delete does the same
+//                         to a selected dot)
+//   click a word          the word's card: lemma, morphology, gloss
+//   right-click a word    split after it — or, on the last word, merge with
+//                         the proposition below
+//   toolbar               Undo / Redo / Clear tree, the reader's display
+//                         switches, and "?"
 //
 // Selection state: one popover at a time (Escape and an outside click close
 // it); the selected dot survives re-renders but is dropped whenever the
@@ -157,7 +162,7 @@ const RowContext = createContext<RowContextValue | null>(null);
 function rowTokens(
   node: ReactNodeViewProps['node'],
   words: ReadonlyMap<number, CorpusWord>,
-): { key: string | number; display: string; hover?: string; index?: number; verb?: boolean }[] {
+): { key: string | number; display: string; index?: number; verb?: boolean }[] {
   const { srcStart, srcEnd } = node.attrs as { srcStart: unknown; srcEnd: unknown };
   if (typeof srcStart === 'number' && typeof srcEnd === 'number') {
     const out = [];
@@ -167,7 +172,6 @@ function rowTokens(
         out.push({
           key: i,
           display: displayWordText(w.text),
-          hover: `${w.lemma} · ${w.parsing}`,
           index: i,
           // MorphGNT marks every verb form — finite, participle, infinitive —
           // with the 'V-' part of speech.
@@ -237,19 +241,12 @@ function PropositionRow({ node }: ReactNodeViewProps) {
             {ctx !== null
               ? tokens.map((t, ordinal) => {
                   const splittable = canSplitAfter(ordinal, tokens.length);
-                  // Morphology stays on the tooltip; the split hint joins it.
-                  const title =
-                    (t.hover !== undefined ? t.hover : '') +
-                    (splittable
-                      ? `${t.hover !== undefined ? '\n' : ''}right-click: split after this word`
-                      : ctx.lastPid !== pid
-                        ? `${t.hover !== undefined ? '\n' : ''}right-click: merge with the one below`
-                        : '');
+                  // No hover tooltip: a click opens the word's card, which
+                  // says everything the tooltip did and more.
                   return (
                     <span
                       key={t.key}
                       className={wordClass(splittable, t.verb === true && ctx.showVerbs)}
-                      title={title === '' ? undefined : title}
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={(event) => {
                         event.preventDefault();
@@ -909,9 +906,6 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
           role="menu"
         >
           <div className="word-head greek">{popover.word}</div>
-          {popover.splittable && (
-            <div className="word-hint muted">Right-click a word to split after it</div>
-          )}
           {info !== undefined && (
             <div className="word-info">
               <div className="word-lemma">

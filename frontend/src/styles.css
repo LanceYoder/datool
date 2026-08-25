@@ -600,13 +600,6 @@ div.error-box {
   font-weight: 600;
 }
 
-.word-hint {
-  margin-top: 0.35rem;
-  padding-top: 0.3rem;
-  border-top: 1px solid var(--border);
-  font-size: 0.8rem;
-}
-
 .menu-popover {
   width: 17rem;
 }
