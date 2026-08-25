@@ -1,0 +1,938 @@
+/* ---------------------------------------------------------------------------
+   The mocked-up designs, one block each, keyed off `data-theme` on <html>
+   (see theme.tsx). A skin is allowed to change the GROUND and the CHROME:
+   the page behind everything, the ink the tree is drawn in, and the header,
+   toolbar, panels and buttons around it.
+
+   Three things are LOCKED and no skin touches them:
+     * the tree's geometry — layout.ts decides where every spine, tick, dot,
+       label and star goes, and the skins only recolor them;
+     * the Greek and its English reference line — the same face, size and
+       leading in every design;
+     * the analyst's color blocks — SECTION_COLORS is the analysis speaking,
+       not the decoration.
+
+   The one hook a skin needs from the layout is --tree-margin, set on
+   .editor-shell: the x where the tree's margin ends and the text column
+   begins. It is what lets the book and the notebook be two pages.
+   --------------------------------------------------------------------------- */
+
+/* ===========================================================================
+   BOOK — an illuminated two-page spread
+   ===========================================================================
+   The leaf is vellum inside a foliate border (ornaments/frame.svg): acanthus
+   in lapis and coral, leaf green, gold bosses. The tree stands on the verso,
+   the text on the recto, and the recto is laid over the verso so the fold
+   falls between the last dot and the first verse number.
+   =========================================================================== */
+
+[data-theme='book'] {
+  --vellum: #f2ead7;
+  --vellum-deep: #e9dcbf;
+  --gold: #b08d2e;
+  --rubric: #a8261c;
+  --sepia: #6b4a2a;
+
+  --text: #33261a;
+  --muted: #7d6a4b;
+  --border: #c8b48c;
+  --accent: #a8261c;
+  --danger: #8c1c14;
+  --bg: var(--vellum);
+  --bg-soft: #ece0c6;
+
+  /* Ink, rubric and gilding: the tree is written the way the page is. */
+  --tree-line: var(--sepia);
+  --tree-label: var(--rubric);
+  --tree-star: var(--gold);
+  --tree-dot-fill: #f7f0e0;
+  --tree-dot-stroke: var(--sepia);
+  --tree-muted: #b09a70;
+  --tree-accent: var(--rubric);
+}
+
+[data-theme='book'] body {
+  background:
+    radial-gradient(120% 90% at 50% 0%, #4a382a 0%, #2b201a 55%, #1d1512 100%) fixed;
+  color: var(--text);
+  font-family: 'IM Fell English', 'EB Garamond', Georgia, 'Times New Roman', serif;
+}
+
+/* ---- The header is the book's binding: leather, tooled in gold. ---- */
+
+[data-theme='book'] .app-header {
+  align-items: center;
+  padding: 0.7rem 1.5rem 0.6rem;
+  background: linear-gradient(#59321f, #3a1f16 62%, #2c1710);
+  border-bottom: 3px double var(--gold);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 45%);
+}
+
+[data-theme='book'] .app-brand {
+  font-family: 'UnifrakturMaguntia', 'IM Fell English', Georgia, serif;
+  font-size: 1.85rem;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: #e8c86a;
+  text-shadow: 0 1px 0 rgb(0 0 0 / 60%);
+}
+
+[data-theme='book'] .app-brand::after {
+  content: ' ❦';
+  font-family: 'IM Fell English', Georgia, serif;
+  font-size: 0.7em;
+  color: #c9553f;
+}
+
+[data-theme='book'] .app-tagline {
+  font-style: italic;
+  color: #cdb389;
+}
+
+[data-theme='book'] .theme-switch {
+  border: 1px solid var(--gold);
+  border-radius: 3px;
+  background: rgb(0 0 0 / 25%);
+  padding: 2px;
+}
+
+[data-theme='book'] .theme-option {
+  border-radius: 2px;
+  font-family: 'IM Fell English', Georgia, serif;
+  font-size: 0.9rem;
+  letter-spacing: 0.03em;
+  color: #cdb389;
+}
+
+[data-theme='book'] .theme-option:hover:not(.on) {
+  background: rgb(255 255 255 / 10%);
+  color: #f0dcb0;
+}
+
+[data-theme='book'] .theme-option.on {
+  background: linear-gradient(#c9a227, #a07d1c);
+  color: #2c1710;
+  text-shadow: none;
+}
+
+/* Minimal / Full sits in the same family as the design picker, so it is
+   dressed the same way — one strip, divided by a gold rule. */
+[data-theme='book'] .level-toggle {
+  border: 1px solid var(--gold);
+  border-radius: 2px;
+}
+
+[data-theme='book'] .level-toggle button {
+  border: none;
+  border-radius: 0;
+  background: linear-gradient(#f8f1de, #e8dabb);
+  box-shadow: none;
+}
+
+[data-theme='book'] .level-toggle button + button {
+  border-left: 1px solid var(--gold);
+}
+
+[data-theme='book'] .level-toggle button.on {
+  background: linear-gradient(#c9a227, #a07d1c);
+  color: #2c1710;
+}
+
+/* ---- Buttons and fields are little slips of parchment. ---- */
+
+[data-theme='book'] button:not(.menu-item, .popover-item, .menu-info, .link-button, .section-control),
+[data-theme='book'] .app-add,
+[data-theme='book'] .title-input,
+[data-theme='book'] .paste-area {
+  font-family: 'IM Fell English', Georgia, serif;
+  border: 1px solid #b09873;
+  border-radius: 2px;
+  background: linear-gradient(#f8f1de, #e8dabb);
+  color: var(--text);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 70%),
+    0 1px 2px rgb(44 23 16 / 30%);
+}
+
+[data-theme='book'] .app-add {
+  background: linear-gradient(#f2e6c8, #ddc99f);
+}
+
+[data-theme='book'] button:not(.menu-item, .popover-item, .menu-info, .link-button, .section-control):hover:not(:disabled),
+[data-theme='book'] .app-add:hover {
+  border-color: var(--gold);
+  background: linear-gradient(#fdf7e8, #eee0c4);
+}
+
+[data-theme='book'] button.primary {
+  background: linear-gradient(#b4372c, #8c1c14);
+  border-color: #63120d;
+  color: #f7ecd4;
+  text-shadow: 0 1px 0 rgb(0 0 0 / 45%);
+}
+
+[data-theme='book'] button.danger {
+  color: #7d1610;
+  border-color: #a5624f;
+}
+
+[data-theme='book'] .theme-option,
+[data-theme='book'] .link-button,
+[data-theme='book'] .menu-info,
+[data-theme='book'] .section-control {
+  box-shadow: none;
+}
+
+/* ---- The leaf: vellum, ruled and bordered. ---- */
+
+[data-theme='book'] .analysis-page,
+[data-theme='book'] .home-page {
+  position: relative;
+  margin: 1.1rem auto 0;
+  padding: 0.5rem 1.4rem 1.6rem;
+  background: var(--vellum) url('./ornaments/vellum.svg') repeat;
+  border: 54px solid transparent;
+  border-image: url('./ornaments/frame.svg') 120 / 54px / 0 round;
+  box-shadow: 0 22px 46px rgb(0 0 0 / 50%);
+}
+
+[data-theme='book'] h2 {
+  font-family: 'IM Fell English', Georgia, serif;
+  font-size: 1.25rem;
+  font-weight: 400;
+  font-variant: small-caps;
+  letter-spacing: 0.06em;
+  color: var(--rubric);
+}
+
+[data-theme='book'] .title-input {
+  font-family: 'UnifrakturMaguntia', 'IM Fell English', Georgia, serif;
+  font-size: 1.5rem;
+  font-weight: 400;
+  color: #2f1c10;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+[data-theme='book'] .passage-ref {
+  font-variant: small-caps;
+  letter-spacing: 0.09em;
+  font-size: 1rem;
+  color: var(--rubric);
+}
+
+[data-theme='book'] .editor-toolbar {
+  background: linear-gradient(rgb(242 234 215 / 96%), rgb(233 220 191 / 96%));
+  border-bottom: 3px double var(--gold);
+  padding: 0.45rem 0.5rem;
+  border-radius: 2px;
+}
+
+[data-theme='book'] .switch-track {
+  background: #cbb48b;
+  box-shadow: inset 0 1px 2px rgb(60 40 20 / 35%);
+}
+
+[data-theme='book'] .switch input:checked + .switch-track {
+  background: var(--rubric);
+}
+
+[data-theme='book'] .switch-track::after {
+  background: #f8f1de;
+}
+
+/* ---- The spread: verso for the tree, recto for the text. ----
+   The recto is a second sheet laid over the first, so the fold is a shadow
+   falling leftward out of the text column — into the 17px of clear page
+   between the last dot and the verse numbers. */
+
+[data-theme='book'] .editor-shell {
+  isolation: isolate;
+  background: transparent;
+}
+
+[data-theme='book'] .editor-shell::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: -0.35rem;
+  bottom: -0.35rem;
+  left: var(--tree-margin);
+  right: -0.6rem;
+  background:
+    /* the scribe's ruling: a pale red rule bounding the written column */
+    linear-gradient(90deg, transparent 0 66px, rgb(168 38 28 / 20%) 66px 67px, transparent 67px),
+    linear-gradient(90deg, rgb(255 253 246 / 60%), rgb(255 253 246 / 0%) 110px),
+    var(--vellum) url('./ornaments/vellum.svg') repeat;
+  box-shadow:
+    -14px 0 22px rgb(58 36 18 / 30%),
+    inset 2px 0 0 rgb(107 74 42 / 30%),
+    inset 3px 0 0 rgb(255 255 255 / 55%);
+}
+
+/* The vine that runs down the fold. It is drawn SLENDER — the tile scaled to
+   18px — because the only clear page between the last dot and the first verse
+   number is the width of a proposition's stub, and a stem is all that fits
+   there. Anything wider would be drawn through the dots. */
+[data-theme='book'] .editor-shell::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: -0.35rem;
+  bottom: -0.35rem;
+  left: calc(var(--tree-margin) - 8px);
+  width: 18px;
+  background: url('./ornaments/vine.svg') repeat-y left top;
+  background-size: 18px 57px;
+  opacity: 0.9;
+}
+
+[data-theme='book'] .bracket-label {
+  font-family: 'IM Fell English', Georgia, serif;
+  font-size: 14px;
+  letter-spacing: 0.03em;
+}
+
+[data-theme='book'] .word:hover {
+  background: rgb(176 141 46 / 22%);
+}
+
+[data-theme='book'] .card,
+[data-theme='book'] .help-panel,
+[data-theme='book'] .color-settings,
+[data-theme='book'] .popover,
+[data-theme='book'] .notes-editor,
+[data-theme='book'] .analysis-list {
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: #f7f0dd;
+}
+
+[data-theme='book'] .popover {
+  box-shadow: 0 10px 26px rgb(44 23 16 / 40%);
+}
+
+[data-theme='book'] .notes-tools {
+  background: var(--bg-soft);
+  border-bottom-color: var(--border);
+}
+
+[data-theme='book'] .popover-item:hover,
+[data-theme='book'] .menu-line:hover,
+[data-theme='book'] .menu-line.current,
+[data-theme='book'] .analysis-link:hover {
+  background: rgb(176 141 46 / 20%);
+}
+
+[data-theme='book'] .menu-heading {
+  font-variant: small-caps;
+  text-transform: none;
+  letter-spacing: 0.07em;
+  color: var(--rubric);
+}
+
+[data-theme='book'] .section-control {
+  box-shadow: 0 0 0 2px var(--vellum), 0 1px 4px rgb(44 23 16 / 45%);
+}
+
+/* ===========================================================================
+   NOTEBOOK — graph paper, ruled paper, and a pen
+   ===========================================================================
+   The tree page is quadrille, the text page is ruled with a red margin, and
+   the ruled sheet lies on top of the graph sheet. Everything drawn — spines,
+   ticks, dots, stars — goes through the wobble filter defined in
+   BracketLayer, so no line is quite straight and no star quite closes.
+   =========================================================================== */
+
+[data-theme='notebook'] {
+  --pen: #1f3f8f;
+  --pen-light: #7d95c8;
+  --red-pen: #b3261e;
+  --paper: #fdfcf6;
+
+  --text: #22262e;
+  --muted: #6e7684;
+  --border: #cdd2d8;
+  --accent: var(--pen);
+  --danger: var(--red-pen);
+  --bg: var(--paper);
+  --bg-soft: #f3f2ea;
+
+  --tree-line: var(--pen);
+  --tree-label: var(--pen);
+  --tree-star: var(--pen);
+  --tree-dot-fill: var(--paper);
+  --tree-dot-stroke: var(--pen);
+  --tree-muted: var(--pen-light);
+  /* The second pen on the desk: what you circle a thing with. */
+  --tree-accent: var(--red-pen);
+}
+
+[data-theme='notebook'] body {
+  background:
+    radial-gradient(140% 110% at 50% -10%, #cfd4d3 0%, #b4bab9 60%, #9aa19f 100%) fixed;
+  color: var(--text);
+  font-family: 'Patrick Hand', 'Bradley Hand', 'Segoe Print', system-ui, sans-serif;
+}
+
+/* ---- The header is a strip of card taped across the top. ---- */
+
+[data-theme='notebook'] .app-header {
+  align-items: center;
+  padding: 0.6rem 1.5rem;
+  background: linear-gradient(#f6f3e6, #eae6d6);
+  border-bottom: 2px solid #cfc9b4;
+  box-shadow: 0 3px 10px rgb(30 36 48 / 18%);
+}
+
+[data-theme='notebook'] .app-brand {
+  font-family: 'Caveat', 'Patrick Hand', cursive;
+  font-size: 2rem;
+  font-weight: 600;
+  color: var(--pen);
+  /* Underlined the way a pen underlines: one pass, a little off. */
+  text-decoration: underline;
+  text-decoration-color: rgb(31 63 143 / 45%);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+[data-theme='notebook'] .app-tagline {
+  font-family: 'Caveat', cursive;
+  font-size: 1.2rem;
+  color: #6b7280;
+}
+
+/* The hand-drawn box: unequal corner radii, so no two corners agree. */
+[data-theme='notebook'] button:not(.menu-item, .popover-item, .menu-info, .link-button, .section-control),
+[data-theme='notebook'] .app-add,
+[data-theme='notebook'] .theme-option,
+[data-theme='notebook'] .title-input,
+[data-theme='notebook'] .paste-area,
+[data-theme='notebook'] .notes-tool {
+  font-family: 'Patrick Hand', 'Segoe Print', system-ui, sans-serif;
+  border: 2px solid var(--pen);
+  border-radius: 255px 14px 225px 15px / 15px 225px 15px 255px;
+  background: rgb(255 255 255 / 65%);
+  color: var(--text);
+  box-shadow: none;
+}
+
+[data-theme='notebook'] button:not(.menu-item, .popover-item, .menu-info, .link-button, .section-control):hover:not(:disabled),
+[data-theme='notebook'] .app-add:hover {
+  background: rgb(31 63 143 / 10%);
+  border-color: var(--pen);
+}
+
+[data-theme='notebook'] button.primary {
+  background: rgb(31 63 143 / 88%);
+  border-color: #16306f;
+  color: #fbfaf4;
+}
+
+[data-theme='notebook'] button.danger {
+  border-color: var(--red-pen);
+  color: var(--red-pen);
+}
+
+[data-theme='notebook'] .theme-switch {
+  border: none;
+  background: none;
+  gap: 0.4rem;
+  padding: 0;
+}
+
+[data-theme='notebook'] .theme-option {
+  font-size: 0.95rem;
+  padding: 0.15rem 0.7rem;
+  border-color: rgb(31 63 143 / 35%);
+  color: #545b66;
+}
+
+[data-theme='notebook'] .theme-option.on {
+  background: var(--pen);
+  border-color: #16306f;
+  color: #fdfcf6;
+}
+
+[data-theme='notebook'] .level-toggle {
+  border: 2px solid rgb(31 63 143 / 35%);
+  border-radius: 26px 6px 22px 8px / 8px 22px 6px 26px;
+}
+
+[data-theme='notebook'] .level-toggle button {
+  border: none;
+  border-radius: 0;
+  background: none;
+}
+
+[data-theme='notebook'] .level-toggle button + button {
+  border-left: 2px solid rgb(31 63 143 / 25%);
+}
+
+[data-theme='notebook'] .level-toggle button.on {
+  background: var(--pen);
+  color: #fdfcf6;
+}
+
+[data-theme='notebook'] .title-input {
+  font-family: 'Caveat', cursive;
+  font-size: 1.6rem;
+  font-weight: 600;
+  color: var(--pen);
+  background: none;
+  border-color: transparent;
+}
+
+[data-theme='notebook'] h2,
+[data-theme='notebook'] .passage-ref {
+  font-family: 'Caveat', cursive;
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--pen);
+}
+
+[data-theme='notebook'] .editor-toolbar {
+  background: rgb(253 252 246 / 94%);
+  border-bottom: 2px solid rgb(31 63 143 / 25%);
+  padding: 0.4rem 0.3rem;
+}
+
+[data-theme='notebook'] .switch-track {
+  background: #c6cbd4;
+}
+
+[data-theme='notebook'] .switch input:checked + .switch-track {
+  background: var(--pen);
+}
+
+/* ---- The two sheets. ----
+   Quadrille under the tree (16px minor, 80px major), ruled under the text
+   with the red margin down the verse-number column. */
+
+[data-theme='notebook'] .editor-shell {
+  isolation: isolate;
+  background-color: var(--paper);
+  background-image:
+    repeating-linear-gradient(90deg, rgb(70 112 166 / 30%) 0 1px, transparent 1px 80px),
+    repeating-linear-gradient(180deg, rgb(70 112 166 / 30%) 0 1px, transparent 1px 80px),
+    repeating-linear-gradient(90deg, rgb(104 146 190 / 22%) 0 1px, transparent 1px 16px),
+    repeating-linear-gradient(180deg, rgb(104 146 190 / 22%) 0 1px, transparent 1px 16px);
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  background-size: var(--tree-margin) 100%;
+  box-shadow: 0 12px 28px rgb(24 30 44 / 26%);
+}
+
+/* The ruled sheet, laid over the graph sheet. Its shadow falls into the clear
+   page between the last dot and the verse numbers. */
+[data-theme='notebook'] .editor-shell::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  bottom: 0;
+  left: var(--tree-margin);
+  right: 0;
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(
+      90deg,
+      transparent 0 65px,
+      rgb(196 86 74 / 55%) 65px 66px,
+      transparent 66px
+    ),
+    repeating-linear-gradient(180deg, transparent 0 27px, rgb(88 128 176 / 30%) 27px 28px);
+  box-shadow: -8px 0 14px rgb(24 30 44 / 16%);
+}
+
+/* A ring drawn by hand is never quite a circle: the dots go through the
+   wobble filter. The spines and ticks do not — BracketLayer draws those bowed
+   already (handLine), because a filter eats a hairline where it displaces it. */
+[data-theme='notebook'] .bracket-layer .dot-layer {
+  filter: url('#datool-pen');
+}
+
+/* A pen lays down more ink than a plotter: thicken every drawn line, and
+   round its ends, so the wobble bends the stroke instead of thinning it. */
+[data-theme='notebook'] .spine-layer line {
+  stroke-width: 2.1;
+  stroke-linecap: round;
+}
+
+[data-theme='notebook'] .dot-group .dot-stub {
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+[data-theme='notebook'] .bracket-label {
+  font-family: 'Caveat', cursive;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+[data-theme='notebook'] .word:hover {
+  background: rgb(250 224 90 / 45%);
+}
+
+/* The drawn box again, but drawn LARGE: the same trick at a button's scale
+   bends a whole card into a leaf shape, so panels take a gentler wonk. */
+[data-theme='notebook'] .card,
+[data-theme='notebook'] .help-panel,
+[data-theme='notebook'] .color-settings,
+[data-theme='notebook'] .popover,
+[data-theme='notebook'] .notes-editor,
+[data-theme='notebook'] .analysis-list {
+  border: 2px solid rgb(31 63 143 / 35%);
+  border-radius: 26px 6px 22px 8px / 8px 22px 6px 26px;
+  background: var(--paper);
+}
+
+[data-theme='notebook'] .paste-area {
+  border-radius: 26px 6px 22px 8px / 8px 22px 6px 26px;
+}
+
+[data-theme='notebook'] .popover-item:hover,
+[data-theme='notebook'] .menu-line:hover,
+[data-theme='notebook'] .menu-line.current,
+[data-theme='notebook'] .analysis-link:hover {
+  background: rgb(31 63 143 / 10%);
+}
+
+/* Rows in a popover are the page speaking, not a control: they keep the
+   reading face rather than the hand-lettered one. */
+[data-theme='notebook'] .menu-item,
+[data-theme='notebook'] .popover-item {
+  font-family: 'Patrick Hand', 'Segoe Print', system-ui, sans-serif;
+  background: none;
+}
+
+[data-theme='notebook'] .notes-body .ProseMirror {
+  font-family: 'Caveat', cursive;
+  font-size: 1.3rem;
+}
+
+[data-theme='notebook'] .section-control {
+  box-shadow: 0 0 0 2px var(--paper), 0 1px 4px rgb(24 30 44 / 40%);
+}
+
+/* ===========================================================================
+   SLATE — modern, borderless, monochrome
+   ===========================================================================
+   Black, white and dark grey; nothing is separated by a line, only by space
+   and a shade of grey. The page stays light: the analyst's color blocks are
+   dusty pastels that the Greek has to stay readable on, and those are locked.
+   =========================================================================== */
+
+[data-theme='slate'] {
+  --slate-900: #17191c;
+  --slate-700: #33383f;
+  --slate-500: #6b7280;
+  --slate-200: #e8eaec;
+  --slate-100: #f1f2f4;
+
+  --text: var(--slate-900);
+  --muted: #767d86;
+  --border: transparent;
+  --accent: var(--slate-900);
+  --danger: #8d2c22;
+  --bg: #ffffff;
+  --bg-soft: var(--slate-100);
+
+  --tree-line: #3c424b;
+  --tree-label: #767d86;
+  --tree-star: var(--slate-900);
+  --tree-dot-fill: #ffffff;
+  --tree-dot-stroke: #3c424b;
+  --tree-muted: #c3c7cc;
+  --tree-accent: var(--slate-900);
+}
+
+[data-theme='slate'] body {
+  background: #f6f7f8;
+  color: var(--text);
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  letter-spacing: -0.006em;
+}
+
+/* Not one border in the chrome: the header is separated by its own shade. */
+[data-theme='slate'] .app-header {
+  align-items: center;
+  padding: 0.9rem 2rem;
+  border-bottom: none;
+  background: #f6f7f8;
+}
+
+[data-theme='slate'] .app-brand {
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+[data-theme='slate'] .app-tagline {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+[data-theme='slate'] .theme-switch {
+  border: none;
+  background: var(--slate-200);
+  padding: 3px;
+  border-radius: 8px;
+}
+
+[data-theme='slate'] .theme-option {
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #575d65;
+}
+
+[data-theme='slate'] .theme-option:hover:not(.on) {
+  background: rgb(255 255 255 / 60%);
+  color: var(--slate-900);
+}
+
+[data-theme='slate'] .theme-option.on {
+  background: #ffffff;
+  color: var(--slate-900);
+  box-shadow: 0 1px 2px rgb(23 25 28 / 14%);
+}
+
+/* Not a divided strip here: nothing has an edge, so the two halves are told
+   apart by which one is lifted onto white. */
+[data-theme='slate'] .level-toggle {
+  border: none;
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+  background: var(--slate-200);
+}
+
+[data-theme='slate'] .level-toggle button {
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+}
+
+[data-theme='slate'] .level-toggle button + button {
+  border-left: none;
+}
+
+[data-theme='slate'] .level-toggle button.on {
+  background: #ffffff;
+  color: var(--slate-900);
+  box-shadow: 0 1px 2px rgb(23 25 28 / 14%);
+}
+
+[data-theme='slate'] button,
+[data-theme='slate'] .app-add,
+[data-theme='slate'] .title-input,
+[data-theme='slate'] .paste-area,
+[data-theme='slate'] .card,
+[data-theme='slate'] .analysis-list,
+[data-theme='slate'] .help-panel,
+[data-theme='slate'] .color-settings,
+[data-theme='slate'] .notes-editor,
+[data-theme='slate'] .notes-tools,
+[data-theme='slate'] .error-box,
+[data-theme='slate'] .popover,
+[data-theme='slate'] .editor-toolbar,
+[data-theme='slate'] .analysis-list li + li,
+[data-theme='slate'] .menu-sep,
+[data-theme='slate'] .color-row input[type='color'] {
+  border: none;
+}
+
+[data-theme='slate'] button:not(.menu-item, .popover-item, .menu-info, .link-button, .section-control),
+[data-theme='slate'] .app-add {
+  border-radius: 7px;
+  background: transparent;
+  color: #4a5058;
+  font-weight: 500;
+  font-size: 0.86rem;
+}
+
+[data-theme='slate'] button:not(.menu-item, .popover-item, .menu-info, .link-button, .section-control):hover:not(:disabled),
+[data-theme='slate'] .app-add:hover {
+  background: var(--slate-200);
+  color: var(--slate-900);
+}
+
+[data-theme='slate'] button.primary {
+  background: var(--slate-900);
+  color: #ffffff;
+}
+
+[data-theme='slate'] button.primary:hover:not(:disabled) {
+  background: var(--slate-700);
+  color: #ffffff;
+}
+
+[data-theme='slate'] button.danger {
+  color: var(--danger);
+}
+
+[data-theme='slate'] button.danger:hover:not(:disabled) {
+  background: rgb(141 44 34 / 10%);
+  color: var(--danger);
+}
+
+[data-theme='slate'] .help-button.on,
+[data-theme='slate'] .notes-tool.on {
+  background: var(--slate-900);
+  color: #ffffff;
+}
+
+[data-theme='slate'] .title-input,
+[data-theme='slate'] .paste-area {
+  background: var(--slate-100);
+  border-radius: 8px;
+}
+
+[data-theme='slate'] .title-input {
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  background: transparent;
+  padding-left: 0;
+}
+
+[data-theme='slate'] .card,
+[data-theme='slate'] .analysis-list,
+[data-theme='slate'] .help-panel,
+[data-theme='slate'] .color-settings,
+[data-theme='slate'] .notes-editor {
+  background: #ffffff;
+  border-radius: 12px;
+}
+
+[data-theme='slate'] .notes-tools {
+  background: transparent;
+  padding-left: 0;
+}
+
+[data-theme='slate'] .analysis-list li + li {
+  box-shadow: inset 0 1px 0 var(--slate-100);
+}
+
+[data-theme='slate'] h2 {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+}
+
+[data-theme='slate'] .passage-ref {
+  color: var(--muted);
+}
+
+/* The analysis floats on white with no edge of its own. */
+[data-theme='slate'] .app-main {
+  padding-top: 0.5rem;
+}
+
+[data-theme='slate'] .analysis-page,
+[data-theme='slate'] .home-page {
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 0.75rem 1.5rem 2rem;
+  margin-top: 0.25rem;
+}
+
+[data-theme='slate'] .editor-toolbar {
+  background: rgb(255 255 255 / 92%);
+  backdrop-filter: blur(10px);
+  padding: 0.6rem 0;
+}
+
+[data-theme='slate'] .switch {
+  font-size: 0.84rem;
+  color: #4a5058;
+}
+
+[data-theme='slate'] .switch-track {
+  background: #d5d8dd;
+}
+
+[data-theme='slate'] .switch input:checked + .switch-track {
+  background: var(--slate-900);
+}
+
+[data-theme='slate'] .bracket-label {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+[data-theme='slate'] .word:hover {
+  background: var(--slate-100);
+}
+
+[data-theme='slate'] .popover {
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgb(23 25 28 / 16%), 0 1px 3px rgb(23 25 28 / 10%);
+}
+
+[data-theme='slate'] .popover-item:hover,
+[data-theme='slate'] .menu-line:hover,
+[data-theme='slate'] .menu-line.current,
+[data-theme='slate'] .analysis-link:hover {
+  background: var(--slate-100);
+}
+
+[data-theme='slate'] .menu-description {
+  border-left-color: var(--slate-900);
+  background: var(--slate-100);
+}
+
+[data-theme='slate'] .menu-info.on {
+  color: var(--slate-900);
+}
+
+[data-theme='slate'] .error-box {
+  background: rgb(141 44 34 / 8%);
+  border-radius: 10px;
+}
+
+[data-theme='slate'] .section-control {
+  box-shadow: 0 0 0 2px #ffffff, 0 1px 4px rgb(23 25 28 / 30%);
+}
+
+/* Every skin's chrome drops out of a print, exactly as the original's does —
+   what prints is the analysis. */
+@media print {
+  [data-theme='book'] .analysis-page,
+  [data-theme='book'] .home-page,
+  [data-theme='slate'] .analysis-page,
+  [data-theme='slate'] .home-page {
+    border: none;
+    border-image: none;
+    box-shadow: none;
+    padding: 0;
+    margin: 0;
+    background: #fff;
+  }
+
+  [data-theme='book'] .editor-shell,
+  [data-theme='notebook'] .editor-shell {
+    background: #fff;
+    box-shadow: none;
+  }
+
+  [data-theme='book'] .editor-shell::before,
+  [data-theme='book'] .editor-shell::after,
+  [data-theme='notebook'] .editor-shell::before {
+    display: none;
+  }
+
+  [data-theme='book'] body,
+  [data-theme='notebook'] body,
+  [data-theme='slate'] body {
+    background: #fff;
+  }
+}

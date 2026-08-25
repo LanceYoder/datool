@@ -37,7 +37,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import {
   EditorContent,
   NodeViewWrapper,
@@ -1121,12 +1121,20 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
       <div
         ref={shellRef}
         className="editor-shell"
-        style={{
-          paddingLeft: overlay?.margin ?? `calc(50% - ${VERSE_LABEL_W / 2}px)`,
-          // The strip stands in the shell's right padding, so no line of Greek
-          // ever runs under it.
-          paddingRight: view.blocks ? STRIP_LANE : undefined,
-        }}
+        style={
+          {
+            paddingLeft: overlay?.margin ?? `calc(50% - ${VERSE_LABEL_W / 2}px)`,
+            // The strip stands in the shell's right padding, so no line of Greek
+            // ever runs under it.
+            paddingRight: view.blocks ? STRIP_LANE : undefined,
+            // Where the tree's margin ends and the text column begins. The
+            // skins that make this a two-page spread — the book's gutter, the
+            // notebook's binding — need it in CSS, and only the layout knows
+            // it.
+            '--tree-margin':
+              overlay === null ? `calc(50% - ${VERSE_LABEL_W / 2}px)` : `${overlay.margin}px`,
+          } as CSSProperties
+        }
       >
         {overlay !== null && (
           <BracketLayer

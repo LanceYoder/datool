@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import type { Analysis, Document as AnalysisDocument } from '../types';
-import { deleteAnalysis, errorMessages, getAnalysis, updateAnalysis } from '../api';
+import { errorMessages, getAnalysis, updateAnalysis } from '../api';
 import AnalysisEditor from '../editor/AnalysisEditor';
 import NotesEditor from '../notes/NotesEditor';
 
@@ -11,7 +11,6 @@ import { useUnsavedChanges } from '../unsavedChanges';
 
 export default function AnalysisPage() {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
 
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   // The document handed to the editor: set once on load so edit history
@@ -109,20 +108,6 @@ export default function AnalysisPage() {
     window.print();
   };
 
-  const remove = async () => {
-    if (id === undefined) return;
-    if (!window.confirm('Delete this analysis? It moves to Recently deleted.')) return;
-    setBusy(true);
-    setErrors([]);
-    try {
-      await deleteAnalysis(id);
-      navigate('/');
-    } catch (err) {
-      setErrors(errorMessages(err));
-      setBusy(false);
-    }
-  };
-
   return (
     <div className="analysis-page">
       <div className="analysis-toolbar">
@@ -140,11 +125,10 @@ export default function AnalysisPage() {
         >
           Save
         </button>
+        {/* No Delete here. Throwing an analysis away is a decision about the
+            LIST, and it is taken there — see HomePage. */}
         <button type="button" onClick={print} disabled={analysis === null}>
           Print
-        </button>
-        <button className="danger" onClick={() => void remove()} disabled={busy || analysis === null}>
-          Delete
         </button>
       </div>
       {errors.length > 0 && (

@@ -6,7 +6,8 @@
 // overlay or on a row. The overlay's structure (see BracketLayer.tsx) is
 //
 //   svg.bracket-layer.interactive
-//     g.spine-layer  g.bracket[.selected][data-rel] > line …   (inert)
+//     g.spine-layer  g.bracket[data-rel] > line | path …       (inert; the
+//                    notebook skin draws its spines and ticks as bowed paths)
 //     g.dot-layer    g.dot-group[data-dot][.root][.selected]  (every dot is a
 //                    live, same-sized handle; .root marks disconnected units)
 //     g.glyph-layer  g.label-hit[data-label] > text.bracket-label
@@ -33,9 +34,30 @@ const SHOTS = process.env.SHOTS ?? '/tmp/e2e-shots';
 const BASE = process.env.BASE ?? 'http://127.0.0.1:5173';
 const API = process.env.API ?? 'http://127.0.0.1:8000';
 
-// Colors that must NOT appear anywhere in the overlay.
-const AMBER = '#b45309'; // the removed review/confidence color
-const ACCENT = '#1d4ed8'; // allowed on selected DOTS only, never on branches
+// Colors that must NOT appear anywhere in the overlay. BracketLayer hands its
+// ink to SVG through inline `style` (so a skin can repaint the tree with CSS
+// variables), which means these are checked against the COMPUTED stroke/fill,
+// not against a presentation attribute.
+const AMBER = 'rgb(180, 83, 9)'; // #b45309, the removed review/confidence color
+const ACCENT = 'rgb(29, 78, 216)'; // #1d4ed8 — selected DOTS only, never branches
+
+/** Every element in the overlay painted in `color`, as a count. */
+function paintedWith(selector, color) {
+  return page.evaluate(
+    ([sel, want]) =>
+      [...document.querySelectorAll(sel)].filter((el) => {
+        const s = getComputedStyle(el);
+        return s.stroke === want || s.fill === want;
+      }).length,
+    [selector, color],
+  );
+}
+
+async function expectNonePainted(selector, color, msg) {
+  const n = await paintedWith(selector, color);
+  if (n !== 0) await fail(`${msg}: ${n} × "${selector}" painted ${color}`);
+  ok(`${msg}: nothing in ${selector} is ${color}`);
+}
 
 // Selectors for the parts of the overlay this script drives.
 const SEL = {
@@ -189,31 +211,22 @@ await page.waitForURL(/\/analysis\//);
 const analysisUrl = page.url();
 ok(`created ${analysisUrl}`);
 
-// --- (b) Initial entry: the full first pass (pre-split + tree) ---------------
-step('(b) initial entry: clause propositions connected into one labeled tree');
+// --- (b) Initial entry: pre-split, with ONLY the sure connections drawn ------
+step('(b) initial entry: clause propositions, only the deterministic joins');
 await page.waitForSelector(SEL.row);
 await expectCount(SEL.row, 14, 'one row per clause segment (1 Jn 1:5–7 = 14)');
-// Auto-relationing runs at entry: the exact tree shape is pinned by the
-// backend goldens, so here we only require a real proposal, dynamically.
-const bracketsEntry = await countOf(SEL.bracket);
-console.log(`  entry brackets: ${bracketsEntry}`);
-if (bracketsEntry < 5) {
-  await fail(`auto-relationing should propose a real tree, got ${bracketsEntry} brackets`);
-}
-ok(`auto-relationing proposed ${bracketsEntry} brackets`);
-await expectCount(SEL.dot, 14 + bracketsEntry, 'one dot per proposition and per bracket');
-await expectCount(SEL.rootDot, 1, 'the whole passage arrives as ONE tree');
+// Confident-only auto-relationing: in this passage exactly one join is
+// deterministic — the ὡς comparison 7a/7b (pinned by the backend goldens).
+// Everything else rides a καί or an asyndeton and stays loose for the human.
+await expectCount(SEL.bracket, 1, 'only the sure connection (the ὡς comparison) is drawn');
+await expectCount(SEL.dot, 15, 'one dot per proposition and per bracket');
+await expectCount(SEL.rootDot, 13, 'everything else is left disconnected');
 const blockLabel = (await page.locator(SEL.row).nth(0).locator('.verse-label').textContent()) ?? '';
 if (blockLabel !== '5a') await fail(`first row label should be "5a", got "${blockLabel}"`);
 ok(`rows carry verse-letter labels (first is ${blockLabel})`);
 
-// A complete tree (one root) means the star walk already paints the
-// passage's main point(s) red at entry — coordinate tops may fan to several.
-await waitFor(
-  () => document.querySelectorAll('.prop-row.main-point').length >= 1,
-  null,
-  'the completed entry tree shows its main point in red',
-);
+// The forest is loose, so no main point is painted at entry.
+await expectNone('.prop-row.main-point', 'no main point while the analysis is incomplete');
 
 // Color blocks: the passage arrives as ONE undivided block — every row on
 // the same muted background, one saturated band down the right edge, and no
@@ -251,7 +264,7 @@ await expectCount('.english-line .ev', 3, 'verse markers at each verse start (5,
 
 // Confidence labeling is gone: nothing in the overlay is amber, and the
 // stored first pass carries no review flags.
-await expectNone(`[stroke="${AMBER}"], [fill="${AMBER}"]`, 'no amber/confidence coloring');
+await expectNonePainted('.bracket-layer *', AMBER, 'no amber/confidence coloring');
 
 // Uniform dot geometry: one radius for every dot, and one x for every
 // proposition dot — nesting depth must never move or shrink a dot.
@@ -321,17 +334,20 @@ const splitPid = await splitRow.getAttribute('data-pid');
 const splitLabel = (await splitRow.locator('.verse-label').textContent()) ?? '';
 console.log(`  splitting row 0 (${splitPid}, "${splitLabel}") after its 2nd word`);
 
-// A left click opens the word-info card (lemma, gloss, morphology, and the
-// split hint); the split itself is a RIGHT-click on the word.
+// A left click opens the word-info card: the lemma, the gloss, the morphology
+// and the word's English here. It carries INFORMATION and no instructions —
+// the split hint went the way of the hover tooltip — and the split itself is
+// a RIGHT-click on the word.
 await splitRow.locator('.word.splittable').nth(1).click();
 await page.waitForSelector(SEL.wordPopover);
+const lemma = (await page.textContent(`${SEL.wordPopover} .word-lemma`).catch(() => null)) ?? '';
 const gloss = (await page.textContent(`${SEL.wordPopover} .word-gloss`).catch(() => null)) ?? '';
 const parse = (await page.textContent(`${SEL.wordPopover} .word-parse`).catch(() => null)) ?? '';
+if (lemma.trim() === '') await fail('word popover shows no lemma');
 if (gloss.trim() === '') await fail('word popover shows no gloss');
 if (parse.trim() === '') await fail('word popover shows no morphology');
-const hint = (await page.textContent(`${SEL.wordPopover} .word-hint`).catch(() => null)) ?? '';
-if (!hint.includes('Right-click')) await fail(`split hint should name the right-click: "${hint}"`);
-ok(`word popover shows info ("${gloss.trim()}" · "${parse.trim()}") and the right-click hint`);
+ok(`word popover shows info ("${lemma.trim()}" · "${gloss.trim()}" · "${parse.trim()}")`);
+await expectNone(`${SEL.wordPopover} .word-hint`, 'no split hint in the word card');
 await snap('split-popover');
 await page.keyboard.press('Escape');
 await expectCount(SEL.wordPopover, 0, 'Escape closed the word popover');
@@ -573,8 +589,9 @@ ok('clicking a label opened the relationship menu');
 // Confidence labeling is gone: no Confirm item, and opening a menu paints no
 // branch blue (the accent belongs to selected dots only).
 await expectNone(`${SEL.menu} .menu-item.confirm`, 'no Confirm item in the menu');
-await expectNone(
-  `g.spine-layer line[stroke="${ACCENT}"]`,
+await expectNonePainted(
+  'g.spine-layer line, g.spine-layer path',
+  ACCENT,
   'no blue selected-branch stroke while a menu is open',
 );
 await page.keyboard.press('Escape');
@@ -625,8 +642,8 @@ const stripX = await page.evaluate(() => {
 });
 await page.mouse.move(stripX, boundaryY);
 await page.waitForSelector('.section-control.add');
-const plus = (await page.textContent('.section-control.add')) ?? '';
-if (plus.trim() !== '+') await fail(`the add control should read "+", got "${plus}"`);
+// The + is DRAWN (two crossing SVG lines), not typed.
+await expectCount('.section-control.add svg line', 2, 'the add control draws a +');
 // Screenshot WITHOUT snap(): snap parks the pointer, which would dismiss the
 // hover-only control this shot exists to show.
 shot += 1;
@@ -652,8 +669,7 @@ await snap('two-blocks');
 // — block gestures share the history with everything else.
 await page.mouse.move(stripX, boundaryY);
 await page.waitForSelector('.section-control.remove');
-const minus = (await page.textContent('.section-control.remove')) ?? '';
-if (minus.trim() !== '−') await fail(`the remove control should read "−", got "${minus}"`);
+await expectCount('.section-control.remove svg line', 1, 'the remove control draws a −');
 await page.locator('.section-control.remove').click();
 await expectCount('.section-band', 1, 'the blocks joined back into one');
 await page.click('.editor-toolbar button:has-text("Undo")');
@@ -696,16 +712,27 @@ await snap('after-edits');
 
 // --- (j) Save and reload ----------------------------------------------------
 step('(j) save, reload, and check persistence');
+// There is no "Saved" banner to wait for. The save is finished when Save has
+// nothing left to save and disables itself — the toolbar's only report.
 await page.click('.analysis-toolbar button:has-text("Save")');
-await page.waitForSelector('.analysis-toolbar >> text=/^Saved /', { timeout: 10_000 });
-ok('"Saved" indicator shown');
+// The Save button IS the save state: it disables once the document is clean.
+await waitFor(
+  () => {
+    const btn = [...document.querySelectorAll('.analysis-toolbar button')].find(
+      (b) => b.textContent === 'Save',
+    );
+    return btn !== undefined && btn.disabled;
+  },
+  null,
+  'Save disabled again — everything is stored',
+);
 
 await page.reload();
 await page.waitForSelector(SEL.row);
 await expectCount(SEL.row, rowsFinal, 'rows survived the reload');
 await expectCount(SEL.bracket, bracketsFinal, 'brackets survived the reload');
 await expectCount(SEL.rootDot, rootsFinal, 'roots survived the reload');
-await expectNone(`[stroke="${AMBER}"], [fill="${AMBER}"]`, 'still no amber after the reload');
+await expectNonePainted('.bracket-layer *', AMBER, 'still no amber after the reload');
 await expectCount('.section-band', 2, 'the color blocks survived the reload');
 const reloadColors = await page.evaluate(() =>
   [...document.querySelectorAll('.section-band')].map((b) => getComputedStyle(b).backgroundColor),
@@ -737,6 +764,38 @@ await snap('after-reload');
 await page.goto(BASE);
 await page.waitForSelector('.analysis-link');
 ok('analysis listed on home');
+
+// --- (k) The Minimal / Full toggle ------------------------------------------
+step('(k) Full auto-analysis: a typed reference arrives as one proposed tree');
+await page.waitForSelector('.level-toggle');
+const levelLabels = await page.locator('.level-toggle button').allTextContents();
+if (levelLabels.join('|') !== 'Minimal|Full') {
+  await fail(`unexpected level toggle: ${JSON.stringify(levelLabels)}`);
+}
+const minimalOn = await page
+  .locator('.level-toggle button:has-text("Minimal")')
+  .getAttribute('aria-checked');
+if (minimalOn !== 'true') await fail('Minimal should be the default level');
+ok('the toggle defaults to Minimal');
+
+await page.click('.level-toggle button:has-text("Full")');
+await page.fill('.paste-area', 'Heb 4:9-12');
+await waitFor(
+  () => document.querySelector('.alignment-line')?.textContent?.includes('Hebrews 4:9–12') === true,
+  null,
+  'the typed reference located itself',
+);
+await page.click('button:has-text("Create"):not([disabled])');
+await page.waitForURL(/\/analysis\//);
+await page.waitForSelector(SEL.row);
+await expectCount(SEL.row, 7, 'Hebrews 4:9–12 = 7 clause rows');
+await expectCount(SEL.rootDot, 1, 'Full: the whole passage proposed as ONE tree');
+await waitFor(
+  () => document.querySelectorAll('.prop-row.main-point').length >= 1,
+  null,
+  'the complete proposal shows its main point in red',
+);
+await snap('full-analysis');
 
 await browser.close();
 
