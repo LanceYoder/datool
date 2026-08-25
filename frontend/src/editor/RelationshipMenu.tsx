@@ -63,32 +63,41 @@ export default function RelationshipMenu({ taxonomy, current, onPick }: Relation
             const open = explained === entry.code;
             return (
               <div key={entry.code} className="menu-row">
-                <button
-                  type="button"
-                  role="menuitem"
-                  ref={isCurrent ? currentRef : undefined}
-                  className={isCurrent ? 'menu-item current' : 'menu-item'}
-                  onClick={() => onPick(entry.code)}
-                >
-                  <span className="menu-symbol">{entry.symbol}</span>
-                  <span className="menu-name">{entry.name}</span>
-                  {key !== null && <span className="menu-key muted">({key})</span>}
-                </button>
-                <button
-                  type="button"
-                  className={open ? 'menu-info on' : 'menu-info'}
-                  aria-label={`What ${entry.name} means`}
-                  aria-expanded={open}
-                  title={`What ${entry.name} means`}
-                  onClick={(event) => {
-                    // Reading about a relationship is not choosing it.
-                    event.stopPropagation();
-                    setExplained(open ? null : entry.code);
-                  }}
-                >
-                  i
-                </button>
-                {open && <p className="menu-description">{entry.description}</p>}
+                {/* The line is the positioning context for the "i", so the
+                    open description below never pulls it off center. */}
+                <div className="menu-line">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    ref={isCurrent ? currentRef : undefined}
+                    className={isCurrent ? 'menu-item current' : 'menu-item'}
+                    onClick={() => onPick(entry.code)}
+                  >
+                    <span className="menu-symbol">{entry.symbol}</span>
+                    <span className="menu-name">{entry.name}</span>
+                    {key !== null && <span className="menu-key muted">({key})</span>}
+                  </button>
+                  <button
+                    type="button"
+                    className={open ? 'menu-info on' : 'menu-info'}
+                    aria-label={`What ${entry.name} means`}
+                    aria-expanded={open}
+                    title={`What ${entry.name} means`}
+                    onClick={(event) => {
+                      // Reading about a relationship is not choosing it.
+                      event.stopPropagation();
+                      setExplained(open ? null : entry.code);
+                    }}
+                  >
+                    i
+                  </button>
+                </div>
+                {open && (
+                  <p className="menu-description">
+                    {entry.description?.trim() ||
+                      'No description — reload the page if this persists.'}
+                  </p>
+                )}
               </div>
             );
           })}
