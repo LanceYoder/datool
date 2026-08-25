@@ -776,23 +776,22 @@
     inset 13px 0 15px -10px rgb(24 30 44 / 58%);
 }
 
-/* The binding: twin wire down the fold, which is what holds the two halves
-   of this thing together and says "notebook" before anything else does. It
-   stands a little right of the seam, in the only clear lane there is —
-   between the last proposition dot and the verse numbers (spiral.svg says
-   why) — and above the paper but under the writing, like real wire under a
-   hand. */
+/* The fold itself: the hairline where the two halves of the opening meet. */
 [data-theme='notebook'] .editor-shell::after {
   content: '';
   position: absolute;
   z-index: -1;
-  top: 4px;
-  bottom: 4px;
-  left: calc(var(--tree-margin) - 9px);
-  width: 22px;
-  background: url('./ornaments/spiral.svg') repeat-y left top;
-  background-size: 22px 34px;
-  filter: drop-shadow(0 1px 1px rgb(24 30 44 / 35%));
+  top: 6px;
+  bottom: 6px;
+  left: calc(var(--tree-margin) - 1px);
+  width: 2px;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgb(24 30 44 / 26%) 6%,
+    rgb(24 30 44 / 26%) 94%,
+    transparent
+  );
 }
 
 /* A ring drawn by hand is never quite a circle: the dots go through the
