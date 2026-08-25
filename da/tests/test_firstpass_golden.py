@@ -1,9 +1,10 @@
-"""Golden tests for initial entry: the full automatic analyzer.
+"""Golden tests for initial entry and the full analyzer.
 
 ``first_pass`` — what initial entry actually runs — segments a located paste
-into clause propositions (stage 1) and connects them into one labeled tree
-(stage 2); an unaligned paste splits on punctuation into disconnected raw
-propositions (no morphology, no proposed structure).
+into clause propositions (stage 1) and draws ONLY the deterministic
+connections (stage 2 in confident-only mode); everything else stays loose
+for the analyst. An unaligned paste splits on punctuation into disconnected
+raw propositions (no morphology, no proposed structure).
 
 The analyzer is also tested over hand-built, contract-shaped segments so the
 classifier's calls are pinned independently of live segmentation. Passages
@@ -218,10 +219,13 @@ def test_build_document_1john_hand_segments():
     roundtrip(doc)
 
 
-def test_first_pass_1john_1_5_7_builds_full_tree():
-    """The full analyzer runs at entry: a located paste becomes one
-    proposition per clause segment, verse-lettered, all connected into a
-    single labeled tree."""
+def test_first_pass_1john_1_5_7_keeps_only_sure_connections():
+    """Entry runs the analyzer in CONFIDENT-ONLY mode: pre-split into clause
+    propositions, with only the deterministic connections drawn. In this
+    passage that is exactly one — the ὡς comparison 7a/7b (2/2 exact in the
+    goldens). Every other join here rides a καί or an asyndeton (judgment
+    calls the goldens contradict), so everything else stays loose, and the
+    conditionals cascade away with the uncertain packets they would pair."""
     words = load_words()
     text = " ".join(w.text for w in words[J_START:J_END + 1])
     result = first_pass(text)
@@ -236,10 +240,16 @@ def test_first_pass_1john_1_5_7_builds_full_tree():
     assert props[-1]["source"]["end"] == J_END
     for a, b in zip(props, props[1:]):
         assert a["source"]["end"] + 1 == b["source"]["start"]
-    # Live segmentation reproduces the hand-built segments here, so the
-    # classifier's pinned structure holds end to end.
     assert [(p["source"]["start"], p["source"]["end"]) for p in props] == J_SPANS
-    assert_1john_structure(doc)
+
+    ids = by_label(doc)
+    expected = [{"kind": "prop", "ref": ids[l]} for l in J_LABELS]
+    expected[10:12] = [{
+        "kind": "bracket", "rel": "Cmp", "prominent": 0, "reversed": True,
+        "children": [{"kind": "prop", "ref": ids["7a"]},
+                     {"kind": "prop", "ref": ids["7b"]}],
+    }]
+    assert doc["forest"] == expected
     roundtrip(doc)
 
 
@@ -329,7 +339,11 @@ def test_build_document_hebrews_hand_segments():
     roundtrip(doc)
 
 
-def test_first_pass_hebrews_4_9_12_builds_full_tree():
+def test_first_pass_hebrews_4_9_12_keeps_only_sure_connections():
+    """Confident-only entry on Hebrews: the γάρ ground and the ὥσπερ
+    comparison survive — nested, because every bracket inside the packet is
+    itself sure — while the ἵνα (purpose vs. epexegetical), the οὖν
+    (∴ vs. C/E per the Acts diagram) and the v12 participles stay loose."""
     words = load_words()
     text = " ".join(w.text for w in words[H_START:H_END + 1])
     result = first_pass(text)
@@ -338,13 +352,29 @@ def test_first_pass_hebrews_4_9_12_builds_full_tree():
     doc = result.document
     props = doc["propositions"]
     # Live segmentation also splits verse 12 at the adverbial participle
-    # διϊκνούμενος (the hand-built stage-2 segments keep v12 whole); the
-    # structure helper locates brackets by whole-verse spans, so it holds
-    # either way.
+    # διϊκνούμενος (the hand-built stage-2 segments keep v12 whole).
     assert [p["label"] for p in props] == [
         "9", "10a", "10b", "11a", "11b", "12a", "12b",
     ]
-    assert_hebrews_structure(doc)
+    ids = by_label(doc)
+    assert doc["forest"] == [
+        {
+            "kind": "bracket", "rel": "Grnd", "prominent": 0,
+            "children": [
+                {"kind": "prop", "ref": ids["9"]},
+                {
+                    "kind": "bracket", "rel": "Cmp", "prominent": 0,
+                    "reversed": True,
+                    "children": [{"kind": "prop", "ref": ids["10a"]},
+                                 {"kind": "prop", "ref": ids["10b"]}],
+                },
+            ],
+        },
+        {"kind": "prop", "ref": ids["11a"]},
+        {"kind": "prop", "ref": ids["11b"]},
+        {"kind": "prop", "ref": ids["12a"]},
+        {"kind": "prop", "ref": ids["12b"]},
+    ]
     roundtrip(doc)
 
 

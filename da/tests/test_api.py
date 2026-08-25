@@ -212,9 +212,12 @@ class TestFirstPass:
         body = response.json()
         document, alignment = body["document"], body["alignment"]
         assert document["schemaVersion"] == 2
-        # Fully analyzed: every proposition connected into one tree.
+        # Confident-only analysis: John 1:1 is three καί-joined clauses, and
+        # a καί join is a judgment call — everything stays loose here.
         assert document["propositions"]
-        assert len(document["forest"]) == 1
+        assert document["forest"] == [
+            {"kind": "prop", "ref": p["id"]} for p in document["propositions"]
+        ]
         assert alignment is not None
         assert alignment["ref"] == "John 1:1"
         assert alignment["exact"] is True

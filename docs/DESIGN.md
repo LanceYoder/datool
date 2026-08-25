@@ -203,13 +203,16 @@ Redistributing the files is how MorphGNT itself is distributed.
 
 ## 5. The first pass (rule-based, deterministic)
 
-> **Status: both stages ON.** Initial entry runs the full pipeline: the
-> segmentation below (one proposition per clause, verse-lettered) and the
-> stage-2 tree build — a located paste arrives in the editor as ONE complete
-> labeled tree, which the analyst then overrides gesture by gesture. Raw
-> (unaligned) pastes still arrive as disconnected punctuation-split roots:
-> no morphology, no proposed structure. Review flags no longer exist in
-> documents (confidence labeling was removed).
+> **Status: stage 1 ON, stage 2 in CONFIDENT-ONLY mode.** Initial entry
+> segments a located passage into clause propositions and draws ONLY the
+> deterministic connections — the `_sure` calls in `da/treebuild.py`, each
+> justified by an explicit marker plus golden-diagram evidence — leaving
+> every judgment call disconnected for the analyst. The full classifier
+> (best-guess judgment calls included) remains available as
+> `build_document(confident_only=False)` and stays golden-tested. Raw
+> (unaligned) pastes arrive as disconnected punctuation-split roots: no
+> morphology, no proposed structure. Review flags never reach documents
+> (confidence labeling was removed from the product).
 
 No ML/LLM in v1. The honest 80/20: relations signaled by explicit connectives are the
 easy 80%; the rest is the user's interpretive work, and the pipeline's job there is to

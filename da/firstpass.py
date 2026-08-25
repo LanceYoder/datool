@@ -1,12 +1,15 @@
-"""Initial entry: pasted text OR a typed reference in, a complete first-pass
+"""Initial entry: pasted text OR a typed reference in, a first-pass
 analysis out.
 
-The automatic analyzer is ON for located passages. Stage 1
-(:mod:`da.segmentation`) splits the passage into clause propositions and
-stage 2 (:mod:`da.treebuild`) connects them into one labeled tree — the
-document arrives in the editor fully analyzed, and the editor is where the
-analyst overrides it: every split, connection, relationship, and star stays
-editable.
+The automatic analyzer runs in CONFIDENT-ONLY mode for located passages.
+Stage 1 (:mod:`da.segmentation`) splits the passage into clause propositions;
+stage 2 (:mod:`da.treebuild`) then draws ONLY the connections it is
+deterministically right about — explicit-marker calls the golden diagrams
+have never contradicted (γάρ grounds, ὅτι-content after a verb of saying,
+conditional protases, ὡς-class comparisons, ὥστε results, οὐ … ἀλλά) — and
+leaves everything else disconnected for the analyst. The full classifier
+(every judgment call included) stays in the codebase behind
+``build_document(confident_only=False)``.
 
 Two ways in, one result. Text that reads as a REFERENCE ("Eph 1:3-14",
 "1 jn 1:5 to 7", typos and abbreviations included — see
@@ -58,13 +61,13 @@ def first_pass(text: str) -> FirstPassResult:
 
 
 def _analyzed(start: int, end: int) -> dict:
-    """Segment a corpus range into clauses and build its tree."""
+    """Segment a corpus range into clauses and draw the sure connections."""
     # Imported here, not at module top: the analyzer lives in its own modules
     # and raw-mode entry must keep working even while they are being reworked.
     from .segmentation import segment
     from .treebuild import build_document
 
-    return build_document(segment(start, end))
+    return build_document(segment(start, end), confident_only=True)
 
 
 def _reference_alignment(reference) -> Alignment:

@@ -189,31 +189,22 @@ await page.waitForURL(/\/analysis\//);
 const analysisUrl = page.url();
 ok(`created ${analysisUrl}`);
 
-// --- (b) Initial entry: the full first pass (pre-split + tree) ---------------
-step('(b) initial entry: clause propositions connected into one labeled tree');
+// --- (b) Initial entry: pre-split, with ONLY the sure connections drawn ------
+step('(b) initial entry: clause propositions, only the deterministic joins');
 await page.waitForSelector(SEL.row);
 await expectCount(SEL.row, 14, 'one row per clause segment (1 Jn 1:5–7 = 14)');
-// Auto-relationing runs at entry: the exact tree shape is pinned by the
-// backend goldens, so here we only require a real proposal, dynamically.
-const bracketsEntry = await countOf(SEL.bracket);
-console.log(`  entry brackets: ${bracketsEntry}`);
-if (bracketsEntry < 5) {
-  await fail(`auto-relationing should propose a real tree, got ${bracketsEntry} brackets`);
-}
-ok(`auto-relationing proposed ${bracketsEntry} brackets`);
-await expectCount(SEL.dot, 14 + bracketsEntry, 'one dot per proposition and per bracket');
-await expectCount(SEL.rootDot, 1, 'the whole passage arrives as ONE tree');
+// Confident-only auto-relationing: in this passage exactly one join is
+// deterministic — the ὡς comparison 7a/7b (pinned by the backend goldens).
+// Everything else rides a καί or an asyndeton and stays loose for the human.
+await expectCount(SEL.bracket, 1, 'only the sure connection (the ὡς comparison) is drawn');
+await expectCount(SEL.dot, 15, 'one dot per proposition and per bracket');
+await expectCount(SEL.rootDot, 13, 'everything else is left disconnected');
 const blockLabel = (await page.locator(SEL.row).nth(0).locator('.verse-label').textContent()) ?? '';
 if (blockLabel !== '5a') await fail(`first row label should be "5a", got "${blockLabel}"`);
 ok(`rows carry verse-letter labels (first is ${blockLabel})`);
 
-// A complete tree (one root) means the star walk already paints the
-// passage's main point(s) red at entry — coordinate tops may fan to several.
-await waitFor(
-  () => document.querySelectorAll('.prop-row.main-point').length >= 1,
-  null,
-  'the completed entry tree shows its main point in red',
-);
+// The forest is loose, so no main point is painted at entry.
+await expectNone('.prop-row.main-point', 'no main point while the analysis is incomplete');
 
 // Color blocks: the passage arrives as ONE undivided block — every row on
 // the same muted background, one saturated band down the right edge, and no
@@ -329,9 +320,7 @@ const gloss = (await page.textContent(`${SEL.wordPopover} .word-gloss`).catch(()
 const parse = (await page.textContent(`${SEL.wordPopover} .word-parse`).catch(() => null)) ?? '';
 if (gloss.trim() === '') await fail('word popover shows no gloss');
 if (parse.trim() === '') await fail('word popover shows no morphology');
-const hint = (await page.textContent(`${SEL.wordPopover} .word-hint`).catch(() => null)) ?? '';
-if (!hint.includes('Right-click')) await fail(`split hint should name the right-click: "${hint}"`);
-ok(`word popover shows info ("${gloss.trim()}" · "${parse.trim()}") and the right-click hint`);
+ok(`word popover shows info ("${gloss.trim()}" · "${parse.trim()}")`);
 await snap('split-popover');
 await page.keyboard.press('Escape');
 await expectCount(SEL.wordPopover, 0, 'Escape closed the word popover');
@@ -625,8 +614,8 @@ const stripX = await page.evaluate(() => {
 });
 await page.mouse.move(stripX, boundaryY);
 await page.waitForSelector('.section-control.add');
-const plus = (await page.textContent('.section-control.add')) ?? '';
-if (plus.trim() !== '+') await fail(`the add control should read "+", got "${plus}"`);
+// The + is DRAWN (two crossing SVG lines), not typed.
+await expectCount('.section-control.add svg line', 2, 'the add control draws a +');
 // Screenshot WITHOUT snap(): snap parks the pointer, which would dismiss the
 // hover-only control this shot exists to show.
 shot += 1;
@@ -652,8 +641,7 @@ await snap('two-blocks');
 // — block gestures share the history with everything else.
 await page.mouse.move(stripX, boundaryY);
 await page.waitForSelector('.section-control.remove');
-const minus = (await page.textContent('.section-control.remove')) ?? '';
-if (minus.trim() !== '−') await fail(`the remove control should read "−", got "${minus}"`);
+await expectCount('.section-control.remove svg line', 1, 'the remove control draws a −');
 await page.locator('.section-control.remove').click();
 await expectCount('.section-band', 1, 'the blocks joined back into one');
 await page.click('.editor-toolbar button:has-text("Undo")');
@@ -697,8 +685,17 @@ await snap('after-edits');
 // --- (j) Save and reload ----------------------------------------------------
 step('(j) save, reload, and check persistence');
 await page.click('.analysis-toolbar button:has-text("Save")');
-await page.waitForSelector('.analysis-toolbar >> text=/^Saved /', { timeout: 10_000 });
-ok('"Saved" indicator shown');
+// The Save button IS the save state: it disables once the document is clean.
+await waitFor(
+  () => {
+    const btn = [...document.querySelectorAll('.analysis-toolbar button')].find(
+      (b) => b.textContent === 'Save',
+    );
+    return btn !== undefined && btn.disabled;
+  },
+  null,
+  'Save disabled again — everything is stored',
+);
 
 await page.reload();
 await page.waitForSelector(SEL.row);
