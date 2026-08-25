@@ -67,6 +67,7 @@ describe('groupByFamily', () => {
       family: 'experimental',
       symbol: 'X',
       labels: ['X'],
+      description: 'An experiment.',
       starredLabel: null,
       coordinate: true,
     };

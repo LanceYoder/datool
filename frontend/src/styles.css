@@ -642,6 +642,57 @@ div.error-box {
   font-variant-numeric: tabular-nums;
 }
 
+/* Each row is the relationship plus its "i": the item fills the row, the
+   info button rides its right edge and appears under the pointer. */
+.menu-row {
+  position: relative;
+}
+
+.menu-item {
+  padding-right: 2.1rem;
+}
+
+.menu-info {
+  position: absolute;
+  top: 0.2rem;
+  right: 0.3rem;
+  width: 1.3rem;
+  height: 1.3rem;
+  padding: 0;
+  border-radius: 50%;
+  border-color: transparent;
+  background: none;
+  color: var(--muted);
+  font-family: Georgia, 'Times New Roman', serif;
+  font-style: italic;
+  font-size: 0.85rem;
+  line-height: 1;
+  opacity: 0;
+}
+
+.menu-row:hover .menu-info,
+.menu-info:focus-visible,
+.menu-info.on {
+  opacity: 1;
+}
+
+.menu-info.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.menu-description {
+  margin: 0 0.3rem 0.4rem;
+  padding: 0.35rem 0.5rem;
+  border-left: 2px solid var(--accent);
+  background: var(--bg-soft);
+  border-radius: 0 4px 4px 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--text);
+  white-space: normal;
+}
+
 .menu-item.current {
   background: #eef2ff;
 }

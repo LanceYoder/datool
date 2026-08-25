@@ -5,7 +5,7 @@
 // core command and closes. Every relationship also answers to its own key
 // (shown in parentheses) while the menu is open.
 
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { TaxonomyEntry } from '../types';
 import { groupByFamily, relationshipForKey, shortcutFor } from './interaction';
 
@@ -20,6 +20,9 @@ export default function RelationshipMenu({ taxonomy, current, onPick }: Relation
   const groups = groupByFamily(taxonomy);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const currentRef = useRef<HTMLButtonElement | null>(null);
+  // The relationship whose description is open, if any. One at a time: the
+  // menu is a list to read down, not a stack of open drawers.
+  const [explained, setExplained] = useState<string | null>(null);
 
   // Open on the relationship the bracket already has: scroll it to the middle
   // of the list rather than making the reader hunt for the marked row.
@@ -57,19 +60,36 @@ export default function RelationshipMenu({ taxonomy, current, onPick }: Relation
           {group.entries.map((entry) => {
             const key = shortcutFor(entry.code);
             const isCurrent = entry.code === current;
+            const open = explained === entry.code;
             return (
-              <button
-                key={entry.code}
-                type="button"
-                role="menuitem"
-                ref={isCurrent ? currentRef : undefined}
-                className={isCurrent ? 'menu-item current' : 'menu-item'}
-                onClick={() => onPick(entry.code)}
-              >
-                <span className="menu-symbol">{entry.symbol}</span>
-                <span className="menu-name">{entry.name}</span>
-                {key !== null && <span className="menu-key muted">({key})</span>}
-              </button>
+              <div key={entry.code} className="menu-row">
+                <button
+                  type="button"
+                  role="menuitem"
+                  ref={isCurrent ? currentRef : undefined}
+                  className={isCurrent ? 'menu-item current' : 'menu-item'}
+                  onClick={() => onPick(entry.code)}
+                >
+                  <span className="menu-symbol">{entry.symbol}</span>
+                  <span className="menu-name">{entry.name}</span>
+                  {key !== null && <span className="menu-key muted">({key})</span>}
+                </button>
+                <button
+                  type="button"
+                  className={open ? 'menu-info on' : 'menu-info'}
+                  aria-label={`What ${entry.name} means`}
+                  aria-expanded={open}
+                  title={`What ${entry.name} means`}
+                  onClick={(event) => {
+                    // Reading about a relationship is not choosing it.
+                    event.stopPropagation();
+                    setExplained(open ? null : entry.code);
+                  }}
+                >
+                  i
+                </button>
+                {open && <p className="menu-description">{entry.description}</p>}
+              </div>
             );
           })}
         </div>

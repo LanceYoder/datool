@@ -143,6 +143,8 @@ export interface VerseText {
 export interface TaxonomyEntry {
   code: string;
   name: string;
+  /** What the relationship is, in the course's terms — behind the menu's "i". */
+  description: string;
   family: string;
   symbol: string;
   labels: string[];

@@ -265,7 +265,12 @@ class TestTaxonomy:
         assert by_code["Grnd"]["starredLabel"] == 0
         assert set(entries[0]) == {
             "code", "name", "family", "symbol", "labels", "starredLabel", "coordinate",
+            "description",
         }
+        # Every relationship explains itself — the menu's "i" has nothing to
+        # fall back on.
+        assert all(e["description"].strip() for e in entries)
+        assert "because" in by_code["Grnd"]["description"]
 
 
 class TestCorpusWords:

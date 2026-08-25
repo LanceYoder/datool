@@ -22,7 +22,17 @@ const entry = (
   labels: string[],
   starredLabel: number | null,
   coordinate: boolean,
-): TaxonomyEntry => ({ code, name, family, symbol, labels, starredLabel, coordinate });
+): TaxonomyEntry => ({
+  code,
+  name,
+  family,
+  symbol,
+  labels,
+  starredLabel,
+  coordinate,
+  // The real descriptions live in da/taxonomy.py; the fixtures only need one.
+  description: `${name}: what the course says it is.`,
+});
 
 /** The 18 relationships, mirroring da/taxonomy.py exactly. */
 export const TAXONOMY: TaxonomyEntry[] = [
