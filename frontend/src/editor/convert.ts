@@ -26,6 +26,7 @@ import type {
   Document as AnalysisDocument,
   DocumentV2,
   Proposition,
+  SectionBreak,
   TreeNode,
 } from '../types';
 import { normalizeBreaks, pruneBreaks } from './sections';
@@ -118,6 +119,12 @@ export function documentToNode(
 ): JSONContent {
   const normalized = normalizeDocument(document);
   const propsById = new Map(normalized.propositions.map((p) => [p.id, p]));
+  // Color-block breaks ride the proposition that BEGINS each block (see
+  // schema.ts). Legacy pid-string lists normalize to {start, color} here, on
+  // the way in.
+  const blockColorByPid = new Map(
+    normalizeBreaks(normalized.sections).map((b) => [b.start, b.color]),
+  );
 
   const build = (node: TreeNode): JSONContent => {
     if (node.kind === 'prop') {
@@ -136,6 +143,7 @@ export function documentToNode(
           srcStart: prop.source.kind === 'corpus' ? prop.source.start : null,
           srcEnd: prop.source.kind === 'corpus' ? prop.source.end : null,
           rawText: prop.source.kind === 'raw' ? prop.source.text : null,
+          blockColor: blockColorByPid.get(prop.id) ?? null,
         },
       };
     }
@@ -154,14 +162,7 @@ export function documentToNode(
   if (normalized.forest.length === 0) {
     throw new Error('document has no forest roots');
   }
-  return {
-    type: 'doc',
-    // Color-block breaks ride the doc node itself (see schema.ts), so the
-    // strip's gestures share the history with every other command. Legacy
-    // pid-string lists normalize to {start, color} here, on the way in.
-    attrs: { sections: normalizeBreaks(normalized.sections) },
-    content: normalized.forest.map(build),
-  };
+  return { type: 'doc', content: normalized.forest.map(build) };
 }
 
 /**
@@ -178,6 +179,7 @@ export function nodeToDocument(
 ): DocumentV2 {
   const priorById = new Map(priorDocument.propositions.map((p) => [p.id, p]));
   const propositions: Proposition[] = [];
+  const blockStarts: SectionBreak[] = [];
 
   const build = (node: PMNode): TreeNode => {
     if (node.type.name === 'proposition') {
@@ -207,6 +209,9 @@ export function nodeToDocument(
       }
       if (typeof node.attrs.color === 'string' && node.attrs.color !== '') {
         prop.color = node.attrs.color;
+      }
+      if (typeof node.attrs.blockColor === 'number') {
+        blockStarts.push({ start: prop.id, color: node.attrs.blockColor });
       }
       propositions.push(prop);
       return { kind: 'prop', ref: pid };
@@ -240,14 +245,10 @@ export function nodeToDocument(
     forest.push(build(root));
   });
   const out: DocumentV2 = { schemaVersion: 2, propositions, forest };
-  // Color-block breaks, pruned to the propositions that still exist: a merge
-  // can strand a break's pid, and a stranded break must never reach the
-  // server. The attr itself keeps the stale pid — undoing the merge brings
-  // the break back — pruning happens only here, on the way out.
-  const breaks = pruneBreaks(
-    normalizeBreaks(pmDoc.attrs.sections),
-    propositions.map((p) => p.id),
-  );
+  // Color-block breaks, read back off the propositions that begin them and
+  // pruned: the FIRST proposition can carry a blockColor (a merge can leave
+  // it holding one), and a break there is no break at all.
+  const breaks = pruneBreaks(blockStarts, propositions.map((p) => p.id));
   if (breaks.length > 0) out.sections = breaks;
   return out;
 }

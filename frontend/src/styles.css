@@ -947,15 +947,17 @@ div.error-box {
   padding: 0;
   border: none;
   border-radius: 50%;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   box-shadow: 0 0 0 2px #fff, 0 1px 4px rgb(15 23 42 / 35%);
+}
+
+.section-control svg line {
+  stroke: #fff;
+  stroke-width: 2;
+  stroke-linecap: round;
 }
 
 .section-control.remove {

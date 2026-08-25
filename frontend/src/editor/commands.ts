@@ -30,7 +30,7 @@ import type { Node as PMNode } from '@tiptap/pm/model';
 import type { Transaction } from '@tiptap/pm/state';
 import type { CorpusWord, SectionBreak, TaxonomyEntry } from '../types';
 import { displayWordText } from './convert';
-import { addBreak, normalizeBreaks, removeBreak } from './sections';
+import { addBreak, removeBreak } from './sections';
 
 /**
  * Dispatch a command's single transaction as its own UNDO STEP.
@@ -569,6 +569,9 @@ export function splitProposition(
       label: label + PRIME,
       srcStart: midEnd + 1,
       text: corpusText(words, midEnd + 1, attrs.srcEnd),
+      // A color block begins ONCE: the head keeps the break, the tail is
+      // simply the next proposition inside the same block.
+      blockColor: null,
     };
   } else {
     const tokens = String(attrs.text ?? attrs.rawText ?? '').split(/\s+/).filter(Boolean);
@@ -578,7 +581,14 @@ export function splitProposition(
     const aText = tokens.slice(0, firstCount).join(' ');
     const bText = tokens.slice(firstCount).join(' ');
     attrsA = { ...attrs, text: aText, rawText: aText };
-    attrsB = { ...attrs, pid: pidB, label: label + PRIME, text: bText, rawText: bText };
+    attrsB = {
+      ...attrs,
+      pid: pidB,
+      label: label + PRIME,
+      text: bText,
+      rawText: bText,
+      blockColor: null,
+    };
   }
 
   const tr = state.tr;
@@ -677,30 +687,46 @@ export function mergeBelow(
 }
 
 // ---------------------------------------------------------------------------
-// Color blocks (see sections.ts for the model). The break list lives in the
-// DOC node's attrs, so these are ordinary transactions: one undo step each,
-// shared history with every other gesture. Structural commands never touch
-// the list — a break whose pid a merge removes is pruned on emit
-// (nodeToDocument) and comes back if the merge is undone.
+// Color blocks (see sections.ts for the model). A break rides the PROPOSITION
+// that begins its block, as that node's blockColor attr, so these are ordinary
+// transactions: one undo step each, shared history with every other gesture —
+// and only the rows whose attr changes re-render. Structural commands never
+// touch them: a merged-away break comes back when the merge is undone, and a
+// split leaves the break on the half that kept the pid.
 
 /** The pids currently in the document, in order. */
 function pidsInOrder(doc: PMNode): string[] {
   return propositionsInOrder(doc).map((p) => String(p.node.attrs.pid));
 }
 
-function currentBreaks(doc: PMNode): SectionBreak[] {
-  return normalizeBreaks(doc.attrs.sections);
+/** The color-block breaks the document carries, in proposition order. */
+export function sectionBreaks(doc: PMNode): SectionBreak[] {
+  const breaks: SectionBreak[] = [];
+  for (const { node } of propositionsInOrder(doc)) {
+    const color = node.attrs.blockColor;
+    if (typeof color === 'number') {
+      breaks.push({ start: String(node.attrs.pid), color });
+    }
+  }
+  return breaks;
 }
 
+/**
+ * Bring the document's blockColor attrs in line with `next`, touching only
+ * the propositions whose attr actually differs — one transaction, one undo
+ * step, and no re-render for a row that did not change.
+ */
 function setBreaks(editor: Editor, next: SectionBreak[]): boolean {
-  const current = currentBreaks(editor.state.doc);
-  if (
-    next.length === current.length &&
-    next.every((b, i) => b.start === current[i]?.start && b.color === current[i]?.color)
-  ) {
-    return false; // nothing to change: dispatch nothing, no empty undo step
+  const wanted = new Map(next.map((b) => [b.start, b.color]));
+  const tr = editor.state.tr;
+  for (const { node, pos } of propositionsInOrder(editor.state.doc)) {
+    const want = wanted.get(String(node.attrs.pid)) ?? null;
+    const have = typeof node.attrs.blockColor === 'number' ? node.attrs.blockColor : null;
+    if (want === have) continue;
+    tr.setNodeMarkup(pos, undefined, { ...node.attrs, blockColor: want });
   }
-  dispatch(editor, editor.state.tr.setDocAttribute('sections', next));
+  if (!tr.docChanged) return false; // nothing to change: no empty undo step
+  dispatch(editor, tr);
   return true;
 }
 
@@ -711,7 +737,7 @@ function setBreaks(editor: Editor, next: SectionBreak[]): boolean {
  */
 export function addSectionBreak(editor: Editor, pid: string): boolean {
   const doc = editor.state.doc;
-  return setBreaks(editor, addBreak(currentBreaks(doc), pidsInOrder(doc), pid));
+  return setBreaks(editor, addBreak(sectionBreaks(doc), pidsInOrder(doc), pid));
 }
 
 /**
@@ -720,7 +746,7 @@ export function addSectionBreak(editor: Editor, pid: string): boolean {
  */
 export function removeSectionBreak(editor: Editor, pid: string): boolean {
   const doc = editor.state.doc;
-  return setBreaks(editor, removeBreak(currentBreaks(doc), pidsInOrder(doc), pid));
+  return setBreaks(editor, removeBreak(sectionBreaks(doc), pidsInOrder(doc), pid));
 }
 
 // ---------------------------------------------------------------------------

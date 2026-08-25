@@ -593,25 +593,38 @@ describe('mergeBelow', () => {
 });
 
 describe('addSectionBreak / removeSectionBreak', () => {
-  it('is a doc-attr transaction: one undo step, shared history', () => {
+  it('is an ordinary transaction: one undo step, shared history', () => {
     const doc = looseDoc(); // props a, b, c
     const ed = open(doc);
-    expect(ed.state.doc.attrs.sections).toEqual([]);
+    const breaks = () => nodeToDocument(ed.state.doc, doc).sections;
+    expect(breaks()).toBeUndefined();
 
     expect(addSectionBreak(ed, 'b')).toBe(true);
-    expect(ed.state.doc.attrs.sections).toEqual([{ start: 'b', color: 1 }]);
-    expect(nodeToDocument(ed.state.doc, doc).sections).toEqual([{ start: 'b', color: 1 }]);
+    expect(breaks()).toEqual([{ start: 'b', color: 1 }]);
 
     expect(ed.commands.undo()).toBe(true);
-    expect(ed.state.doc.attrs.sections).toEqual([]);
+    expect(breaks()).toBeUndefined();
     expect(ed.commands.redo()).toBe(true);
-    expect(ed.state.doc.attrs.sections).toEqual([{ start: 'b', color: 1 }]);
+    expect(breaks()).toEqual([{ start: 'b', color: 1 }]);
 
     expect(removeSectionBreak(ed, 'b')).toBe(true);
-    expect(ed.state.doc.attrs.sections).toEqual([]);
-    expect('sections' in nodeToDocument(ed.state.doc, doc)).toBe(false);
+    expect(breaks()).toBeUndefined();
     expect(ed.commands.undo()).toBe(true);
-    expect(ed.state.doc.attrs.sections).toEqual([{ start: 'b', color: 1 }]);
+    expect(breaks()).toEqual([{ start: 'b', color: 1 }]);
+  });
+
+  it('touches only the proposition whose block start changed', () => {
+    const doc = looseDoc();
+    const ed = open(doc);
+    const attrsOf = (pid: string) => ed.state.doc.nodeAt(propPos(ed, pid))?.attrs;
+    const aBefore = attrsOf('a');
+    const cBefore = attrsOf('c');
+    expect(addSectionBreak(ed, 'b')).toBe(true);
+    // Only 'b' carries a block start; its neighbours' attrs are untouched,
+    // which is what keeps their rows from re-rendering.
+    expect(attrsOf('b')?.blockColor).toBe(1);
+    expect(attrsOf('a')).toEqual(aBefore);
+    expect(attrsOf('c')).toEqual(cBefore);
   });
 
   it('dispatches nothing for a no-op: first proposition, unknown pid, repeat', () => {

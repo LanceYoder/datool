@@ -94,9 +94,15 @@ export default function SectionStrip({
           className={isBreak ? 'section-control remove' : 'section-control add'}
           style={{ top: hover.y }}
           title={isBreak ? 'Join this block to the one above' : 'Begin a new block here'}
+          aria-label={isBreak ? 'Join this block to the one above' : 'Begin a new block here'}
           onClick={() => (isBreak ? onRemove(hover.pid) : onAdd(hover.pid))}
         >
-          {isBreak ? '−' : '+'}
+          {/* Drawn, not typed: a glyph sits where its font puts it, which is
+              never quite the middle of a circle. These lines cross at it. */}
+          <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
+            <line x1="6" y1="10" x2="14" y2="10" />
+            {!isBreak && <line x1="10" y1="6" x2="10" y2="14" />}
+          </svg>
         </button>
       )}
     </div>

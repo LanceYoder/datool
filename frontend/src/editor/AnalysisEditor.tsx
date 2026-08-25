@@ -59,6 +59,7 @@ import {
   flipStar,
   mergeBelow,
   removeSectionBreak,
+  sectionBreaks,
   setRelationship,
   splitProposition,
   unzipToRoot,
@@ -88,7 +89,7 @@ import type { PositionedBracket, ShakeState } from './BracketLayer';
 import RelationshipMenu from './RelationshipMenu';
 import ColorSettings from './ColorSettings';
 import SectionStrip from './SectionStrip';
-import { normalizeBreaks, sectionColor, sectionColorByPid, sectionsOf } from './sections';
+import { sectionColor, sectionColorByPid, sectionsOf } from './sections';
 import HelpPanel from './HelpPanel';
 import { loadViewSettings, saveViewSettings } from './viewSettings';
 import type { ViewSettings } from './viewSettings';
@@ -100,6 +101,9 @@ const VERSE_LABEL_W = 72;
 /** Nominal popover boxes, used to keep them inside the shell. */
 const WORD_SIZE = { width: 280, height: 170 };
 const MENU_SIZE = { width: 272, height: 400 };
+
+/** Width the color-block strip stands in: the band plus air before the text. */
+const STRIP_LANE = 26;
 
 /** Clear space kept between the relationship menu and the text column. */
 const TEXT_GAP = 12;
@@ -603,9 +607,9 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, docTick]);
 
-  /** Color-block breaks — the DOC attr the section commands maintain. */
+  /** Color-block breaks — read off the propositions that begin the blocks. */
   const breaks = useMemo(
-    () => normalizeBreaks(editor?.state.doc.attrs.sections),
+    () => (editor === null ? [] : sectionBreaks(editor.state.doc)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [editor, docTick],
   );
@@ -1041,6 +1045,9 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
         className="editor-shell"
         style={{
           paddingLeft: overlay?.margin ?? `calc(50% - ${VERSE_LABEL_W / 2}px)`,
+          // The strip stands in the shell's right padding, so no line of Greek
+          // ever runs under it.
+          paddingRight: view.blocks ? STRIP_LANE : undefined,
         }}
       >
         {overlay !== null && (

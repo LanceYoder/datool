@@ -155,16 +155,12 @@ describe('documentToNode / nodeToDocument', () => {
     expect(out.propositions[4]?.source).toEqual({ kind: 'raw', text: RAW_1JOHN_1_6E });
   });
 
-  it('normalizes legacy pid-string breaks in, keeps stale pids on the attr, prunes on emit', () => {
+  it('normalizes legacy pid-string breaks in and rides them on their propositions', () => {
     const doc = disconnectedDoc();
     doc.sections = ['c', 'ghost', 'e']; // legacy shape; 'ghost' names no proposition
     editor = buildEditor([], documentToNode(doc, buildTextById(doc, CORPUS_WORDS)));
-    // Position-derived colors are frozen at load; pruning happens only on emit.
-    expect(editor.state.doc.attrs.sections).toEqual([
-      { start: 'c', color: 1 },
-      { start: 'ghost', color: 2 },
-      { start: 'e', color: 3 },
-    ]);
+    // Colors are derived from position at load and frozen there. 'ghost' has
+    // no proposition to ride, so it simply does not arrive.
     expect(nodeToDocument(editor.state.doc, doc).sections).toEqual([
       { start: 'c', color: 1 },
       { start: 'e', color: 3 },
@@ -174,7 +170,6 @@ describe('documentToNode / nodeToDocument', () => {
   it('omits sections from the emitted document when there are no breaks', () => {
     const doc = disconnectedDoc();
     editor = buildEditor([], documentToNode(doc, buildTextById(doc, CORPUS_WORDS)));
-    expect(editor.state.doc.attrs.sections).toEqual([]);
     expect('sections' in nodeToDocument(editor.state.doc, doc)).toBe(false);
   });
 });

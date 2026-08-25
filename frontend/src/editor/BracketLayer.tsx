@@ -50,6 +50,18 @@ const STAR_GAP = 4;
 /** Outer radius of the drawn star; the inner radius is this times 0.42. */
 const STAR_R = 7;
 
+/** How far a label's BASELINE sits above its tick line. */
+const LABEL_RISE = 5;
+
+/**
+ * How far the star's center sits above the tick: the same rise as the label's
+ * baseline, plus a third of the label's size — which puts the star's middle at
+ * the middle of the letters beside it rather than on their baseline. The size
+ * matches .bracket-label in styles.css.
+ */
+const LABEL_SIZE = 13;
+const STAR_RISE = LABEL_RISE + LABEL_SIZE * 0.36;
+
 /** A five-pointed star, point up, centered on (cx, cy). */
 function starPath(cx: number, cy: number, r: number): string {
   const points: string[] = [];
@@ -209,7 +221,7 @@ export default function BracketLayer({
               // Both sit ABOVE their line, so a parent's tick arriving at a
               // coordinate bracket's midpoint never runs through the letters.
               const x = mid ? b.x - LABEL_OFFSET : b.x + LABEL_OFFSET;
-              const y = l.y - 5;
+              const y = l.y - LABEL_RISE;
               const w = Math.max(18, l.text.length * LABEL_CHAR_W + 10);
               const hitX = mid ? x - w : x - 2;
               return (
@@ -260,10 +272,10 @@ export default function BracketLayer({
                     onMouseDown={swallow}
                     onClick={() => onStarClick(b.pos)}
                   >
-                    <circle cx={sx + STAR_R} cy={t.y - 8} r={12} fill="transparent" />
+                    <circle cx={sx + STAR_R} cy={t.y - STAR_RISE} r={12} fill="transparent" />
                     <path
                       className="bracket-star"
-                      d={starPath(sx + STAR_R, t.y - 8, STAR_R)}
+                      d={starPath(sx + STAR_R, t.y - STAR_RISE, STAR_R)}
                       fill={relationColor(view, b.rel)}
                     />
                   </g>
