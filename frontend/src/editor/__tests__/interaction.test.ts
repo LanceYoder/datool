@@ -127,6 +127,22 @@ describe('mainPointRefs', () => {
     expect(mainPointRefs([p('p1')])).toEqual([]); // one root, but no tree
     expect(mainPointRefs([])).toEqual([]);
   });
+
+  it('keeps walking through a coordinate fan, and climaxes a Progression at its last member', () => {
+    // Ser fans into BOTH members and the walk continues inside each; Prog is
+    // the one coordinate that does not fan — the diagrams underline only the
+    // final step of a P. Mirrors the server's main_point.
+    const grnd: BracketNode = {
+      kind: 'bracket', rel: 'Grnd', prominent: 0, children: [p('a'), p('b')],
+    };
+    const prog: BracketNode = {
+      kind: 'bracket', rel: 'Prog', prominent: null, children: [p('c'), p('d')],
+    };
+    const root: BracketNode = {
+      kind: 'bracket', rel: 'Ser', prominent: null, children: [grnd, prog],
+    };
+    expect(mainPointRefs([root])).toEqual(['a', 'd']);
+  });
 });
 
 describe('rowEnglish', () => {

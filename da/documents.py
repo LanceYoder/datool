@@ -222,25 +222,30 @@ def _walk_tree(node, where: str, leaves: list[str], problems: list[str]) -> None
 
 
 def main_point(doc) -> list[str]:
-    """Proposition ids of the main point: follow stars from the single root; at
-    a coordinate bracket the whole packet is the point (all its leaves).
+    """Proposition ids of the main point: follow the stars from the single
+    root. A subordinate bracket walks into its starred child; a coordinate
+    bracket fans — the walk CONTINUES into every member — except Progression,
+    which climaxes: its point is its last member (the course's worked
+    diagrams underline only the final step of a P). Mirrors the client's
+    mainPointRefs, which paints these rows red.
 
     A forest with more than one root is a partly connected analysis — nothing
     supports everything else yet, so there is no main point: return []."""
     forest = normalize_document(doc).get("forest")
     if not isinstance(forest, list) or len(forest) != 1:
         return []
-    node = forest[0]
-    while node["kind"] == "bracket" and node.get("prominent") is not None:
-        node = node["children"][node["prominent"]]
-    leaves: list[str] = []
-    _collect(node, leaves)
-    return leaves
+    out: list[str] = []
 
+    def walk(node) -> None:
+        if node["kind"] == "prop":
+            out.append(node["ref"])
+        elif node.get("prominent") is not None:
+            walk(node["children"][node["prominent"]])
+        elif node.get("rel") == "Prog":
+            walk(node["children"][-1])
+        else:
+            for child in node["children"]:
+                walk(child)
 
-def _collect(node, out: list[str]) -> None:
-    if node["kind"] == "prop":
-        out.append(node["ref"])
-    else:
-        for child in node["children"]:
-            _collect(child, out)
+    walk(forest[0])
+    return out

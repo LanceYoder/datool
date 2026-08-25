@@ -145,9 +145,16 @@ As a datool document (the `document` JSON of one `Analysis` row):
 }
 ```
 
-Star walk: root `prominent: 1` → the Series packet → coordinate, stop. Main point:
-**6d + 6e jointly** ("we are lying and do not practice the truth") — matching the
-student's analysis.
+A document may also carry `"sections": ["p3", …]` — the analyst's COLOR BLOCKS,
+stored as the pids that begin one (the first proposition never appears: the
+document already opens inside its first block). Blocks are never proposed
+automatically; the editor's right-edge strip adds and removes them by hand.
+
+Star walk: root `prominent: 1` → the Series packet → coordinate FAN, so the walk
+continues into each member. Main point: **6d + 6e jointly** ("we are lying and do
+not practice the truth") — matching the student's analysis. One coordinate is the
+exception: a Progression climaxes, so the walk takes only its LAST member (the
+worked diagrams underline only the final step of a P).
 
 First-pass vs. student on this verse: the pipeline gets the ἐάν conditional, the
 ὅτι content clause, and the 6d/6e Series right on its own. The καί before περιπατῶμεν

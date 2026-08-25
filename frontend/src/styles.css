@@ -917,18 +917,21 @@ div.error-box {
    the words stay the darkest thing on the page; the strip down the right edge
    carries the same hues at reading strength, and is where blocks are made. */
 
+/* Wider than the visible bands: the strip is the hover surface, and the
+   + / − control must sit INSIDE it — a pointer travelling from band to
+   button never leaves the element, so the button cannot vanish mid-way. */
 .section-strip {
   position: absolute;
   top: 0;
   right: 0;
-  width: 14px;
+  width: 48px;
   pointer-events: all;
 }
 
 .section-band {
   position: absolute;
-  left: 0;
   right: 0;
+  width: 14px;
   border-radius: 2px;
   opacity: 0.85;
 }

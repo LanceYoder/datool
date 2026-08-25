@@ -154,6 +154,22 @@ describe('documentToNode / nodeToDocument', () => {
     expect(out.propositions[2]?.color).toBe('#1d4ed8');
     expect(out.propositions[4]?.source).toEqual({ kind: 'raw', text: RAW_1JOHN_1_6E });
   });
+
+  it('carries color-block breaks on the doc attrs and prunes stale pids on the way out', () => {
+    const doc = disconnectedDoc();
+    doc.sections = ['c', 'ghost', 'e']; // 'ghost' names no proposition
+    editor = buildEditor([], documentToNode(doc, buildTextById(doc, CORPUS_WORDS)));
+    // The attr keeps what it was given; pruning happens only on emit.
+    expect(editor.state.doc.attrs.sections).toEqual(['c', 'ghost', 'e']);
+    expect(nodeToDocument(editor.state.doc, doc).sections).toEqual(['c', 'e']);
+  });
+
+  it('omits sections from the emitted document when there are no breaks', () => {
+    const doc = disconnectedDoc();
+    editor = buildEditor([], documentToNode(doc, buildTextById(doc, CORPUS_WORDS)));
+    expect(editor.state.doc.attrs.sections).toEqual([]);
+    expect('sections' in nodeToDocument(editor.state.doc, doc)).toBe(false);
+  });
 });
 
 describe('withoutConnections', () => {

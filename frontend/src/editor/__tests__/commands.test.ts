@@ -6,6 +6,7 @@ import type { BracketNode, Document as AnalysisDocument, TreeNode } from '../../
 import { buildTextById, documentToNode, nodeToDocument } from '../convert';
 import { buildEditor } from '../editor';
 import {
+  addSectionBreak,
   clearConnections,
   connectUnits,
   disconnectRoot,
@@ -13,6 +14,7 @@ import {
   findPropositionPos,
   flipStar,
   mergeBelow,
+  removeSectionBreak,
   setRelationship,
   splitProposition,
   unzipToRoot,
@@ -587,6 +589,59 @@ describe('mergeBelow', () => {
     expect(mergeBelow(ed, 'p5', WORD_MAP)).toBe(false); // last in document order
     expect(mergeBelow(ed, 'nope', WORD_MAP)).toBe(false);
     expect(ed.getJSON()).toEqual(before);
+  });
+});
+
+describe('addSectionBreak / removeSectionBreak', () => {
+  it('is a doc-attr transaction: one undo step, shared history', () => {
+    const doc = looseDoc(); // props a, b, c
+    const ed = open(doc);
+    expect(ed.state.doc.attrs.sections).toEqual([]);
+
+    expect(addSectionBreak(ed, 'b')).toBe(true);
+    expect(ed.state.doc.attrs.sections).toEqual(['b']);
+    expect(nodeToDocument(ed.state.doc, doc).sections).toEqual(['b']);
+
+    expect(ed.commands.undo()).toBe(true);
+    expect(ed.state.doc.attrs.sections).toEqual([]);
+    expect(ed.commands.redo()).toBe(true);
+    expect(ed.state.doc.attrs.sections).toEqual(['b']);
+
+    expect(removeSectionBreak(ed, 'b')).toBe(true);
+    expect(ed.state.doc.attrs.sections).toEqual([]);
+    expect('sections' in nodeToDocument(ed.state.doc, doc)).toBe(false);
+    expect(ed.commands.undo()).toBe(true);
+    expect(ed.state.doc.attrs.sections).toEqual(['b']);
+  });
+
+  it('dispatches nothing for a no-op: first proposition, unknown pid, repeat', () => {
+    const doc = looseDoc();
+    const ed = open(doc);
+    expect(addSectionBreak(ed, 'a')).toBe(false); // the document already starts a block
+    expect(addSectionBreak(ed, 'nope')).toBe(false);
+    expect(removeSectionBreak(ed, 'b')).toBe(false); // no break there
+    expect(addSectionBreak(ed, 'b')).toBe(true);
+    expect(addSectionBreak(ed, 'b')).toBe(false); // already a break
+    expect(ed.can().redo()).toBe(false);
+  });
+
+  it('a break survives splitting its own start row (the head keeps the pid)', () => {
+    const doc = looseDoc();
+    const ed = open(doc);
+    expect(addSectionBreak(ed, 'b')).toBe(true);
+    expect(splitProposition(ed, propPos(ed, 'b'), 1, null)).toBe(true);
+    expect(nodeToDocument(ed.state.doc, doc).sections).toEqual(['b']);
+  });
+
+  it('merging across a break dissolves it on emit — and undoing the merge restores it', () => {
+    const doc = looseDoc();
+    const ed = open(doc);
+    expect(addSectionBreak(ed, 'b')).toBe(true);
+    expect(mergeBelow(ed, 'a', null)).toBe(true); // 'b' is gone: a absorbs it
+    expect('sections' in nodeToDocument(ed.state.doc, doc)).toBe(false);
+    // The attr still names 'b' (pruning is emit-only), so undo brings it back.
+    expect(ed.commands.undo()).toBe(true);
+    expect(nodeToDocument(ed.state.doc, doc).sections).toEqual(['b']);
   });
 });
 

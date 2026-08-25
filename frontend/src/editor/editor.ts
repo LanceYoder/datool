@@ -74,6 +74,13 @@ export function setDocument(
 ): void {
   const json = documentToNode(document, textById);
   editor.chain().setMeta('addToHistory', false).setContent(json).run();
+  // setContent replaces the doc's CONTENT; the doc node's own attrs (the
+  // color-block breaks) are applied separately, also outside history.
+  editor.view.dispatch(
+    editor.state.tr
+      .setDocAttribute('sections', (json.attrs?.sections as string[] | undefined) ?? [])
+      .setMeta('addToHistory', false),
+  );
 }
 
 /** Read the editor state back out as a v2 Document (see nodeToDocument). */

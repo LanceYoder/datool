@@ -383,9 +383,9 @@ class TestOtherShapes:
 
 
 class TestMainPoint:
-    def test_subordinate_chain_then_coordinate_stop(self):
-        # Star walk on the worked example: CndE* -> Series packet -> stop;
-        # the coordinate packet's leaves are jointly the main point.
+    def test_subordinate_chain_then_coordinate_fan(self):
+        # Star walk on the worked example: CndE* -> Series packet -> fan;
+        # the coordinate packet's members are jointly the main point.
         assert main_point(valid_doc()) == ["p4", "p5"]
 
     def test_subordinate_chain_to_single_leaf(self):
@@ -393,11 +393,21 @@ class TestMainPoint:
         doc["forest"][0]["prominent"] = 0   # star the FtIn side instead
         assert main_point(doc) == ["p2"]    # FtIn* -> Adv (prominent 0) -> p2
 
-    def test_coordinate_root_is_whole_packet(self):
+    def test_coordinate_root_fans_and_keeps_walking(self):
+        # A coordinate bracket fans, and the walk CONTINUES into each member
+        # (mirroring the client's red rows): the FtIn half follows its stars
+        # down to p2, the Series half is all leaves.
         doc = valid_doc()
         doc["forest"][0]["rel"] = "Ser"
         doc["forest"][0]["prominent"] = None
-        assert main_point(doc) == ["p1", "p2", "p3", "p4", "p5"]
+        assert main_point(doc) == ["p2", "p4", "p5"]
+
+    def test_progression_climaxes_at_its_last_member(self):
+        # Progression is the one coordinate that does NOT fan: the worked
+        # diagrams underline only the final step of a P.
+        doc = valid_doc()
+        doc["forest"][0]["children"][1]["rel"] = "Prog"
+        assert main_point(doc) == ["p5"]
 
     def test_single_prop_doc(self):
         doc = {

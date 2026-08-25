@@ -1,0 +1,330 @@
+{
+  "reference": "Acts 2:37–41",
+  "language": "greek",
+  "source": "hand-drawn bracket diagram over the ESV, photographed; rows mapped to the same clauses in the SBLGNT",
+  "mainPoint": [
+    "p8",
+    "p16"
+  ],
+  "document": {
+    "schemaVersion": 2,
+    "propositions": [
+      {
+        "id": "p1",
+        "label": "37a",
+        "source": {
+          "kind": "corpus",
+          "start": 65642,
+          "end": 65643
+        }
+      },
+      {
+        "id": "p2",
+        "label": "37b",
+        "source": {
+          "kind": "corpus",
+          "start": 65644,
+          "end": 65646
+        }
+      },
+      {
+        "id": "p3",
+        "label": "37c",
+        "source": {
+          "kind": "corpus",
+          "start": 65647,
+          "end": 65655
+        }
+      },
+      {
+        "id": "p4",
+        "label": "37d",
+        "source": {
+          "kind": "corpus",
+          "start": 65656,
+          "end": 65659
+        }
+      },
+      {
+        "id": "p5",
+        "label": "38a",
+        "source": {
+          "kind": "corpus",
+          "start": 65660,
+          "end": 65663
+        }
+      },
+      {
+        "id": "p6",
+        "label": "38b",
+        "source": {
+          "kind": "corpus",
+          "start": 65664,
+          "end": 65664
+        }
+      },
+      {
+        "id": "p7",
+        "label": "38c",
+        "source": {
+          "kind": "corpus",
+          "start": 65665,
+          "end": 65678
+        }
+      },
+      {
+        "id": "p8",
+        "label": "38d",
+        "source": {
+          "kind": "corpus",
+          "start": 65679,
+          "end": 65685
+        }
+      },
+      {
+        "id": "p9",
+        "label": "39a",
+        "source": {
+          "kind": "corpus",
+          "start": 65686,
+          "end": 65699
+        }
+      },
+      {
+        "id": "p10",
+        "label": "39b",
+        "source": {
+          "kind": "corpus",
+          "start": 65700,
+          "end": 65706
+        }
+      },
+      {
+        "id": "p11",
+        "label": "40a",
+        "source": {
+          "kind": "corpus",
+          "start": 65707,
+          "end": 65711
+        }
+      },
+      {
+        "id": "p12",
+        "label": "40b",
+        "source": {
+          "kind": "corpus",
+          "start": 65712,
+          "end": 65714
+        }
+      },
+      {
+        "id": "p13",
+        "label": "40c",
+        "source": {
+          "kind": "corpus",
+          "start": 65715,
+          "end": 65715
+        }
+      },
+      {
+        "id": "p14",
+        "label": "40d",
+        "source": {
+          "kind": "corpus",
+          "start": 65716,
+          "end": 65722
+        }
+      },
+      {
+        "id": "p15",
+        "label": "41a",
+        "source": {
+          "kind": "corpus",
+          "start": 65723,
+          "end": 65730
+        }
+      },
+      {
+        "id": "p16",
+        "label": "41b",
+        "source": {
+          "kind": "corpus",
+          "start": 65731,
+          "end": 65739
+        }
+      }
+    ],
+    "forest": [
+      {
+        "kind": "bracket",
+        "rel": "SR",
+        "prominent": 1,
+        "children": [
+          {
+            "kind": "bracket",
+            "rel": "SR",
+            "prominent": 1,
+            "children": [
+              {
+                "kind": "bracket",
+                "rel": "Tmp",
+                "prominent": 1,
+                "children": [
+                  {
+                    "kind": "prop",
+                    "ref": "p1"
+                  },
+                  {
+                    "kind": "bracket",
+                    "rel": "Ser",
+                    "prominent": null,
+                    "children": [
+                      {
+                        "kind": "prop",
+                        "ref": "p2"
+                      },
+                      {
+                        "kind": "prop",
+                        "ref": "p3"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "prop",
+                "ref": "p4"
+              }
+            ]
+          },
+          {
+            "kind": "bracket",
+            "rel": "Ser",
+            "prominent": null,
+            "children": [
+              {
+                "kind": "bracket",
+                "rel": "FtIn",
+                "prominent": 1,
+                "children": [
+                  {
+                    "kind": "prop",
+                    "ref": "p5"
+                  },
+                  {
+                    "kind": "bracket",
+                    "rel": "Grnd",
+                    "prominent": 0,
+                    "children": [
+                      {
+                        "kind": "bracket",
+                        "rel": "Prog",
+                        "prominent": null,
+                        "children": [
+                          {
+                            "kind": "bracket",
+                            "rel": "Ser",
+                            "prominent": null,
+                            "children": [
+                              {
+                                "kind": "prop",
+                                "ref": "p6"
+                              },
+                              {
+                                "kind": "prop",
+                                "ref": "p7"
+                              }
+                            ]
+                          },
+                          {
+                            "kind": "prop",
+                            "ref": "p8"
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "bracket",
+                        "rel": "FtIn",
+                        "prominent": 1,
+                        "children": [
+                          {
+                            "kind": "prop",
+                            "ref": "p9"
+                          },
+                          {
+                            "kind": "prop",
+                            "ref": "p10"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "bracket",
+                "rel": "CE",
+                "prominent": 1,
+                "children": [
+                  {
+                    "kind": "bracket",
+                    "rel": "FtIn",
+                    "prominent": 1,
+                    "children": [
+                      {
+                        "kind": "bracket",
+                        "rel": "WEd",
+                        "prominent": 0,
+                        "children": [
+                          {
+                            "kind": "bracket",
+                            "rel": "Ser",
+                            "prominent": null,
+                            "children": [
+                              {
+                                "kind": "prop",
+                                "ref": "p11"
+                              },
+                              {
+                                "kind": "prop",
+                                "ref": "p12"
+                              }
+                            ]
+                          },
+                          {
+                            "kind": "prop",
+                            "ref": "p13"
+                          }
+                        ],
+                        "reversed": true
+                      },
+                      {
+                        "kind": "prop",
+                        "ref": "p14"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "bracket",
+                    "rel": "Prog",
+                    "prominent": null,
+                    "children": [
+                      {
+                        "kind": "prop",
+                        "ref": "p15"
+                      },
+                      {
+                        "kind": "prop",
+                        "ref": "p16"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

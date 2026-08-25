@@ -54,6 +54,18 @@ export const EditorDoc = Node.create({
   name: 'doc',
   topNode: true,
   content: 'unit+',
+
+  // Color blocks: the pids that BEGIN one (see sections.ts). They live as a
+  // DOC attribute — not React state — so adding or removing a break is a
+  // ProseMirror transaction like every other gesture: one undo step, and a
+  // break whose proposition a merge removed comes back when the merge is
+  // undone. Structural commands never touch the list; stale pids are pruned
+  // on emit (nodeToDocument), not here.
+  addAttributes() {
+    return {
+      sections: { default: [] as string[], rendered: false },
+    };
+  },
 });
 
 /**

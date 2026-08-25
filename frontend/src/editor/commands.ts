@@ -30,6 +30,7 @@ import type { Node as PMNode } from '@tiptap/pm/model';
 import type { Transaction } from '@tiptap/pm/state';
 import type { CorpusWord, TaxonomyEntry } from '../types';
 import { displayWordText } from './convert';
+import { addBreak, removeBreak } from './sections';
 
 /**
  * Dispatch a command's single transaction as its own UNDO STEP.
@@ -673,6 +674,50 @@ export function mergeBelow(
   if (words !== null) relabelCorpusInTransaction(tr, words);
   dispatch(editor, tr);
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// Color blocks (see sections.ts for the model). The break list lives in the
+// DOC node's attrs, so these are ordinary transactions: one undo step each,
+// shared history with every other gesture. Structural commands never touch
+// the list — a break whose pid a merge removes is pruned on emit
+// (nodeToDocument) and comes back if the merge is undone.
+
+/** The pids currently in the document, in order. */
+function pidsInOrder(doc: PMNode): string[] {
+  return propositionsInOrder(doc).map((p) => String(p.node.attrs.pid));
+}
+
+function currentBreaks(doc: PMNode): string[] {
+  return Array.isArray(doc.attrs.sections) ? (doc.attrs.sections as string[]) : [];
+}
+
+function setBreaks(editor: Editor, next: string[]): boolean {
+  const current = currentBreaks(editor.state.doc);
+  if (next.length === current.length && next.every((pid, i) => pid === current[i])) {
+    return false; // nothing to change: dispatch nothing, no empty undo step
+  }
+  dispatch(editor, editor.state.tr.setDocAttribute('sections', next));
+  return true;
+}
+
+/**
+ * Begin a new color block at the proposition `pid`. Rejected — dispatching
+ * nothing — for the first proposition, an unknown pid, or a break that is
+ * already there.
+ */
+export function addSectionBreak(editor: Editor, pid: string): boolean {
+  const doc = editor.state.doc;
+  return setBreaks(editor, addBreak(currentBreaks(doc), pidsInOrder(doc), pid));
+}
+
+/**
+ * Remove the color-block break at `pid`, joining its block to the one above.
+ * Rejected — dispatching nothing — when no break is there.
+ */
+export function removeSectionBreak(editor: Editor, pid: string): boolean {
+  const doc = editor.state.doc;
+  return setBreaks(editor, removeBreak(currentBreaks(doc), pidsInOrder(doc), pid));
 }
 
 // ---------------------------------------------------------------------------

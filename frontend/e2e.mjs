@@ -166,21 +166,25 @@ const paste = words.map((w) => w.text).join(' ');
 console.log('paste words:', words.length);
 
 // --- (a) Home: paste, locate, create ---------------------------------------
-step('(a) home: paste -> Locate -> Create');
+step('(a) home: paste -> located while typing -> Create');
 await page.goto(BASE);
 await page.waitForSelector('.paste-area');
 await page.fill('.paste-area', paste);
 await snap('home-paste');
 
-await page.click('button:has-text("Locate")');
-await page.waitForSelector('.alignment-line');
+// Locating runs by itself while you type (debounced): the alignment line
+// fills in without any button press, and Create arms.
+await waitFor(
+  () => document.querySelector('.alignment-line')?.textContent?.includes('1 John 1:5–7') === true,
+  null,
+  'the passage located itself while typing',
+);
 const alignment = (await page.textContent('.alignment-line')) ?? '';
 console.log('  alignment:', alignment);
-if (!alignment.includes('1 John 1:5–7')) await fail(`unexpected alignment: ${alignment}`);
 if (!alignment.includes('(exact)')) await fail(`alignment not exact: ${alignment}`);
 ok('alignment line reads 1 John 1:5–7 (exact)');
 
-await page.click('button:has-text("Create")');
+await page.click('button:has-text("Create"):not([disabled])');
 await page.waitForURL(/\/analysis\//);
 const analysisUrl = page.url();
 ok(`created ${analysisUrl}`);
@@ -209,6 +213,26 @@ await waitFor(
   () => document.querySelectorAll('.prop-row.main-point').length >= 1,
   null,
   'the completed entry tree shows its main point in red',
+);
+
+// Color blocks: the passage arrives as ONE undivided block — every row on
+// the same muted background, one saturated band down the right edge, and no
+// + / − control until the strip is hovered.
+await expectCount('.section-band', 1, 'one color-block band (undivided passage)');
+await expectNone('.section-control', 'no block control until the strip is hovered');
+const entryBgs = await page.evaluate(() => [
+  ...new Set([...document.querySelectorAll('.prop-row')].map((r) => getComputedStyle(r).backgroundColor)),
+]);
+if (entryBgs.length !== 1 || entryBgs[0] === 'rgba(0, 0, 0, 0)') {
+  await fail(`every row should share the first block's background, got ${entryBgs.join(' / ')}`);
+}
+ok(`every row sits on the first block's background (${entryBgs[0]})`);
+
+// Verbs are bold by default (the reader's toggle starts on).
+await waitFor(
+  () => document.querySelectorAll('.word.verb').length > 0,
+  null,
+  'Greek verbs are marked bold by default',
 );
 
 // The English reference line — built word-by-word from EACH row's own Greek
@@ -259,14 +283,6 @@ if (propDist0.length !== 1) {
 }
 ok(`every proposition dot sits at the same distance from its row (${propDist0[0]}px)`);
 
-// "Merge below" flows inline inside the text span, on every row but the last.
-const rows0 = await countOf(SEL.row);
-await expectCount(
-  '.prop-row .prop-text .merge-below',
-  rows0 - 1,
-  'Merge below sits inline after the last word',
-);
-
 // The removed UI: selects, per-bracket star/confirm buttons, the row-selection
 // mode, bracket box hit areas, the selected-branch accent, and the old
 // two-tier dot classes (all dots are live handles now).
@@ -280,16 +296,22 @@ for (const [sel, what] of [
   ['g.bracket.selected', 'selected-bracket mode'],
   ['g.dot-group.fixed', 'fixed (dead) dots'],
   ['g.dot-group.connectable', 'connectable-only dot class'],
+  ['.merge-below', 'the hover Merge button (merging is a right-click now)'],
 ]) {
   await expectNone(sel, `old UI gone (${what})`);
 }
 
+const switchLabels = await page.locator('.editor-toolbar .switch-label').allTextContents();
+console.log('  toolbar switches:', JSON.stringify(switchLabels));
+if (switchLabels.join('|') !== 'English|Verbs|Blocks|Color coding') {
+  await fail(`unexpected toolbar switches: ${JSON.stringify(switchLabels)}`);
+}
 const toolbarButtons = await page.locator('.editor-toolbar button').allTextContents();
 console.log('  toolbar buttons:', JSON.stringify(toolbarButtons));
-if (toolbarButtons.join('|') !== 'Undo|Redo') {
-  await fail(`toolbar should hold Undo and Redo only, got ${JSON.stringify(toolbarButtons)}`);
+if (toolbarButtons.join('|') !== 'Undo|Redo|Clear tree|?') {
+  await fail(`toolbar should hold Undo, Redo, Clear tree and ?, got ${JSON.stringify(toolbarButtons)}`);
 }
-ok('toolbar has Undo and Redo only');
+ok('toolbar: four reader switches; Undo, Redo, Clear tree and help');
 await snap('editor-first-pass');
 
 // --- (c) Split after --------------------------------------------------------
@@ -299,20 +321,23 @@ const splitPid = await splitRow.getAttribute('data-pid');
 const splitLabel = (await splitRow.locator('.verse-label').textContent()) ?? '';
 console.log(`  splitting row 0 (${splitPid}, "${splitLabel}") after its 2nd word`);
 
+// A left click opens the word-info card (lemma, gloss, morphology, and the
+// split hint); the split itself is a RIGHT-click on the word.
 await splitRow.locator('.word.splittable').nth(1).click();
 await page.waitForSelector(SEL.wordPopover);
-const splitText = (await page.textContent(`${SEL.wordPopover} .popover-item`)) ?? '';
-if (splitText.trim() !== 'Split after') await fail(`unexpected popover: "${splitText}"`);
-// The popover doubles as the word-info card: lemma, gloss, morphology.
 const gloss = (await page.textContent(`${SEL.wordPopover} .word-gloss`).catch(() => null)) ?? '';
 const parse = (await page.textContent(`${SEL.wordPopover} .word-parse`).catch(() => null)) ?? '';
 if (gloss.trim() === '') await fail('word popover shows no gloss');
 if (parse.trim() === '') await fail('word popover shows no morphology');
-ok(`word popover shows info ("${gloss.trim()}" · "${parse.trim()}") plus Split after`);
+const hint = (await page.textContent(`${SEL.wordPopover} .word-hint`).catch(() => null)) ?? '';
+if (!hint.includes('Right-click')) await fail(`split hint should name the right-click: "${hint}"`);
+ok(`word popover shows info ("${gloss.trim()}" · "${parse.trim()}") and the right-click hint`);
 await snap('split-popover');
+await page.keyboard.press('Escape');
+await expectCount(SEL.wordPopover, 0, 'Escape closed the word popover');
 
-await page.click(`${SEL.wordPopover} .popover-item`);
-await expectCount(SEL.row, 15, 'rows after split');
+await splitRow.locator('.word.splittable').nth(1).click({ button: 'right' });
+await expectCount(SEL.row, 15, 'rows after right-click split');
 
 const newRow = page.locator(SEL.row).nth(1);
 const newPid = await newRow.getAttribute('data-pid');
@@ -401,26 +426,21 @@ await expectCount(
 ok('an already-connected pair reconnected by its dots');
 await snap('reconnect-menu');
 
-// The fresh bracket is a root, so its open menu offers Disconnect — use it to
-// put the two halves back on the floor for the merge step.
-await page.click(`${SEL.menu} .menu-item.action:text-is("Disconnect")`);
-await expectCount(SEL.bracket, bracketsBeforeC2, 'Disconnect dissolved the bracket again');
+// Put the halves back on the floor: select the first half's dot and press
+// Delete — removing the connections above a unit is a key (or a right-click
+// on the dot), not a menu item.
+await page.keyboard.press('Escape');
+await dotHalfA.dispatchEvent('click');
+await expectCount(SEL.selectedDot, 1, 'dot selected for deletion');
+await page.keyboard.press('Delete');
+await expectCount(SEL.bracket, bracketsBeforeC2, 'Delete dissolved the connection again');
 await expectCount(`g.dot-group.root[data-dot="prop:${splitPid}"]`, 1, 'first half is a root again');
 
-// --- (d) Merge below --------------------------------------------------------
-step('(d) merge the split back together');
-await page.locator(SEL.row).nth(0).hover();
-const mergeBtn = page.locator(SEL.row).nth(0).locator('.merge-below');
-await waitFor(
-  () => {
-    const el = document.querySelectorAll('.prop-row')[0]?.querySelector('.merge-below');
-    return el !== null && el !== undefined && getComputedStyle(el).opacity === '1';
-  },
-  null,
-  '"Merge below" revealed on row hover',
-);
-if ((await mergeBtn.textContent()) !== 'Merge below') await fail('merge button text changed');
-await mergeBtn.click();
+// --- (d) Merge -------------------------------------------------------------
+step('(d) merge the split back together (right-click the last word)');
+// The LAST word of a row cannot split further, so a right-click there joins
+// the row with the one below it.
+await page.locator(SEL.row).nth(0).locator('.word').last().click({ button: 'right' });
 await expectCount(SEL.row, 14, 'back to fourteen rows after merge');
 const mergedLabel = await page.locator(SEL.row).nth(0).locator('.verse-label').textContent();
 if (mergedLabel !== splitLabel) await fail(`merged row label is "${mergedLabel}"`);
@@ -498,11 +518,12 @@ step('(f) flip a star');
 await page.keyboard.press('Escape');
 const starCount = await countOf(SEL.star);
 if (starCount < 1) await fail('no stars to flip');
+// The star is a drawn path; its geometry (the `d` attribute) moves with it.
 const starBefore = await page
-  .locator(`${SEL.star} text.bracket-star`)
+  .locator(`${SEL.star} path.bracket-star`)
   .first()
-  .getAttribute('y');
-console.log(`  ${starCount} stars; first star y=${starBefore}`);
+  .getAttribute('d');
+console.log(`  ${starCount} stars; first star at ${String(starBefore).slice(0, 24)}…`);
 // A REAL pointer click on the star glyph itself (not a dispatched event):
 // stars paint above every label hit, so this must flip the star — a mis-hit
 // that opened the relationship menu here is the regression this guards.
@@ -510,15 +531,15 @@ console.log(`  ${starCount} stars; first star y=${starBefore}`);
 // and mouse.click works in viewport coordinates.)
 await page.evaluate(() => window.scrollTo(0, 0));
 const starPoint = await page.evaluate(() => {
-  const t = document.querySelector('g.star-hit text.bracket-star');
+  const t = document.querySelector('g.star-hit path.bracket-star');
   const r = t.getBoundingClientRect();
   return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
 });
 await page.mouse.click(starPoint.x, starPoint.y);
 await waitFor(
   (before) => {
-    const t = document.querySelector('g.star-hit text.bracket-star');
-    return t !== null && t.getAttribute('y') !== before;
+    const t = document.querySelector('g.star-hit path.bracket-star');
+    return t !== null && t.getAttribute('d') !== before;
   },
   starBefore,
   'the star moved to the other end of its bracket',
@@ -537,10 +558,10 @@ await waitFor(
   'the main point followed the star to the other side (ends at the last row)',
 );
 const starAfter = await page
-  .locator(`${SEL.star} text.bracket-star`)
+  .locator(`${SEL.star} path.bracket-star`)
   .first()
-  .getAttribute('y');
-console.log(`  star y: ${starBefore} -> ${starAfter}`);
+  .getAttribute('d');
+console.log(`  star moved: ${String(starBefore).slice(0, 20)}… -> ${String(starAfter).slice(0, 20)}…`);
 await expectCount(SEL.star, starCount, 'star count unchanged by the flip');
 
 // --- (g) Label menu ---------------------------------------------------------
@@ -560,19 +581,14 @@ await page.keyboard.press('Escape');
 await expectCount(SEL.menu, 0, 'Escape closed the menu');
 
 // --- (h) Disconnect ---------------------------------------------------------
-step('(h) disconnect the outermost bracket');
+step('(h) right-click the outermost bracket dot to disconnect it');
 const rootsBeforeDisconnect = await countOf(SEL.rootDot);
 const bracketsBeforeDisconnect = await countOf(SEL.bracket);
 const mainBeforeDisconnect = await countOf('.prop-row.main-point');
-// Label groups render in document pre-order, so the FIRST label in the DOM
-// belongs to the first bracket — necessarily a ROOT bracket (its ancestors
-// would precede it). A root bracket's menu offers Disconnect.
-await page.locator(SEL.label).first().dispatchEvent('click');
-await page.waitForSelector(`${SEL.menu} .menu-item.action`);
-const actions = await page.locator(`${SEL.menu} .menu-item.action`).allTextContents();
-console.log('  menu actions:', JSON.stringify(actions));
-if (!actions.includes('Disconnect')) await fail('a root bracket did not offer Disconnect');
-await page.click(`${SEL.menu} .menu-item.action:text-is("Disconnect")`);
+// Bracket dots are numbered in document pre-order, so bracket:0 is the first
+// bracket — necessarily a ROOT bracket (its ancestors would precede it).
+// A right-click on its dot removes the connection it names.
+await page.locator('g.dot-group[data-dot="bracket:0"]').dispatchEvent('contextmenu');
 await expectCount(SEL.bracket, bracketsBeforeDisconnect - 1, 'the bracket is gone');
 await expectCount(SEL.rootDot, rootsBeforeDisconnect + 1, 'its children became roots');
 await expectNone('.prop-row.main-point', 'the main point cleared when the tree came apart');
@@ -590,6 +606,59 @@ await expectCount(
 await page.click('.editor-toolbar button:has-text("Redo")');
 await expectCount(SEL.bracket, bracketsBeforeDisconnect - 1, 'redo removed it again');
 await expectCount(SEL.rootDot, rootsBeforeDisconnect + 1, 'redo restored the root count');
+
+// --- (i2) Color blocks ------------------------------------------------------
+step('(i2) color blocks: + and − on the right-edge strip, one undo step each');
+await page.keyboard.press('Escape');
+await page.evaluate(() => window.scrollTo(0, 0));
+await expectCount('.section-band', 1, 'still one band before dividing');
+
+// Hover the strip level with the boundary above row 2: the "+" control
+// appears there (nearest boundary to the pointer).
+const boundaryY = await page.evaluate(() => {
+  const row = document.querySelectorAll('.prop-row')[2];
+  return row.getBoundingClientRect().top;
+});
+const stripX = await page.evaluate(() => {
+  const r = document.querySelector('.section-strip').getBoundingClientRect();
+  return r.right - 7;
+});
+await page.mouse.move(stripX, boundaryY);
+await page.waitForSelector('.section-control.add');
+const plus = (await page.textContent('.section-control.add')) ?? '';
+if (plus.trim() !== '+') await fail(`the add control should read "+", got "${plus}"`);
+// Screenshot WITHOUT snap(): snap parks the pointer, which would dismiss the
+// hover-only control this shot exists to show.
+shot += 1;
+const plusFile = `${SHOTS}/${String(shot).padStart(2, '0')}-strip-plus.png`;
+await page.screenshot({ path: plusFile });
+shots.push(plusFile);
+// A REAL pointer click: the control sits inside the strip's hover surface,
+// so travelling from the band to the button must keep it alive.
+await page.locator('.section-control.add').click();
+await expectCount('.section-band', 2, 'a second block began at the boundary');
+const bandColors = await page.evaluate(() =>
+  [...document.querySelectorAll('.section-band')].map((b) => getComputedStyle(b).backgroundColor),
+);
+if (new Set(bandColors).size !== 2) await fail(`bands share a color: ${bandColors.join(' / ')}`);
+const blockBgs = await page.evaluate(() => [
+  ...new Set([...document.querySelectorAll('.prop-row')].map((r) => getComputedStyle(r).backgroundColor)),
+]);
+if (blockBgs.length !== 2) await fail(`rows should paint two block colors, got ${blockBgs.length}`);
+ok(`two blocks, two colors (bands ${bandColors.join(' / ')})`);
+await snap('two-blocks');
+
+// The same boundary now offers "−": remove the break, then UNDO restores it
+// — block gestures share the history with everything else.
+await page.mouse.move(stripX, boundaryY);
+await page.waitForSelector('.section-control.remove');
+const minus = (await page.textContent('.section-control.remove')) ?? '';
+if (minus.trim() !== '−') await fail(`the remove control should read "−", got "${minus}"`);
+await page.locator('.section-control.remove').click();
+await expectCount('.section-band', 1, 'the blocks joined back into one');
+await page.click('.editor-toolbar button:has-text("Undo")');
+await expectCount('.section-band', 2, 'undo restored the block break');
+ok('block gestures are single undo steps in the shared history');
 
 const rowsFinal = await countOf(SEL.row);
 const bracketsFinal = await countOf(SEL.bracket);
@@ -612,6 +681,7 @@ await expectCount(SEL.row, rowsFinal, 'rows survived the reload');
 await expectCount(SEL.bracket, bracketsFinal, 'brackets survived the reload');
 await expectCount(SEL.rootDot, rootsFinal, 'roots survived the reload');
 await expectNone(`[stroke="${AMBER}"], [fill="${AMBER}"]`, 'still no amber after the reload');
+await expectCount('.section-band', 2, 'the color blocks survived the reload');
 
 const stored = await page.request.get(`${API}/api/analyses/${analysisUrl.split('/').pop()}`);
 const storedDoc = (await stored.json()).document;
@@ -623,7 +693,10 @@ if (storedDoc.schemaVersion !== 2) await fail('server did not store schemaVersio
 if (storedDoc.forest.length !== rootsFinal) {
   await fail(`stored forest has ${storedDoc.forest.length} roots, editor shows ${rootsFinal}`);
 }
-ok('schemaVersion 2 forest round-tripped through the server');
+if (!Array.isArray(storedDoc.sections) || storedDoc.sections.length !== 1) {
+  await fail(`stored document should carry ONE block break, got ${JSON.stringify(storedDoc.sections)}`);
+}
+ok('schemaVersion 2 forest and the block break round-tripped through the server');
 await snap('after-reload');
 
 // Home still lists it.

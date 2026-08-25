@@ -43,7 +43,6 @@ import type { ReactNodeViewProps } from '@tiptap/react';
 import type {
   CorpusWord,
   Document as AnalysisDocument,
-  DocumentV2,
   TaxonomyEntry,
 } from '../types';
 import { errorMessages, getCorpusWords, getTaxonomy } from '../api';
@@ -51,6 +50,7 @@ import { buildTextById, displayWordText, documentToNode, nodeToDocument } from '
 import { editorExtensions } from './editor';
 import { EditorProposition } from './schema';
 import {
+  addSectionBreak,
   clearConnections,
   connectUnits,
   disconnectRoot,
@@ -58,6 +58,7 @@ import {
   findPropositionPos,
   flipStar,
   mergeBelow,
+  removeSectionBreak,
   setRelationship,
   splitProposition,
   unzipToRoot,
@@ -87,14 +88,7 @@ import type { PositionedBracket, ShakeState } from './BracketLayer';
 import RelationshipMenu from './RelationshipMenu';
 import ColorSettings from './ColorSettings';
 import SectionStrip from './SectionStrip';
-import {
-  addBreak as addSectionBreak,
-  pruneBreaks,
-  removeBreak as removeSectionBreak,
-  sectionColor,
-  sectionIndexByPid,
-  sectionsOf,
-} from './sections';
+import { sectionColor, sectionIndexByPid, sectionsOf } from './sections';
 import HelpPanel from './HelpPanel';
 import { loadViewSettings, saveViewSettings } from './viewSettings';
 import type { ViewSettings } from './viewSettings';
@@ -380,20 +374,11 @@ interface Overlay {
   dots: DotGeom[];
   margin: number;
   height: number;
-  /** Every measured row, by pid — what places the color-block bands. */
+  /** Every measured WHOLE row (English line included), by pid — what places
+   * the color-block bands so they cover what the block background paints. */
   rowBoxes: ReadonlyMap<string, RowBox>;
   /** False when the tree needs more width than the shell can give it. */
   fits: boolean;
-}
-
-/**
- * The document plus its color blocks, pruned to the propositions it still
- * has: a merge or a split can strand a break, and a stranded break must never
- * reach the server.
- */
-function withSections(document: DocumentV2, breaks: readonly string[]): DocumentV2 {
-  const pruned = pruneBreaks(breaks, document.propositions.map((p) => p.id));
-  return pruned.length > 0 ? { ...document, sections: pruned } : document;
 }
 
 function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
@@ -426,11 +411,6 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
   const onSplitRef = useRef<(pid: string, ordinal: number) => void>(() => {});
   // The width check runs once per loaded document (see the effect below).
   const widthChecked = useRef(false);
-  // Color blocks: the pids that begin one. Kept beside the ProseMirror
-  // document (the tree knows nothing of them) and emitted with every change.
-  const [breaks, setBreaks] = useState<string[]>(() => baseDoc.sections ?? []);
-  const breaksRef = useRef(breaks);
-  breaksRef.current = breaks;
   // onDotDelete is defined further down (it needs the editor); the key handler
   // above reaches it through this ref.
   const deleteDotRef = useRef<(dotId: string) => void>(() => {});
@@ -464,7 +444,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
         // and win.
         setSelectedDotId(null);
         setPopover(null);
-        onChange(withSections(nodeToDocument(ed.state.doc, baseDoc), breaksRef.current));
+        onChange(nodeToDocument(ed.state.doc, baseDoc));
         setDocTick((t) => t + 1);
         setLayoutTick((t) => t + 1);
       },
@@ -623,6 +603,13 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, docTick]);
 
+  /** Color-block breaks — the DOC attr the section commands maintain. */
+  const breaks = useMemo<string[]>(() => {
+    const stored = editor?.state.doc.attrs.sections;
+    return Array.isArray(stored) ? (stored as string[]) : [];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, docTick]);
+
   /** The completed analysis's main point (empty while the forest is loose). */
   const mainPids = useMemo<ReadonlySet<string>>(() => {
     if (editor === null) return new Set<string>();
@@ -640,6 +627,9 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     if (shell === null) return null;
     const shellRect = shell.getBoundingClientRect();
     const rows = new Map<string, RowBox>();
+    // Whole-row extents (English line included) for the color-block bands —
+    // the bands must cover exactly what the block background paints.
+    const blockBoxes = new Map<string, RowBox>();
     for (const el of shell.querySelectorAll<HTMLElement>('[data-pid]')) {
       const pid = el.dataset.pid;
       if (pid === undefined) continue;
@@ -649,6 +639,13 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
       // it UNMEASURED rather than measuring the empty wrapper.
       const target = el.querySelector<HTMLElement>('.prop-text');
       if (target === null) continue;
+      const full = el.getBoundingClientRect();
+      const fullTop = full.top - shellRect.top;
+      blockBoxes.set(pid, {
+        y: fullTop + full.height / 2,
+        top: fullTop,
+        bottom: fullTop + full.height,
+      });
       const rect = target.getBoundingClientRect();
       const top = rect.top - shellRect.top;
       rows.set(pid, { y: top + rect.height / 2, top, bottom: top + rect.height });
@@ -691,7 +688,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
       dots: layoutDots(current.forest, rows, margin),
       margin,
       height: shellRect.height,
-      rowBoxes: rows,
+      rowBoxes: blockBoxes,
       fits,
     };
     return lastOverlay.current;
@@ -854,16 +851,12 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
 
   /** The strip's + : begin a new color block at this proposition. */
   const onAddBreak = (pid: string) => {
-    const next = addSectionBreak(breaks, pids, pid);
-    setBreaks(next);
-    onChange(withSections(nodeToDocument(editor.state.doc, baseDoc), next));
+    addSectionBreak(editor, pid);
   };
 
   /** The strip's − : join this block to the one above it. */
   const onRemoveBreak = (pid: string) => {
-    const next = removeSectionBreak(breaks, pids, pid);
-    setBreaks(next);
-    onChange(withSections(nodeToDocument(editor.state.doc, baseDoc), next));
+    removeSectionBreak(editor, pid);
   };
 
   /** Toolbar: remove every connection at once (the propositions stay put). */
@@ -903,7 +896,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
         >
           <div className="word-head greek">{popover.word}</div>
           {popover.splittable && (
-            <div className="word-hint muted">Double-click a word to split after it</div>
+            <div className="word-hint muted">Right-click a word to split after it</div>
           )}
           {info !== undefined && (
             <div className="word-info">

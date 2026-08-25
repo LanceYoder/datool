@@ -7,6 +7,9 @@
 //    server invariant; sources/labels/colors carried over by pid).
 //  - The editor's ProseMirror doc holds one child per FOREST ROOT, so
 //    disconnected propositions round-trip as roots of their own.
+//  - Color-block breaks (document `sections`) ride the DOC node's attrs in
+//    (documentToNode) and come back pruned to live pids on the way out —
+//    absent when empty.
 //  - Legacy v1 documents load through normalizeDocument (tree -> forest of
 //    one); nodeToDocument always writes v2.
 //  - Optional bracket keys are normalized: `reversed` appears in the output
@@ -25,6 +28,7 @@ import type {
   Proposition,
   TreeNode,
 } from '../types';
+import { pruneBreaks } from './sections';
 
 /**
  * Bring any stored document to the v2 shape: `forest` is the list of ordered
@@ -44,7 +48,11 @@ export function normalizeDocument(document: AnalysisDocument): DocumentV2 {
   } else {
     forest = propositions.map((p) => ({ kind: 'prop', ref: p.id }) as TreeNode);
   }
-  return { schemaVersion: 2, propositions, forest };
+  const out: DocumentV2 = { schemaVersion: 2, propositions, forest };
+  if (Array.isArray(document.sections) && document.sections.length > 0) {
+    out.sections = document.sections;
+  }
+  return out;
 }
 
 /**
@@ -146,7 +154,13 @@ export function documentToNode(
   if (normalized.forest.length === 0) {
     throw new Error('document has no forest roots');
   }
-  return { type: 'doc', content: normalized.forest.map(build) };
+  return {
+    type: 'doc',
+    // Color-block breaks ride the doc node itself (see schema.ts), so the
+    // strip's gestures share the history with every other command.
+    attrs: { sections: normalized.sections ?? [] },
+    content: normalized.forest.map(build),
+  };
 }
 
 /**
@@ -224,5 +238,14 @@ export function nodeToDocument(
   pmDoc.forEach((root) => {
     forest.push(build(root));
   });
-  return { schemaVersion: 2, propositions, forest };
+  const out: DocumentV2 = { schemaVersion: 2, propositions, forest };
+  // Color-block breaks, pruned to the propositions that still exist: a merge
+  // can strand a break's pid, and a stranded break must never reach the
+  // server. The attr itself keeps the stale pid — undoing the merge brings
+  // the break back — pruning happens only here, on the way out.
+  const breaks = Array.isArray(pmDoc.attrs.sections)
+    ? pruneBreaks(pmDoc.attrs.sections as string[], propositions.map((p) => p.id))
+    : [];
+  if (breaks.length > 0) out.sections = breaks;
+  return out;
 }
