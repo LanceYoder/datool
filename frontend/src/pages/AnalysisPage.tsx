@@ -22,7 +22,6 @@ export default function AnalysisPage() {
   const [notes, setNotes] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
@@ -60,7 +59,6 @@ export default function AnalysisPage() {
   const onDocumentChange = useCallback((doc: AnalysisDocument) => {
     draftRef.current = doc;
     setDirty(true);
-    setSavedAt(null);
   }, []);
 
   const titleDirty = analysis !== null && title !== analysis.title;
@@ -90,7 +88,6 @@ export default function AnalysisPage() {
       setTitle(updated.title);
       setNotes(updated.notes);
       setDirty(false);
-      setSavedAt(new Date());
     } catch (err) {
       setErrors(errorMessages(err));
     } finally {
@@ -149,13 +146,6 @@ export default function AnalysisPage() {
         <button className="danger" onClick={() => void remove()} disabled={busy || analysis === null}>
           Delete
         </button>
-        {/* Save state is for the screen only — the print sheet drops it. */}
-        {(dirty || titleDirty || notesDirty) && (
-          <span className="muted save-state">Unsaved changes</span>
-        )}
-        {savedAt !== null && errors.length === 0 && !dirty && (
-          <span className="muted save-state">Saved {savedAt.toLocaleTimeString()}</span>
-        )}
       </div>
       {errors.length > 0 && (
         <ul className="error-box">

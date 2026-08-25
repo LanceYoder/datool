@@ -648,7 +648,17 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
       });
       const rect = target.getBoundingClientRect();
       const top = rect.top - shellRect.top;
-      rows.set(pid, { y: top + rect.height / 2, top, bottom: top + rect.height });
+      // A proposition that wraps is still ONE unit, and its handle belongs
+      // where the reader's eye starts: the FIRST line. The first word is what
+      // names that line (the text block itself measures all of them), while
+      // top/bottom stay the whole proposition's extent.
+      const firstWord = target.querySelector<HTMLElement>('.word');
+      const line = firstWord === null ? rect : firstWord.getBoundingClientRect();
+      rows.set(pid, {
+        y: line.top - shellRect.top + line.height / 2,
+        top,
+        bottom: top + rect.height,
+      });
     }
     measuredRows.current = [...rows.keys()].join(',');
     if (rows.size === 0) return null;
