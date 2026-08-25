@@ -131,6 +131,11 @@ function countOf(sel) {
   return page.evaluate((s) => document.querySelectorAll(s).length, sel);
 }
 
+/** How many <line> strokes the (drawn) glyph inside `sel` is made of. */
+function strokesIn(sel) {
+  return page.evaluate((s) => document.querySelectorAll(`${s} svg line`).length, sel);
+}
+
 /** Wait until `sel` matches exactly `want` nodes, else fail with the actual. */
 async function expectCount(sel, want, msg) {
   try {
@@ -343,17 +348,20 @@ const splitPid = await splitRow.getAttribute('data-pid');
 const splitLabel = (await splitRow.locator('.verse-label').textContent()) ?? '';
 console.log(`  splitting row 0 (${splitPid}, "${splitLabel}") after its 2nd word`);
 
-// A left click opens the word-info card (lemma, gloss, morphology, and the
-// split hint); the split itself is a RIGHT-click on the word.
+// A left click opens the word-info card: the lemma, the gloss, the morphology
+// and the word's English here. It carries INFORMATION and no instructions —
+// the split hint went the way of the hover tooltip — and the split itself is
+// a RIGHT-click on the word.
 await splitRow.locator('.word.splittable').nth(1).click();
 await page.waitForSelector(SEL.wordPopover);
+const lemma = (await page.textContent(`${SEL.wordPopover} .word-lemma`).catch(() => null)) ?? '';
 const gloss = (await page.textContent(`${SEL.wordPopover} .word-gloss`).catch(() => null)) ?? '';
 const parse = (await page.textContent(`${SEL.wordPopover} .word-parse`).catch(() => null)) ?? '';
+if (lemma.trim() === '') await fail('word popover shows no lemma');
 if (gloss.trim() === '') await fail('word popover shows no gloss');
 if (parse.trim() === '') await fail('word popover shows no morphology');
-const hint = (await page.textContent(`${SEL.wordPopover} .word-hint`).catch(() => null)) ?? '';
-if (!hint.includes('Right-click')) await fail(`split hint should name the right-click: "${hint}"`);
-ok(`word popover shows info ("${gloss.trim()}" · "${parse.trim()}") and the right-click hint`);
+ok(`word popover shows info ("${lemma.trim()}" · "${gloss.trim()}" · "${parse.trim()}")`);
+await expectNone(`${SEL.wordPopover} .word-hint`, 'no split hint in the word card');
 await snap('split-popover');
 await page.keyboard.press('Escape');
 await expectCount(SEL.wordPopover, 0, 'Escape closed the word popover');
@@ -648,8 +656,17 @@ const stripX = await page.evaluate(() => {
 });
 await page.mouse.move(stripX, boundaryY);
 await page.waitForSelector('.section-control.add');
-const plus = (await page.textContent('.section-control.add')) ?? '';
-if (plus.trim() !== '+') await fail(`the add control should read "+", got "${plus}"`);
+// The + and the − are DRAWN, not typed (a glyph sits where its font puts it,
+// which is never quite the middle of a circle), so there is no text to read:
+// the control is checked by the strokes it is made of — two crossing lines
+// for "+", one for "−" — and by the name it gives a screen reader.
+const plusStrokes = await strokesIn('.section-control.add');
+if (plusStrokes !== 2) {
+  await fail(`the add control should be drawn as two crossing lines, got ${plusStrokes}`);
+}
+const plusName = (await page.getAttribute('.section-control.add', 'aria-label')) ?? '';
+if (!plusName.includes('new block')) await fail(`the add control is unnamed: "${plusName}"`);
+ok(`the add control is a drawn "+", named "${plusName}"`);
 // Screenshot WITHOUT snap(): snap parks the pointer, which would dismiss the
 // hover-only control this shot exists to show.
 shot += 1;
@@ -675,8 +692,13 @@ await snap('two-blocks');
 // — block gestures share the history with everything else.
 await page.mouse.move(stripX, boundaryY);
 await page.waitForSelector('.section-control.remove');
-const minus = (await page.textContent('.section-control.remove')) ?? '';
-if (minus.trim() !== '−') await fail(`the remove control should read "−", got "${minus}"`);
+const minusStrokes = await strokesIn('.section-control.remove');
+if (minusStrokes !== 1) {
+  await fail(`the remove control should be drawn as a single line, got ${minusStrokes}`);
+}
+const minusName = (await page.getAttribute('.section-control.remove', 'aria-label')) ?? '';
+if (!minusName.includes('Join')) await fail(`the remove control is unnamed: "${minusName}"`);
+ok(`the remove control is a drawn "−", named "${minusName}"`);
 await page.locator('.section-control.remove').click();
 await expectCount('.section-band', 1, 'the blocks joined back into one');
 await page.click('.editor-toolbar button:has-text("Undo")');
@@ -719,9 +741,17 @@ await snap('after-edits');
 
 // --- (j) Save and reload ----------------------------------------------------
 step('(j) save, reload, and check persistence');
+// There is no "Saved" banner to wait for. The save is finished when Save has
+// nothing left to save and disables itself — the toolbar's only report.
 await page.click('.analysis-toolbar button:has-text("Save")');
-await page.waitForSelector('.analysis-toolbar >> text=/^Saved /', { timeout: 10_000 });
-ok('"Saved" indicator shown');
+await waitFor(
+  () =>
+    [...document.querySelectorAll('.analysis-toolbar button')].some(
+      (b) => b.textContent?.trim() === 'Save' && b.disabled,
+    ),
+  null,
+  'the save finished — Save disabled itself, with nothing left to save',
+);
 
 await page.reload();
 await page.waitForSelector(SEL.row);
