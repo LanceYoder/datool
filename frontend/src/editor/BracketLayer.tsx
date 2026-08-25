@@ -15,6 +15,7 @@ import type { Point } from './interaction';
 import type { ViewSettings } from './viewSettings';
 import { relationColor } from './viewSettings';
 import { useTheme } from '../theme';
+import DrolleryDefs, { DROLLERY_COUNT } from './Drolleries';
 
 /** A laid-out bracket zipped with the ProseMirror position of its node. */
 export interface PositionedBracket extends BracketGeom {
@@ -35,6 +36,9 @@ const LINE = 'var(--tree-line, #374151)';
 const ACCENT = 'var(--tree-accent, #1d4ed8)';
 const MUTED = 'var(--tree-muted, #9ca3af)';
 const DOT_FILL = 'var(--tree-dot-fill, #fff)';
+/** What a SELECTED dot is filled with — flat accent, unless a skin would
+ * rather it were scribbled in or gilded. */
+const DOT_SELECTED_FILL = 'var(--tree-dot-selected-fill, var(--tree-accent, #1d4ed8))';
 const DOT_STROKE = 'var(--tree-dot-stroke, var(--tree-line, #374151))';
 /** Labels and stars may take an ink of their own — a manuscript writes its
  * letters in one color and gilds its stars in another. */
@@ -105,6 +109,18 @@ function wobble(seed: number): number {
 }
 
 /**
+ * A stable hash of a point into [0, 1). Used to decide which of the margin's
+ * creatures a bracket gets and whether it gets one at all: a plain weighted
+ * sum will not do, because the columns are a fixed 72px apart and the rows a
+ * fixed height, so any linear seed lands on the same few residues and every
+ * bracket in the tree comes out holding the same snail.
+ */
+function hash01(x: number, y: number, salt: number): number {
+  const v = Math.sin(x * 12.9898 + y * 78.233 + salt * 37.719) * 43758.5453;
+  return v - Math.floor(v);
+}
+
+/**
  * A line as a hand draws it: bowed off its chord, and a touch long at both
  * ends, the way a stroke overruns the corner it was aiming for. The bow is
  * seeded from the line's own endpoints, so a spine bends the same way on
@@ -114,15 +130,23 @@ function wobble(seed: number): number {
  * pixels of a 1.5px line by different amounts and eats the line away in
  * places, which is why the ticks came out dashed.
  */
-function handLine(x1: number, y1: number, x2: number, y2: number): string {
+function handLine(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  amp = 0.02,
+  cap = 2.6,
+  over = 1.2,
+): string {
   const seed = x1 * 0.37 + y1 * 0.71 + x2 * 1.13 + y2 * 0.29;
   const dx = x2 - x1;
   const dy = y2 - y1;
   const length = Math.hypot(dx, dy) || 1;
   // Long strokes bend more than short ones, but never by more than a couple
-  // of pixels — this is a steady hand, not a shaky one.
-  const bow = Math.min(2.6, length * 0.02) * wobble(seed);
-  const over = 1.2;
+  // of pixels — this is a steady hand, not a shaky one. A quill is steadier
+  // still than a ballpoint, so the book passes a smaller amplitude.
+  const bow = Math.min(cap, length * amp) * wobble(seed);
   const ux = dx / length;
   const uy = dy / length;
   const ax = x1 - ux * over + uy * 0.6 * wobble(seed + 3);
@@ -208,9 +232,26 @@ function swallow(event: { preventDefault: () => void }): void {
 }
 
 /**
+ * The hook a quill leaves when it lifts off the end of a rule. Drawn at the
+ * top and (mirrored) the bottom of every bracket's spine in the book, where a
+ * plain stopped line looks like it was made with a ruler.
+ */
+function flourish(x: number, y: number, up: boolean): string {
+  const d = up ? -1 : 1;
+  return (
+    `M${x.toFixed(1)},${y.toFixed(1)} ` +
+    `c0,${(5.5 * d).toFixed(1)} -1.6,${(8.4 * d).toFixed(1)} -5.2,${(8.6 * d).toFixed(1)} ` +
+    `c-3.4,${(0.2 * d).toFixed(1)} -5.4,${(-2.4 * d).toFixed(1)} -4.2,${(-4.8 * d).toFixed(1)} ` +
+    `c0.9,${(-1.8 * d).toFixed(1)} 3.6,${(-1.6 * d).toFixed(1)} 3.9,${(0.6 * d).toFixed(1)}`
+  );
+}
+
+/**
  * One line of the tree: ruled, or — in the notebook — drawn. Both carry the
  * same endpoints; only the path between them differs.
  */
+type Hand = 'ruled' | 'pen' | 'quill';
+
 function Stroke({
   x1,
   y1,
@@ -218,7 +259,7 @@ function Stroke({
   y2,
   width,
   color,
-  pen,
+  hand,
 }: {
   x1: number;
   y1: number;
@@ -226,20 +267,23 @@ function Stroke({
   y2: number;
   width: number;
   color: string;
-  pen: boolean;
+  hand: Hand;
 }) {
-  if (pen) {
-    return (
-      <path
-        d={handLine(x1, y1, x2, y2)}
-        fill="none"
-        style={{ stroke: color }}
-        strokeWidth={width + 0.5}
-        strokeLinecap="round"
-      />
-    );
+  if (hand === 'ruled') {
+    return <line x1={x1} y1={y1} x2={x2} y2={y2} style={{ stroke: color }} strokeWidth={width} />;
   }
-  return <line x1={x1} y1={y1} x2={x2} y2={y2} style={{ stroke: color }} strokeWidth={width} />;
+  // A quill is a steadier instrument than a ballpoint: it bends its line half
+  // as far, and does not overrun the corner it was aiming for.
+  const pen = hand === 'pen';
+  return (
+    <path
+      d={pen ? handLine(x1, y1, x2, y2) : handLine(x1, y1, x2, y2, 0.008, 1.3, 0.4)}
+      fill="none"
+      style={{ stroke: color }}
+      strokeWidth={pen ? width + 0.5 : width}
+      strokeLinecap="round"
+    />
+  );
 }
 
 export default function BracketLayer({
@@ -257,10 +301,14 @@ export default function BracketLayer({
   view,
 }: BracketLayerProps) {
   const selectedDot = dots.find((d) => d.id === selectedDotId);
-  // The notebook is drawn, not ruled: its skin puts the whole overlay through
-  // the wobble filter below, and its stars are struck with a pen instead of
-  // being filled in.
-  const pen = useTheme() === 'notebook';
+  // Which instrument the tree is drawn with. The notebook is a ballpoint —
+  // bowed lines, a struck star, a scribbled-in dot. The book is a quill:
+  // steadier, flourished at the ends of its rules, and it brings the margin's
+  // creatures with it.
+  const theme = useTheme();
+  const pen = theme === 'notebook';
+  const quill = theme === 'book';
+  const hand: Hand = pen ? 'pen' : quill ? 'quill' : 'ruled';
 
   return (
     <svg className="bracket-layer interactive" width={width} height={height} style={{ left: 0 }}>
@@ -269,6 +317,29 @@ export default function BracketLayer({
           lines get their wobble from handLine instead — a filter thins a
           hairline where it displaces it, and the ticks came out dashed. */}
       <defs>
+        {/* A burnished stud, for a skin that would rather its dots were gold
+            than white (the book points --tree-dot-fill here). */}
+        <radialGradient id="datool-boss" cx="35%" cy="32%" r="72%">
+          <stop offset="0%" stopColor="#f4e4ad" />
+          <stop offset="55%" stopColor="#c9a227" />
+          <stop offset="100%" stopColor="#8a6a18" />
+        </radialGradient>
+
+        {/* Nobody fills a circle evenly with a pen; they scribble it in. Fine
+            enough that a 5px dot gets several passes, and it goes through the
+            wobble filter with the rest of the dot layer. */}
+        <pattern id="datool-scribble" width="4" height="4" patternUnits="userSpaceOnUse">
+          <path
+            d="M-1,1 L1,-1 M0,4 L4,0 M3,5 L5,3 M-0.5,0.5 Q2,2.4 4.5,1.4"
+            style={{ stroke: 'var(--tree-accent, #1d4ed8)' }}
+            strokeWidth="0.9"
+            strokeLinecap="round"
+            fill="none"
+          />
+        </pattern>
+
+        {quill && <DrolleryDefs />}
+
         <filter id="datool-pen" x="-5%" y="-5%" width="110%" height="110%">
           {/* One long, smooth octave. Faster noise displaces neighbouring
               pixels of a hairline by different amounts and breaks the line
@@ -294,8 +365,26 @@ export default function BracketLayer({
               y2={b.bottom}
               width={1.8}
               color={ink(view, b.rel, LINE)}
-              pen={pen}
+              hand={hand}
             />
+            {quill && (
+              <>
+                <path
+                  d={flourish(b.x, b.top, true)}
+                  fill="none"
+                  style={{ stroke: ink(view, b.rel, LINE) }}
+                  strokeWidth={1.1}
+                  strokeLinecap="round"
+                />
+                <path
+                  d={flourish(b.x, b.bottom, false)}
+                  fill="none"
+                  style={{ stroke: ink(view, b.rel, LINE) }}
+                  strokeWidth={1.1}
+                  strokeLinecap="round"
+                />
+              </>
+            )}
             {b.ticks.map((t) => (
               <Stroke
                 key={t.childIndex}
@@ -305,12 +394,39 @@ export default function BracketLayer({
                 y2={t.y}
                 width={1.5}
                 color={ink(view, b.rel, LINE)}
-                pen={pen}
+                hand={hand}
               />
             ))}
           </g>
         ))}
       </g>
+
+      {/* The margin's creatures, perched on the corners of the tree. They are
+          placed from each bracket's OWN position, not from its index, so a
+          bracket keeps its own drollery for as long as it stays put — and
+          roughly every third bracket gets one, which is about the density a
+          manuscript margin runs at. Inert, like the spines they stand on. */}
+      {quill && (
+        <g className="drollery-layer" pointerEvents="none">
+          {brackets.map((b) => {
+            if (hash01(b.x, b.top, 1) >= 0.34) return null;
+            const which = Math.min(
+              DROLLERY_COUNT - 1,
+              Math.floor(hash01(b.x, b.top, 2) * DROLLERY_COUNT),
+            );
+            // Half of them face the other way. Mirroring about the local
+            // origin walks the box into negative x, so the translate that
+            // follows puts it back in the same lane.
+            const facingLeft = hash01(b.x, b.top, 3) < 0.5;
+            const transform = facingLeft
+              ? `translate(${(b.x - 6).toFixed(1)}, ${(b.top - 24).toFixed(1)}) scale(-1,1)`
+              : `translate(${(b.x - 30).toFixed(1)}, ${(b.top - 24).toFixed(1)})`;
+            return (
+              <use key={`drollery-${b.pos}`} href={`#datool-drollery-${which}`} transform={transform} />
+            );
+          })}
+        </g>
+      )}
 
       {/* The connection in progress, drawn as the BRACKET it would become:
           a spine where the new bracket's spine will stand, with a tick out to
@@ -365,7 +481,7 @@ export default function BracketLayer({
                 cy={d.y}
                 r={DOT_R}
                 style={{
-                  fill: selected ? ACCENT : DOT_FILL,
+                  fill: selected ? DOT_SELECTED_FILL : DOT_FILL,
                   stroke: selected ? ACCENT : DOT_STROKE,
                 }}
                 strokeWidth={1.6}

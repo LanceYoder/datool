@@ -45,8 +45,10 @@
   --tree-line: var(--sepia);
   --tree-label: var(--rubric);
   --tree-star: var(--gold);
-  --tree-dot-fill: #f7f0e0;
-  --tree-dot-stroke: var(--sepia);
+  /* Every dot is a burnished stud on the page (the gradient lives in
+     BracketLayer's defs, so it travels with the overlay). */
+  --tree-dot-fill: url('#datool-boss');
+  --tree-dot-stroke: #8a6a18;
   --tree-muted: #b09a70;
   --tree-accent: var(--rubric);
 }
@@ -310,6 +312,26 @@
   letter-spacing: 0.03em;
 }
 
+/* Penwork, not draughtsmanship: the rules are laid on with a slight taper of
+   the wrist and the ink sits a little proud of the page. */
+[data-theme='book'] .spine-layer path,
+[data-theme='book'] .spine-layer line {
+  stroke-linecap: round;
+}
+
+[data-theme='book'] .bracket-star {
+  filter: drop-shadow(0 0.5px 0 rgb(107 74 42 / 45%));
+}
+
+/* The dots are gilded, so they take a rim rather than an outline. */
+[data-theme='book'] .dot-group .dot {
+  stroke-width: 1;
+}
+
+[data-theme='book'] .dot-group .dot-stub {
+  stroke-dasharray: 2.5 2;
+}
+
 /* ---- The analyst's blocks, as a wash of pigment ----
    The palette's pale backgrounds were mixed for white paper and vanish on
    vellum, so the book washes the block on with its SATURATED colour at low
@@ -402,6 +424,8 @@
   --tree-muted: var(--pen-light);
   /* The second pen on the desk: what you circle a thing with. */
   --tree-accent: var(--red-pen);
+  /* Nobody fills a circle in with a pen — they scribble it. */
+  --tree-dot-selected-fill: url('#datool-scribble');
 }
 
 [data-theme='notebook'] body {
@@ -546,8 +570,18 @@
    Quadrille under the tree (16px minor, 80px major), ruled under the text
    with the red margin down the verse-number column. */
 
+/* Quadrille on the left, rule on the right, and BOTH lattices are the same
+   one: the rule falls every 32px, which is every second line of the 16px
+   grid, so a horizontal carries straight across the fold instead of nearly
+   lining up with it. That near-miss was what made the middle look wrong.
+
+   The corners are rounded like a notebook's, except at the fold, where two
+   pages of one book meet square. Underneath, the sheets below show along
+   both outer edges. */
+
 [data-theme='notebook'] .editor-shell {
   isolation: isolate;
+  border-radius: 12px;
   background-color: var(--paper);
   background-image:
     repeating-linear-gradient(90deg, rgb(70 112 166 / 30%) 0 1px, transparent 1px 80px),
@@ -557,11 +591,22 @@
   background-repeat: no-repeat;
   background-position: 0 0;
   background-size: var(--tree-margin) 100%;
-  box-shadow: 0 12px 28px rgb(24 30 44 / 26%);
+  box-shadow:
+    /* the sheet below, and the one below that, on the left and on the right */
+    -6px 4px 0 -2px #f7f5ec,
+    -6px 4px 2px -1px rgb(24 30 44 / 12%),
+    6px 4px 0 -2px #f7f5ec,
+    6px 4px 2px -1px rgb(24 30 44 / 12%),
+    -11px 8px 0 -4px #f2f0e5,
+    -11px 8px 2px -3px rgb(24 30 44 / 10%),
+    11px 8px 0 -4px #f2f0e5,
+    11px 8px 2px -3px rgb(24 30 44 / 10%),
+    0 16px 32px rgb(24 30 44 / 24%);
 }
 
-/* The ruled sheet, laid over the graph sheet. Its shadow falls into the clear
-   page between the last dot and the verse numbers. */
+/* The ruled sheet — the recto of the same opening. Its left edge is the fold,
+   so it is shaded on BOTH sides of the seam: the crease of a notebook opened
+   flat, not one sheet dropped on another. */
 [data-theme='notebook'] .editor-shell::before {
   content: '';
   position: absolute;
@@ -570,16 +615,37 @@
   bottom: 0;
   left: var(--tree-margin);
   right: 0;
+  border-radius: 0 12px 12px 0;
   background-color: var(--paper);
   background-image:
     linear-gradient(
       90deg,
-      transparent 0 65px,
-      rgb(196 86 74 / 55%) 65px 66px,
-      transparent 66px
+      transparent 0 64px,
+      rgb(196 86 74 / 55%) 64px 65px,
+      transparent 65px
     ),
-    repeating-linear-gradient(180deg, transparent 0 27px, rgb(88 128 176 / 30%) 27px 28px);
-  box-shadow: -8px 0 14px rgb(24 30 44 / 16%);
+    repeating-linear-gradient(180deg, rgb(88 128 176 / 30%) 0 1px, transparent 1px 32px);
+  box-shadow:
+    -10px 0 15px rgb(24 30 44 / 20%),
+    inset 13px 0 15px -10px rgb(24 30 44 / 58%);
+}
+
+/* The fold itself: the hairline where the two halves of the opening meet. */
+[data-theme='notebook'] .editor-shell::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: 6px;
+  bottom: 6px;
+  left: calc(var(--tree-margin) - 1px);
+  width: 2px;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgb(24 30 44 / 26%) 6%,
+    rgb(24 30 44 / 26%) 94%,
+    transparent
+  );
 }
 
 /* A ring drawn by hand is never quite a circle: the dots go through the
@@ -612,8 +678,13 @@
    to run straight through a block. A marker never lays down evenly either,
    so the pass is a shade lighter where it starts and stops. */
 
+/* The two marker passes are declared on the ROW, not on the root. A custom
+   property substitutes the var()s inside it against the element it is
+   declared on, so --block-ink has to be in scope right here — hoisted to
+   :root it resolves once, against a page that has no block, and every row
+   comes out clear. */
 [data-theme='notebook'] .prop-row {
-  background: linear-gradient(
+  --marker-block: linear-gradient(
     92deg,
     color-mix(in srgb, var(--block-ink, transparent) 11%, transparent) 0%,
     color-mix(in srgb, var(--block-ink, transparent) 25%, transparent) 3%,
@@ -621,6 +692,29 @@
     color-mix(in srgb, var(--block-ink, transparent) 26%, transparent) 97%,
     color-mix(in srgb, var(--block-ink, transparent) 9%, transparent) 100%
   );
+  --marker-main: linear-gradient(
+    92deg,
+    rgb(250 221 66 / 34%) 0%,
+    rgb(250 221 66 / 66%) 2%,
+    rgb(247 216 60 / 54%) 58%,
+    rgb(250 221 66 / 68%) 98%,
+    rgb(250 221 66 / 30%) 100%
+  );
+
+  background: var(--marker-block);
+}
+
+/* The proposition everything else hangs off. Elsewhere it turns red; here you
+   would reach for the yellow marker and run it over the line — so the row is
+   struck through with highlighter and the words stay the colour they were. */
+[data-theme='notebook'] .prop-row.main-point {
+  background: var(--marker-main), var(--marker-block);
+}
+
+[data-theme='notebook'] .prop-row.main-point .prop-text {
+  /* Not red here — the marker said it. The words keep the colour they had. */
+  --main-point-ink: var(--text);
+  font-weight: 700;
 }
 
 /* The margin stripe is the same marker, run down the edge of the page. */

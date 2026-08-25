@@ -193,15 +193,18 @@ function wordClass(splittable: boolean, verb: boolean): string {
   return ['word', splittable ? 'splittable' : '', verb ? 'verb' : ''].filter(Boolean).join(' ');
 }
 
-/** The main point's red — wins over any stored per-proposition color. */
-const MAIN_POINT_COLOR = '#b91c1c';
 
 function PropositionRow({ node }: ReactNodeViewProps) {
   const ctx = useContext(RowContext);
   const pid = String(node.attrs.pid);
   const stored = typeof node.attrs.color === 'string' ? node.attrs.color : undefined;
   const isMain = ctx !== null && ctx.mainPids.has(pid);
-  const color = isMain ? MAIN_POINT_COLOR : stored;
+  // How the main point is MARKED is the stylesheet's business — it is the same
+  // for every analysis, and a skin may say it another way (the notebook runs a
+  // highlighter over the row rather than reddening the words). Only a stored
+  // per-proposition color is data, and it travels as one; .main-point in
+  // styles.css outranks it, exactly as this used to.
+  const color = isMain ? undefined : stored;
   const tokens = ctx !== null ? rowTokens(node, ctx.words) : [];
 
   // The English line is built from THIS row's own words, so it always
@@ -246,7 +249,13 @@ function PropositionRow({ node }: ReactNodeViewProps) {
       <div className="prop-line">
         <span className="verse-label">{String(node.attrs.label)}</span>
         <div className="prop-body">
-          <span className="prop-text greek" style={color !== undefined ? { color } : undefined}>
+          <span
+            className="prop-text greek"
+            // Published, not painted, like the block colours: the main point
+            // is RED here, but a skin may say it another way — the notebook
+            // runs a highlighter over the row instead of recolouring it.
+            style={color === undefined ? undefined : ({ '--prop-ink': color } as CSSProperties)}
+          >
             {ctx !== null
               ? tokens.map((t, ordinal) => {
                   const splittable = canSplitAfter(ordinal, tokens.length);

@@ -365,6 +365,18 @@ div.error-box {
   flex: none;
 }
 
+/* A stored per-proposition colour, published by the row as a variable. */
+.prop-text {
+  color: var(--prop-ink, inherit);
+}
+
+/* The proposition the whole analysis hangs off, where the star walk from the
+   top lands. Red, and it outranks any stored colour. A skin that would rather
+   mark it another way redefines --main-point-ink. */
+.prop-row.main-point .prop-text {
+  color: var(--main-point-ink, #b91c1c);
+}
+
 .prop-body {
   flex: 1;
   display: flex;
