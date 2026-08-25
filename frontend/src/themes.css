@@ -288,6 +288,22 @@
   opacity: 0.9;
 }
 
+/* The verse text is the reading, so it is set in the page's own press roman
+   rather than the interface face. */
+[data-theme='book'] .verse-panel {
+  font-family: 'IM Fell English', 'EB Garamond', Georgia, serif;
+  font-size: 1.05rem;
+}
+
+[data-theme='book'] .verses-select select {
+  font-family: 'IM Fell English', Georgia, serif;
+  border: 1px solid #b09873;
+  border-radius: 2px;
+  background: linear-gradient(#f8f1de, #e8dabb);
+  color: var(--text);
+  padding: 0.15rem 0.3rem;
+}
+
 [data-theme='book'] .bracket-label {
   font-family: 'IM Fell English', Georgia, serif;
   font-size: 14px;
@@ -303,6 +319,7 @@
 [data-theme='book'] .color-settings,
 [data-theme='book'] .popover,
 [data-theme='book'] .notes-editor,
+[data-theme='book'] .verse-panel,
 [data-theme='book'] .analysis-list {
   border: 1px solid var(--border);
   border-radius: 2px;
@@ -583,6 +600,7 @@
 [data-theme='notebook'] .color-settings,
 [data-theme='notebook'] .popover,
 [data-theme='notebook'] .notes-editor,
+[data-theme='notebook'] .verse-panel,
 [data-theme='notebook'] .analysis-list {
   border: 2px solid rgb(31 63 143 / 35%);
   border-radius: 26px 6px 22px 8px / 8px 22px 6px 26px;
@@ -606,6 +624,15 @@
 [data-theme='notebook'] .popover-item {
   font-family: 'Patrick Hand', 'Segoe Print', system-ui, sans-serif;
   background: none;
+}
+
+[data-theme='notebook'] .verses-select select {
+  font-family: 'Patrick Hand', 'Segoe Print', system-ui, sans-serif;
+  border: 2px solid rgb(31 63 143 / 45%);
+  border-radius: 14px 4px 12px 5px / 5px 12px 4px 14px;
+  background: rgb(255 255 255 / 65%);
+  color: var(--text);
+  padding: 0.1rem 0.25rem;
 }
 
 [data-theme='notebook'] .notes-body .ProseMirror {
@@ -736,6 +763,8 @@
 [data-theme='slate'] .color-settings,
 [data-theme='slate'] .notes-editor,
 [data-theme='slate'] .notes-tools,
+[data-theme='slate'] .verse-panel,
+[data-theme='slate'] .verses-select select,
 [data-theme='slate'] .error-box,
 [data-theme='slate'] .popover,
 [data-theme='slate'] .editor-toolbar,
@@ -811,6 +840,20 @@
 [data-theme='slate'] .notes-tools {
   background: transparent;
   padding-left: 0;
+}
+
+[data-theme='slate'] .verse-panel {
+  background: var(--slate-100);
+  border-radius: 12px;
+}
+
+[data-theme='slate'] .verses-select select {
+  background: var(--slate-200);
+  border-radius: 6px;
+  color: #4a5058;
+  font: inherit;
+  font-size: 0.84rem;
+  padding: 0.1rem 0.25rem;
 }
 
 [data-theme='slate'] .analysis-list li + li {
