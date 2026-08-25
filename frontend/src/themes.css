@@ -408,8 +408,32 @@
   color: var(--rubric);
 }
 
+/* The block control is an illuminated stud: gilded to begin a block, rubric
+   to close one, rimmed in ink so it reads over any band colour, and set on a
+   disc of clear vellum so it reads over the seam between two. */
 [data-theme='book'] .section-control {
-  box-shadow: 0 0 0 2px var(--vellum), 0 1px 4px rgb(44 23 16 / 45%);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 1.5px #4a2f18,
+    0 0 0 3.5px rgb(242 234 215 / 92%),
+    0 1px 3px rgb(44 23 16 / 55%);
+}
+
+[data-theme='book'] .section-control.add {
+  background: radial-gradient(circle at 34% 30%, #f4e4ad 0%, #c9a227 52%, #8a6a18 100%);
+}
+
+[data-theme='book'] .section-control.remove {
+  background: radial-gradient(circle at 34% 30%, #e0a294 0%, #a8261c 52%, #6d1610 100%);
+}
+
+[data-theme='book'] .section-control svg line {
+  stroke: #2c1710;
+  stroke-width: 2.4;
+}
+
+[data-theme='book'] .section-control.remove svg line {
+  stroke: #f7ecd4;
 }
 
 /* ===========================================================================
@@ -727,15 +751,14 @@
 
 [data-theme='notebook'] .prop-row.main-point .prop-text .word,
 [data-theme='notebook'] .prop-row.main-point .english-line > span {
-  padding: 0.14em 0;
-  background-image: linear-gradient(
-    180deg,
-    rgb(250 221 66 / 26%) 0%,
-    rgb(250 221 66 / 74%) 20%,
-    rgb(246 212 52 / 80%) 54%,
-    rgb(250 221 66 / 64%) 86%,
-    rgb(250 221 66 / 20%) 100%
-  );
+  padding: 0.16em 0;
+  /* A drawn stroke, not a ruled band. The ink varies DOWN the stroke rather
+     than along it (marker.svg says why): each word restarts the tile, so
+     anything that varies across x comes out as the same bump in every word. */
+  background-image: url('./ornaments/marker.svg');
+  background-repeat: repeat-x;
+  background-size: 160px 100%;
+  background-position: 0 50%;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
@@ -804,8 +827,33 @@
   font-size: 1.3rem;
 }
 
+/* Drawn on the page like everything else here: a ring that is not quite a
+   circle, with the mark struck inside it. Blue begins a block, red closes
+   one — the two pens on the desk. */
 [data-theme='notebook'] .section-control {
-  box-shadow: 0 0 0 2px var(--paper), 0 1px 4px rgb(24 30 44 / 40%);
+  border: 2px solid var(--pen);
+  border-radius: 54% 46% 49% 51% / 51% 55% 45% 49%;
+  background: var(--paper);
+  box-shadow: 0 0 0 2.5px var(--paper), 0 1px 3px rgb(24 30 44 / 30%);
+}
+
+[data-theme='notebook'] .section-control.add {
+  background: var(--paper);
+  border-color: var(--pen);
+}
+
+[data-theme='notebook'] .section-control.remove {
+  background: var(--paper);
+  border-color: var(--red-pen);
+}
+
+[data-theme='notebook'] .section-control svg line {
+  stroke: var(--pen);
+  stroke-width: 2.4;
+}
+
+[data-theme='notebook'] .section-control.remove svg line {
+  stroke: var(--red-pen);
 }
 
 /* ===========================================================================
@@ -1122,8 +1170,25 @@
   border-radius: 10px;
 }
 
+/* No ring and no bevel — a small dark chip with the mark cut out of it, sat
+   on enough white to clear the band behind it. */
 [data-theme='slate'] .section-control {
-  box-shadow: 0 0 0 2px #ffffff, 0 1px 4px rgb(23 25 28 / 30%);
+  border-radius: 6px;
+  background: var(--slate-900);
+  box-shadow: 0 0 0 3px #ffffff, 0 1px 5px rgb(23 25 28 / 26%);
+}
+
+[data-theme='slate'] .section-control.add {
+  background: var(--slate-900);
+}
+
+[data-theme='slate'] .section-control.remove {
+  background: var(--danger);
+}
+
+[data-theme='slate'] .section-control svg line {
+  stroke: #ffffff;
+  stroke-width: 1.9;
 }
 
 /* Every skin's chrome drops out of a print, exactly as the original's does —

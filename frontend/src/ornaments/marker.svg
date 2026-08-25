@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 40" width="160" height="40" preserveAspectRatio="none">
+  <!-- One pass of a highlighter, tiled along the words.
+
+       What a marker actually looks like is STREAKY ALONG THE STROKE — the nib
+       lays ink unevenly as it is dragged, in bands that run the length of the
+       pass. That is the whole trick here, because a stroke drawn per-word can
+       only vary in y without giving itself away: each word restarts the tile
+       at x=0, so anything that varies across x repeats identically in every
+       word, and a wobble fine enough to read as hand-drawn instead reads as a
+       row of identical bumps.
+
+       So the ink varies down the stroke, not along it: soft at both edges,
+       heaviest just under the middle, with two lighter bands where the nib
+       lifted. The edges only wander a little — half a pixel at reading size,
+       over a wavelength longer than most words — which softens them without
+       ever showing as a bump. -->
+  <defs>
+    <linearGradient id="nib" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fadd42" stop-opacity="0.08" />
+      <stop offset="7%" stop-color="#fadd42" stop-opacity="0.44" />
+      <stop offset="15%" stop-color="#f8d93e" stop-opacity="0.68" />
+      <stop offset="24%" stop-color="#fadd42" stop-opacity="0.57" />
+      <stop offset="34%" stop-color="#f6d434" stop-opacity="0.78" />
+      <stop offset="50%" stop-color="#f4d130" stop-opacity="0.83" />
+      <stop offset="61%" stop-color="#fadd42" stop-opacity="0.69" />
+      <stop offset="72%" stop-color="#f6d434" stop-opacity="0.79" />
+      <stop offset="85%" stop-color="#fadd42" stop-opacity="0.52" />
+      <stop offset="94%" stop-color="#fadd42" stop-opacity="0.26" />
+      <stop offset="100%" stop-color="#fadd42" stop-opacity="0.06" />
+    </linearGradient>
+  </defs>
+
+  <path
+    d="M0,5.4 C36,4.9 62,6.0 96,5.5 C124,5.1 144,5.8 160,5.4
+       L160,34.7 C138,35.3 114,34.4 78,34.9 C44,35.3 22,34.6 0,34.8 Z"
+    fill="url(#nib)"
+  />
+</svg>
