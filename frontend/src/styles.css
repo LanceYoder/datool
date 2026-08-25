@@ -398,11 +398,14 @@ div.error-box {
   padding: 0.5rem 0.75rem 0.75rem;
 }
 
+.help-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 2.5rem;
+}
+
 .help-list {
   margin: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
-  gap: 0.15rem 1.5rem;
 }
 
 .help-row {
