@@ -249,13 +249,10 @@ def _dependent_call(seg, j: int, segs: Sequence, words) -> tuple[str, bool, bool
     lemma = _L(op.lemma)
     if op.kind == "rel":
         # The relative clause interprets its antecedent's clause: Ft → In*.
-        # The RELATIONSHIP is what the diagrams agree on; what it attaches to
-        # they do not. Eph 3:13 (TSA 3) splits διὸ αἰτοῦμαι from its infinitive
-        # and hangs ἥτις on the infinitive alone, where stage 1 keeps the two
-        # inline and hangs it on both — the same call, a coarser unit. Not
-        # sure, therefore: confident mode may not draw a bracket whose
-        # boundaries came from the tool's own segmentation guess.
-        return "FtIn", False, False
+        # Sure: Eph 3:11, 3:13 and Eph 1:13 all draw exactly this; none of
+        # the worked diagrams reads a split-off relative any other way. (A
+        # relative whose packet grows by a καί still cascades to unsure.)
+        return "FtIn", False, True
     if op.kind == "appos":
         # Apposition / attributive-article phrase restates: Ft → In*.
         return "FtIn", True, False

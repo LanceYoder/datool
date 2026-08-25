@@ -93,6 +93,9 @@ COMPLEMENT_GOVERNORS = _nfc((
     "δίδωμι", "ἔχω", "πειράζω", "σπουδάζω",
 ))
 
+# Negations that belong to the infinitive they stand in front of.
+NEGATIVES_INF = _nfc(("μή", "οὐ"))
+
 # Word classes allowed between an article and the infinitive it governs
 # (negations, particles, accusative-subject pronouns): a noun, adjective,
 # verb, second article, or preposition in between breaks the construction.
@@ -357,6 +360,17 @@ def segment(start: int, end: int) -> list[Segment]:
         elif w.is_infinitive:
             if not _governed_complement(words, i, start):
                 b = _adverbial_inf_start(words, i, seg_start)
+                if b is None and host_finite and not embedded and i > seg_start:
+                    # A bare infinitive AFTER the clause's own finite verb is a
+                    # second predicate, not part of the first: Eph 3:13 διὸ
+                    # αἰτοῦμαι | μὴ ἐγκακεῖν …, exactly as the student divides
+                    # it. The finite-verb condition is what keeps ὥστε μὴ
+                    # χρείαν ἔχειν and a καί-chained δουλεύειν … καὶ ἀναμένειν
+                    # whole — there the infinitive IS the clause's predicate.
+                    # A negation standing in front of it goes with it.
+                    b = i
+                    while b - 1 > seg_start and words[b - 1].lemma in NEGATIVES_INF:
+                        b -= 1
                 if b is not None:
                     if b <= seg_start:
                         if opener is None or opener.kind == "coord":
