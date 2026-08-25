@@ -287,6 +287,7 @@ class TestCorpusWords:
         assert set(first) == {
             "index", "text", "word", "norm", "lemma", "pos", "parsing",
             "book", "bookName", "chapter", "verse", "translit", "gloss", "eng",
+            "engOrd",
         }
         assert [r["index"] for r in rows] == [0, 1, 2, 3, 4]
 

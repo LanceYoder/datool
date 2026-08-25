@@ -1,7 +1,7 @@
 """English reference translation, verse by verse — shown alongside the Greek.
 
-The text is the World English Bible (WEB, https://worldenglishbible.org),
-public domain, generated into ``data/web-nt.tsv`` as
+The text is the Berean Standard Bible (BSB, https://bereanbible.com),
+public domain, generated into ``data/bsb-nt.tsv`` as
 ``book<TAB>chapter<TAB>verse<TAB>text`` with MorphGNT book numbers (1 Matthew …
 27 Revelation). Display-only: nothing in the analysis model references it.
 """
@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .loader import format_ref, load_words
 
-_DATA = Path(__file__).parent / "data" / "web-nt.tsv"
+_DATA = Path(__file__).parent / "data" / "bsb-nt.tsv"
 
 
 @lru_cache(maxsize=1)
@@ -27,16 +27,22 @@ def load_translation() -> dict[tuple[int, int, int], str]:
     return out
 
 
-def verses_for_range(start: int, end: int) -> list[dict]:
+def verses_for_range(
+    start: int,
+    end: int,
+    lookup: dict[tuple[int, int, int], str] | None = None,
+) -> list[dict]:
     """The verses intersecting the INCLUSIVE corpus word range [start, end].
 
     Each entry carries the verse's identity, its English text (missing verses
     are skipped), its human reference, and ``start`` — the corpus index of the
     verse's FIRST word (which may precede the requested range when the range
-    begins mid-verse; the UI clamps).
+    begins mid-verse; the UI clamps). ``lookup`` substitutes another
+    translation's (book, chapter, verse) -> text table for the default BSB
+    (see ``esv.esv_verses_for_range``).
     """
     words = load_words()
-    translation = load_translation()
+    translation = lookup if lookup is not None else load_translation()
 
     # Walk back to the true first word of the verse the range opens in.
     first = words[start]

@@ -20,3 +20,7 @@ node_modules/
 frontend/dist/
 staticfiles/
 .pytest_cache/
+
+.DS_Store
+frontend/tsconfig.tsbuildinfo
+.claude/worktrees/

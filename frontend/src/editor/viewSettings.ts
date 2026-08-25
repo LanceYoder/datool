@@ -39,9 +39,14 @@ export const DEFAULT_RELATION_COLORS: Readonly<Record<string, string>> = {
  * color coding is off). */
 export const NEUTRAL_LINE = '#374151';
 
+/** Verse-text panel source: hidden, local BSB, or the live ESV API. */
+export type VersesSource = 'off' | 'bsb' | 'esv';
+
 export interface ViewSettings {
   /** Show the English reference line above each proposition. */
   english: boolean;
+  /** The verse-text panel above the tree: off, or which translation. */
+  verses: VersesSource;
   /** Set the Greek verbs in bold — the clause backbone, at a glance. */
   verbs: boolean;
   /** Show the analyst's color blocks, and the strip that makes them. */
@@ -54,6 +59,7 @@ export interface ViewSettings {
 
 export const DEFAULT_VIEW_SETTINGS: ViewSettings = {
   english: true,
+  verses: 'off',
   verbs: true,
   blocks: true,
   colorCoding: false,
@@ -83,6 +89,10 @@ export function coerceSettings(raw: unknown): ViewSettings {
   }
   return {
     english: typeof source.english === 'boolean' ? source.english : DEFAULT_VIEW_SETTINGS.english,
+    verses:
+      source.verses === 'off' || source.verses === 'bsb' || source.verses === 'esv'
+        ? source.verses
+        : DEFAULT_VIEW_SETTINGS.verses,
     verbs: typeof source.verbs === 'boolean' ? source.verbs : DEFAULT_VIEW_SETTINGS.verbs,
     blocks: typeof source.blocks === 'boolean' ? source.blocks : DEFAULT_VIEW_SETTINGS.blocks,
     colorCoding:

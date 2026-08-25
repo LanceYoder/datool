@@ -182,11 +182,18 @@ class CorpusWordsView(APIView):
 
 
 class CorpusVersesView(APIView):
-    """English (WEB) reference text for the verses a word range touches."""
+    """English reference text for the verses a word range touches.
+
+    ``?translation=bsb`` (default, local data) or ``esv`` (live Crossway API,
+    needs ``settings.ESV_API_KEY``; 503 when unconfigured or unreachable).
+    """
 
     def get(self, request):
         raw_start = request.query_params.get("start")
         raw_end = request.query_params.get("end")
+        translation = request.query_params.get("translation", "bsb")
+        if translation not in ("bsb", "esv"):
+            return _errors(["translation must be bsb or esv"])
         try:
             start, end = int(raw_start), int(raw_end)
         except (TypeError, ValueError):
@@ -196,6 +203,12 @@ class CorpusVersesView(APIView):
             return _errors([f"need 0 <= start <= end < {len(words)}"])
         if end - start + 1 > WORD_RANGE_CAP:
             return _errors([f"range exceeds the {WORD_RANGE_CAP}-word cap"])
+        if translation == "esv":
+            from .corpus.esv import EsvError, esv_verses_for_range
+            try:
+                return Response(esv_verses_for_range(start, end))
+            except EsvError as e:
+                return Response({"errors": [str(e)]}, status=503)
         return Response(verses_for_range(start, end))
 
 

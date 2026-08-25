@@ -49,8 +49,9 @@ import type {
   CorpusWord,
   Document as AnalysisDocument,
   TaxonomyEntry,
+  VerseText,
 } from '../types';
-import { errorMessages, getCorpusWords, getTaxonomy } from '../api';
+import { errorMessages, getCorpusVerses, getCorpusWords, getTaxonomy } from '../api';
 import { buildTextById, displayWordText, documentToNode, nodeToDocument } from './convert';
 import { editorExtensions } from './editor';
 import { EditorProposition } from './schema';
@@ -382,6 +383,63 @@ interface Overlay {
   fits: boolean;
 }
 
+/** ESV API license: this notice must accompany displayed ESV text. */
+const ESV_NOTICE =
+  'Scripture quotations are from the ESV® Bible (The Holy Bible, English ' +
+  'Standard Version®), © 2001 by Crossway. Used by permission. All rights reserved.';
+
+/**
+ * The verse-text panel above the tree: the passage read as running verses in
+ * the chosen translation. BSB comes from local data; ESV is fetched through
+ * the server from Crossway's live API (and needs ESV_API_KEY there).
+ */
+function VersePanel({
+  source,
+  start,
+  end,
+}: {
+  source: 'bsb' | 'esv';
+  start: number;
+  end: number;
+}) {
+  const [verses, setVerses] = useState<VerseText[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setVerses(null);
+    setError(null);
+    getCorpusVerses(start, end, source)
+      .then((vs) => {
+        if (!cancelled) setVerses(vs);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(errorMessages(err).join('; '));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [source, start, end]);
+
+  return (
+    <section className="verse-panel">
+      {error !== null && <p className="muted">Verse text unavailable: {error}</p>}
+      {error === null && verses === null && <p className="muted">Loading verse text…</p>}
+      {verses !== null && (
+        <p>
+          {verses.map((v) => (
+            <span key={`${v.book}:${v.chapter}:${v.verse}`}>
+              <sup>{v.verse}</sup> {v.text}{' '}
+            </span>
+          ))}
+          <span className="verse-panel-source">({source.toUpperCase()})</span>
+        </p>
+      )}
+      {source === 'esv' && <p className="verse-panel-notice">{ESV_NOTICE}</p>}
+    </section>
+  );
+}
+
 function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
   const [selectedDotId, setSelectedDotId] = useState<string | null>(null);
   // Where the pointer is while a dot is selected: the loose end of the
@@ -396,6 +454,16 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
   // Reader's display options (English line, bracket colors) — persisted per
   // browser, never part of the analysis.
   const [view, setView] = useState<ViewSettings>(loadViewSettings);
+  // The whole passage's corpus range — what the verse-text panel shows.
+  const corpusRange = useMemo(() => {
+    let min = Infinity;
+    let max = -Infinity;
+    for (const i of words.keys()) {
+      if (i < min) min = i;
+      if (i > max) max = i;
+    }
+    return min > max ? null : ([min, max] as const);
+  }, [words]);
   const [colorPanel, setColorPanel] = useState(false);
   const [helpPanel, setHelpPanel] = useState(false);
   const [docTick, setDocTick] = useState(0);
@@ -963,6 +1031,19 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
           <span className="switch-track" aria-hidden="true" />
           <span className="switch-label">English</span>
         </label>
+        <label className="verses-select">
+          Verses{' '}
+          <select
+            value={view.verses}
+            onChange={(event) =>
+              updateView({ ...view, verses: event.target.value as ViewSettings['verses'] })
+            }
+          >
+            <option value="off">Off</option>
+            <option value="bsb">BSB</option>
+            <option value="esv">ESV</option>
+          </select>
+        </label>
         <label className="switch">
           <input
             type="checkbox"
@@ -1026,6 +1107,9 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
         </button>
       </div>
       {helpPanel && <HelpPanel />}
+      {view.verses !== 'off' && corpusRange !== null && (
+        <VersePanel source={view.verses} start={corpusRange[0]} end={corpusRange[1]} />
+      )}
       {colorPanel && view.colorCoding && (
         <ColorSettings
           taxonomy={taxonomy}

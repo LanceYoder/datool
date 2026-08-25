@@ -135,11 +135,13 @@ export interface CorpusWord {
   translit: string | null;
   /** TBESG short English gloss, null when the lemma has no entry. */
   gloss: string | null;
-  /** TAGNT contextual English of THIS word in THIS verse (null ≈2%). */
+  /** BSB contextual English of THIS word in THIS verse (null ≈0.4%). */
   eng: string | null;
+  /** BSB English word-order key — relative order within one verse only. */
+  engOrd: number | null;
 }
 
-/** One English (WEB) verse from GET /api/corpus/verses. */
+/** One English (BSB) verse from GET /api/corpus/verses. */
 export interface VerseText {
   book: number;
   chapter: number;

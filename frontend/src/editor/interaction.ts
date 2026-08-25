@@ -161,11 +161,13 @@ export interface EnglishSegment {
 
 /**
  * The English reference line for one proposition, built from ITS OWN words'
- * contextual renderings (TAGNT `eng`), so the line matches the proposition
- * exactly however the verses were divided. A verse-number marker opens a
- * segment only where that verse's FIRST word sits in this row — a row
- * continuing mid-verse gets bare text. Words without an aligned rendering
- * are skipped; a row with none yields [].
+ * contextual renderings (BSB `eng`), so the line matches the proposition
+ * exactly however the verses were divided. Within each verse the words are
+ * read in the BSB's OWN English word order (`engOrd`), so the line is the
+ * BSB phrase for those words, not an interlinear in Greek order. A
+ * verse-number marker opens a segment only where that verse's FIRST word
+ * sits in this row — a row continuing mid-verse gets bare text. Words
+ * without an aligned rendering are skipped; a row with none yields [].
  */
 export function rowEnglish(
   srcStart: number,
@@ -173,11 +175,16 @@ export function rowEnglish(
   words: ReadonlyMap<number, CorpusWord>,
 ): EnglishSegment[] {
   const out: EnglishSegment[] = [];
-  let current: { marker: number | null; parts: string[] } | null = null;
+  let current: { marker: number | null; parts: { ord: number; text: string }[] } | null = null;
 
   const flush = (): void => {
     if (current !== null && current.parts.length > 0) {
-      out.push({ marker: current.marker, text: current.parts.join(' ') });
+      const text = current.parts
+        .slice()
+        .sort((a, b) => a.ord - b.ord)
+        .map((p) => p.text)
+        .join(' ');
+      out.push({ marker: current.marker, text });
     }
   };
 
@@ -196,7 +203,11 @@ export function rowEnglish(
       flush();
       current = { marker: w.verse, parts: [] };
     }
-    if (w.eng !== null && w.eng !== '') current.parts.push(w.eng);
+    if (w.eng !== null && w.eng !== '') {
+      // Unaligned words have no order key; Greek position keeps them from
+      // being dropped and can only misplace them within their own verse.
+      current.parts.push({ ord: w.engOrd ?? i, text: w.eng });
+    }
   }
   flush();
   return out;

@@ -398,6 +398,43 @@ div.error-box {
   padding: 0.5rem 0.75rem 0.75rem;
 }
 
+/* The verse-text picker rides the toolbar like the switches: a view choice,
+   not a command. */
+.verses-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.verse-panel {
+  margin-top: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-soft);
+  padding: 0.5rem 0.75rem;
+  line-height: 1.6;
+}
+
+.verse-panel sup {
+  color: var(--muted);
+  font-size: 0.7em;
+  margin-right: 0.15em;
+}
+
+.verse-panel-source {
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+/* Crossway's required attribution for displayed ESV text. */
+.verse-panel-notice {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
 .help-columns {
   display: flex;
   flex-wrap: wrap;
@@ -830,6 +867,7 @@ div.error-box {
   .color-settings,
   .popover,
   .trash-section,
+  .verse-panel,
   .home-page .card {
     display: none !important;
   }

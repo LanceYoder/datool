@@ -100,8 +100,10 @@ const corpusWord = (index: number, text: string, verse: number): CorpusWord => (
   translit: 'translit',
   gloss: 'gloss',
   // Contextual English, deterministic per index; 124776 (μετ’) simulates the
-  // ≈2% of words with no aligned rendering.
+  // small tail of words with no aligned rendering. The order key follows the
+  // index, so fixture lines read in Greek order.
   eng: index === 124776 ? null : `e${index}`,
+  engOrd: index === 124776 ? null : index,
 });
 
 export const CORPUS_WORDS: CorpusWord[] = [

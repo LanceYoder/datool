@@ -25,6 +25,19 @@ Postgres (Supabase) later is a `DATABASE_URL` change.
    If you changed the app name, update `DJANGO_CSRF_TRUSTED_ORIGINS` in
    `fly.toml` to match (`https://<your-app>.fly.dev`).
 
+   The ESV verse-text source (the Verses picker's ESV option) uses the
+   Crossway API key committed as the default in `config/settings.py`
+   (non-commercial terms — commercial use needs Crossway's permission).
+   To use a different key, override it:
+
+   ```sh
+   fly secrets set ESV_API_KEY="<your key>"
+   ```
+
+   If the key stops working, regenerate one at <https://api.esv.org>.
+   Without a working key, ESV requests return 503 and the panel says so;
+   BSB always works from local data.
+
 ## Deploy (and every update)
 
 ```sh

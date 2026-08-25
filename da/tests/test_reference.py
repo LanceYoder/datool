@@ -1,4 +1,4 @@
-"""The reference layers: WEB translation verses and TBESG lemma glosses."""
+"""The reference layers: BSB translation verses and TBESG lemma glosses."""
 
 import pytest
 
@@ -38,7 +38,7 @@ class TestTranslation:
             key = (w.book, w.chapter, w.verse)
             if key not in table:
                 missing.add(key)
-        # SBLGNT and WEB versification differ in a handful of places (verses
+        # SBLGNT and BSB versification differ in a handful of places (verses
         # the critical text omits, e.g. Matt 17:21); anything beyond a small
         # tail means the data generation broke.
         assert len(missing) < 30, sorted(missing)[:10]
@@ -99,16 +99,56 @@ class TestVersesEndpoint:
 
 class TestWordEnglish:
     def test_phil_1_9_reads_per_word(self):
-        from da.corpus import english_for
-        # Phil 1:9 opens καὶ τοῦτο προσεύχομαι — "And this I pray,"
+        from da.corpus import english_for, english_order
+        # Phil 1:9 opens καὶ τοῦτο προσεύχομαι — BSB "And this [is] my prayer"
         words = load_words()
         start = next(w.index for w in words
                      if w.book == 11 and w.chapter == 1 and w.verse == 9)
         joined = " ".join(
             english_for(i) or "" for i in range(start, start + 3)
         )
-        assert joined == "And this I pray,"
+        assert joined == "And this [is] my prayer"
+        # The BSB order keys of consecutive aligned words are strictly
+        # increasing here (the BSB keeps these three in Greek order).
+        orders = [english_order(i) for i in range(start, start + 3)]
+        assert orders == sorted(orders)
 
     def test_coverage_is_high(self):
         from da.corpus.interlinear import _table
         assert len(_table()) / len(load_words()) > 0.95
+
+
+class TestEsvParsing:
+    # Real shapes from api.esv.org/v3/passage/html/: a chapter-num opener,
+    # a plain verse, a verse split across paragraphs, and a poetry line with
+    # class "verse-num inline". No network — parsing only.
+    HTML = (
+        '<p><b class="chapter-num" id="v50001001-1">1:1&nbsp;</b>Paul and Timothy,</p>\n'
+        '<p><b class="verse-num" id="v50001003-1">3&nbsp;</b>I thank my <span>God</span></p>\n'
+        '<p><b class="verse-num" id="v50001003-2">3&nbsp;</b>in all my remembrance of you,</p>\n'
+        '<span class="line"><b class="verse-num inline" id="v50001004-1">4&nbsp;</b>'
+        '&nbsp;&nbsp;always in every prayer</span>'
+    )
+
+    def test_parse_chapter(self):
+        from da.corpus.esv import _parse_chapter
+        table = _parse_chapter(self.HTML)
+        assert table[(11, 1, 1)] == "Paul and Timothy,"
+        assert table[(11, 1, 3)] == "I thank my God in all my remembrance of you,"
+        assert table[(11, 1, 4)] == "always in every prayer"
+
+    def test_esv_source_without_key_is_503(self, settings):
+        settings.ESV_API_KEY = ""
+        from da.corpus.esv import _chapter
+        _chapter.cache_clear()
+        from rest_framework.test import APIClient
+        res = APIClient().get("/api/corpus/verses",
+                              {"start": 0, "end": 5, "translation": "esv"})
+        assert res.status_code == 503
+        assert "ESV_API_KEY" in res.json()["errors"][0]
+
+    def test_bad_translation_param(self):
+        from rest_framework.test import APIClient
+        res = APIClient().get("/api/corpus/verses",
+                              {"start": 0, "end": 5, "translation": "kjv"})
+        assert res.status_code == 400

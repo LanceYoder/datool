@@ -103,16 +103,23 @@ export async function getCorpusWords(start: number, end: number): Promise<Corpus
   return out;
 }
 
-/** Fetch the English (WEB) verses touching an inclusive word range, chunked
- * like getCorpusWords. A verse spanning a chunk boundary comes back from both
+/** Fetch the English verses touching an inclusive word range, chunked like
+ * getCorpusWords. A verse spanning a chunk boundary comes back from both
  * chunks — the FIRST occurrence carries the true verse start, so later
- * duplicates are dropped. */
-export async function getCorpusVerses(start: number, end: number): Promise<VerseText[]> {
+ * duplicates are dropped. `translation` is 'bsb' (local) or 'esv' (live
+ * Crossway API; rejects when the server has no key configured). */
+export async function getCorpusVerses(
+  start: number,
+  end: number,
+  translation: 'bsb' | 'esv' = 'bsb',
+): Promise<VerseText[]> {
   const out: VerseText[] = [];
   const seen = new Set<string>();
   for (let from = start; from <= end; from += WORD_RANGE_CAP) {
     const to = Math.min(from + WORD_RANGE_CAP - 1, end);
-    for (const verse of await request<VerseText[]>(`/api/corpus/verses?start=${from}&end=${to}`)) {
+    for (const verse of await request<VerseText[]>(
+      `/api/corpus/verses?start=${from}&end=${to}&translation=${translation}`,
+    )) {
       const key = `${verse.book}:${verse.chapter}:${verse.verse}`;
       if (!seen.has(key)) {
         seen.add(key);

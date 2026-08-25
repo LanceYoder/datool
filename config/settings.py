@@ -13,6 +13,14 @@ DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
 
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
 
+# Crossway ESV API key (https://api.esv.org) — enables ?translation=esv on
+# the corpus verses endpoint. The committed default is the project's key
+# (non-commercial terms); the env var overrides it, and if the key is ever
+# revoked, regenerate at api.esv.org. Empty disables the ESV source.
+ESV_API_KEY = os.environ.get(
+    "ESV_API_KEY", "fe97933ef980de124f27b27f560cdc376782ed30"
+)
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
