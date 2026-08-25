@@ -131,11 +131,6 @@ function countOf(sel) {
   return page.evaluate((s) => document.querySelectorAll(s).length, sel);
 }
 
-/** How many <line> strokes the (drawn) glyph inside `sel` is made of. */
-function strokesIn(sel) {
-  return page.evaluate((s) => document.querySelectorAll(`${s} svg line`).length, sel);
-}
-
 /** Wait until `sel` matches exactly `want` nodes, else fail with the actual. */
 async function expectCount(sel, want, msg) {
   try {
@@ -216,31 +211,22 @@ await page.waitForURL(/\/analysis\//);
 const analysisUrl = page.url();
 ok(`created ${analysisUrl}`);
 
-// --- (b) Initial entry: the full first pass (pre-split + tree) ---------------
-step('(b) initial entry: clause propositions connected into one labeled tree');
+// --- (b) Initial entry: pre-split, with ONLY the sure connections drawn ------
+step('(b) initial entry: clause propositions, only the deterministic joins');
 await page.waitForSelector(SEL.row);
 await expectCount(SEL.row, 14, 'one row per clause segment (1 Jn 1:5–7 = 14)');
-// Auto-relationing runs at entry: the exact tree shape is pinned by the
-// backend goldens, so here we only require a real proposal, dynamically.
-const bracketsEntry = await countOf(SEL.bracket);
-console.log(`  entry brackets: ${bracketsEntry}`);
-if (bracketsEntry < 5) {
-  await fail(`auto-relationing should propose a real tree, got ${bracketsEntry} brackets`);
-}
-ok(`auto-relationing proposed ${bracketsEntry} brackets`);
-await expectCount(SEL.dot, 14 + bracketsEntry, 'one dot per proposition and per bracket');
-await expectCount(SEL.rootDot, 1, 'the whole passage arrives as ONE tree');
+// Confident-only auto-relationing: in this passage exactly one join is
+// deterministic — the ὡς comparison 7a/7b (pinned by the backend goldens).
+// Everything else rides a καί or an asyndeton and stays loose for the human.
+await expectCount(SEL.bracket, 1, 'only the sure connection (the ὡς comparison) is drawn');
+await expectCount(SEL.dot, 15, 'one dot per proposition and per bracket');
+await expectCount(SEL.rootDot, 13, 'everything else is left disconnected');
 const blockLabel = (await page.locator(SEL.row).nth(0).locator('.verse-label').textContent()) ?? '';
 if (blockLabel !== '5a') await fail(`first row label should be "5a", got "${blockLabel}"`);
 ok(`rows carry verse-letter labels (first is ${blockLabel})`);
 
-// A complete tree (one root) means the star walk already paints the
-// passage's main point(s) red at entry — coordinate tops may fan to several.
-await waitFor(
-  () => document.querySelectorAll('.prop-row.main-point').length >= 1,
-  null,
-  'the completed entry tree shows its main point in red',
-);
+// The forest is loose, so no main point is painted at entry.
+await expectNone('.prop-row.main-point', 'no main point while the analysis is incomplete');
 
 // Color blocks: the passage arrives as ONE undivided block — every row on
 // the same muted background, one saturated band down the right edge, and no
@@ -656,17 +642,8 @@ const stripX = await page.evaluate(() => {
 });
 await page.mouse.move(stripX, boundaryY);
 await page.waitForSelector('.section-control.add');
-// The + and the − are DRAWN, not typed (a glyph sits where its font puts it,
-// which is never quite the middle of a circle), so there is no text to read:
-// the control is checked by the strokes it is made of — two crossing lines
-// for "+", one for "−" — and by the name it gives a screen reader.
-const plusStrokes = await strokesIn('.section-control.add');
-if (plusStrokes !== 2) {
-  await fail(`the add control should be drawn as two crossing lines, got ${plusStrokes}`);
-}
-const plusName = (await page.getAttribute('.section-control.add', 'aria-label')) ?? '';
-if (!plusName.includes('new block')) await fail(`the add control is unnamed: "${plusName}"`);
-ok(`the add control is a drawn "+", named "${plusName}"`);
+// The + is DRAWN (two crossing SVG lines), not typed.
+await expectCount('.section-control.add svg line', 2, 'the add control draws a +');
 // Screenshot WITHOUT snap(): snap parks the pointer, which would dismiss the
 // hover-only control this shot exists to show.
 shot += 1;
@@ -692,13 +669,7 @@ await snap('two-blocks');
 // — block gestures share the history with everything else.
 await page.mouse.move(stripX, boundaryY);
 await page.waitForSelector('.section-control.remove');
-const minusStrokes = await strokesIn('.section-control.remove');
-if (minusStrokes !== 1) {
-  await fail(`the remove control should be drawn as a single line, got ${minusStrokes}`);
-}
-const minusName = (await page.getAttribute('.section-control.remove', 'aria-label')) ?? '';
-if (!minusName.includes('Join')) await fail(`the remove control is unnamed: "${minusName}"`);
-ok(`the remove control is a drawn "−", named "${minusName}"`);
+await expectCount('.section-control.remove svg line', 1, 'the remove control draws a −');
 await page.locator('.section-control.remove').click();
 await expectCount('.section-band', 1, 'the blocks joined back into one');
 await page.click('.editor-toolbar button:has-text("Undo")');
@@ -744,13 +715,16 @@ step('(j) save, reload, and check persistence');
 // There is no "Saved" banner to wait for. The save is finished when Save has
 // nothing left to save and disables itself — the toolbar's only report.
 await page.click('.analysis-toolbar button:has-text("Save")');
+// The Save button IS the save state: it disables once the document is clean.
 await waitFor(
-  () =>
-    [...document.querySelectorAll('.analysis-toolbar button')].some(
-      (b) => b.textContent?.trim() === 'Save' && b.disabled,
-    ),
+  () => {
+    const btn = [...document.querySelectorAll('.analysis-toolbar button')].find(
+      (b) => b.textContent === 'Save',
+    );
+    return btn !== undefined && btn.disabled;
+  },
   null,
-  'the save finished — Save disabled itself, with nothing left to save',
+  'Save disabled again — everything is stored',
 );
 
 await page.reload();
@@ -790,6 +764,38 @@ await snap('after-reload');
 await page.goto(BASE);
 await page.waitForSelector('.analysis-link');
 ok('analysis listed on home');
+
+// --- (k) The Minimal / Full toggle ------------------------------------------
+step('(k) Full auto-analysis: a typed reference arrives as one proposed tree');
+await page.waitForSelector('.level-toggle');
+const levelLabels = await page.locator('.level-toggle button').allTextContents();
+if (levelLabels.join('|') !== 'Minimal|Full') {
+  await fail(`unexpected level toggle: ${JSON.stringify(levelLabels)}`);
+}
+const minimalOn = await page
+  .locator('.level-toggle button:has-text("Minimal")')
+  .getAttribute('aria-checked');
+if (minimalOn !== 'true') await fail('Minimal should be the default level');
+ok('the toggle defaults to Minimal');
+
+await page.click('.level-toggle button:has-text("Full")');
+await page.fill('.paste-area', 'Heb 4:9-12');
+await waitFor(
+  () => document.querySelector('.alignment-line')?.textContent?.includes('Hebrews 4:9–12') === true,
+  null,
+  'the typed reference located itself',
+);
+await page.click('button:has-text("Create"):not([disabled])');
+await page.waitForURL(/\/analysis\//);
+await page.waitForSelector(SEL.row);
+await expectCount(SEL.row, 7, 'Hebrews 4:9–12 = 7 clause rows');
+await expectCount(SEL.rootDot, 1, 'Full: the whole passage proposed as ONE tree');
+await waitFor(
+  () => document.querySelectorAll('.prop-row.main-point').length >= 1,
+  null,
+  'the complete proposal shows its main point in red',
+);
+await snap('full-analysis');
 
 await browser.close();
 

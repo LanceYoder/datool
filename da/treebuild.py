@@ -140,10 +140,12 @@ def _prop_node(global_index: int) -> dict:
 
 
 def _sub(rel: str, first: dict, second: dict, dep_child: int,
-         review: bool = False) -> dict:
+         review: bool = False, sure: bool = False) -> dict:
     """Subordinate bracket over [first, second]; ``dep_child`` says which child
     is the grammatically marked (dependent) side. ``reversed`` and
-    ``prominent`` are derived so labels land on the right children."""
+    ``prominent`` are derived so labels land on the right children. ``sure``
+    marks a DETERMINISTIC call (see _confident_forest) — never shipped in the
+    document, stripped with the rest of the private keys."""
     r = RELATIONSHIPS[rel]
     rev = _DEP_LABEL[rel] != dep_child
     node: dict = {
@@ -156,46 +158,57 @@ def _sub(rel: str, first: dict, second: dict, dep_child: int,
         node["reversed"] = True
     if review:
         node["flag"] = "review"
+    if sure:
+        node["_sure"] = True
     return node
 
 
-def _coord(rel: str, first: dict, second: dict, review: bool = False) -> dict:
+def _coord(rel: str, first: dict, second: dict, review: bool = False,
+           sure: bool = False) -> dict:
     """Coordinate bracket over exactly [first, second]. Brackets are binary —
     a longer series is a left-nested chain of these (see _chain)."""
     node: dict = {"kind": "bracket", "rel": rel, "prominent": None,
                   "children": [first, second]}
     if review:
         node["flag"] = "review"
+    if sure:
+        node["_sure"] = True
     return node
 
 
 def _chain(rel: str, nodes: Sequence[dict], review: bool = False) -> dict:
     """A run of coordinate members as a LEFT-nested chain of binary brackets:
-    [a, b, c] → rel[ rel[a, b], c ]. One member is itself."""
+    [a, b, c] → rel[ rel[a, b], c ]. One member is itself. Chains are always
+    judgment calls (which members belong together is the guess), so they are
+    never sure."""
     packet = nodes[0]
     for node in nodes[1:]:
         packet = _coord(rel, packet, node, review=review)
     return packet
 
 
-def _edge_coord(node: dict, new: dict, rel: str, review: bool) -> dict:
+def _edge_coord(node: dict, new: dict, rel: str, review: bool,
+                sure: bool = False) -> dict:
     """Coordinate ``new`` at the right edge of ``node``: descend through
     subordinate brackets to their last child, else bracket the two. A further
     coordinate clause brackets THAT packet with the next one, so a run comes
     out left-nested and every bracket stays binary."""
     if node["kind"] == "bracket" and node["prominent"] is not None:
-        node["children"][-1] = _edge_coord(node["children"][-1], new, rel, review)
+        node["children"][-1] = _edge_coord(node["children"][-1], new, rel,
+                                           review, sure)
         return node
-    return _coord(rel, node, new, review=review)
+    return _coord(rel, node, new, review=review, sure=sure)
 
 
-def _edge_sub(node: dict, new: dict, rel: str, review: bool) -> dict:
+def _edge_sub(node: dict, new: dict, rel: str, review: bool,
+              sure: bool = False) -> dict:
     """Subordinate-wrap ``new`` against the right-edge clause of ``node``
     (used for οὐ … ἀλλά, which contrasts with the negated clause)."""
     if node["kind"] == "bracket" and node["prominent"] is not None:
-        node["children"][-1] = _edge_sub(node["children"][-1], new, rel, review)
+        node["children"][-1] = _edge_sub(node["children"][-1], new, rel,
+                                         review, sure)
         return node
-    return _sub(rel, node, new, dep_child=1, review=review)
+    return _sub(rel, node, new, dep_child=1, review=review, sure=sure)
 
 
 # ---------------------------------------------------------------------------
@@ -213,53 +226,75 @@ def _opener_lemma(seg) -> str | None:
     return _L(seg.opener.lemma) if seg.opener is not None else None
 
 
-def _dependent_call(seg, j: int, segs: Sequence, words) -> tuple[str, bool] | None:
-    """(relationship, review) for a backward/forward-attaching dependent
-    segment, or None if the segment is not a dependent unit."""
+# Prepositions whose article-infinitive sense the grammars fix outright:
+# εἰς τό / πρὸς τό purpose, ἐν τῷ / μετὰ τό / πρὸ τοῦ time, διὰ τό cause.
+_INF_PREP_REL: dict[str, tuple[str, bool]] = {
+    _L("εἰς"): ("MEd", True),
+    _L("πρός"): ("MEd", True),
+    _L("ἐν"): ("Tmp", True),
+    _L("μετά"): ("Tmp", True),
+    _L("πρό"): ("Tmp", True),
+    _L("διά"): ("Grnd", True),
+}
+
+
+def _dependent_call(seg, j: int, segs: Sequence, words) -> tuple[str, bool, bool] | None:
+    """(relationship, review, sure) for a backward/forward-attaching dependent
+    segment, or None if the segment is not a dependent unit. ``sure`` marks
+    the calls the goldens have never contradicted AND the grammar forces —
+    each entry's evidence is in the comment beside it."""
     op = seg.opener
     if op is None:
         return None
     lemma = _L(op.lemma)
     if op.kind == "rel":
         # The relative clause interprets its antecedent's clause: Ft → In*.
-        return "FtIn", True
+        # Sure: Eph 3:11, 3:13 and Eph 1:13 all draw exactly this; none of
+        # the worked diagrams reads a split-off relative any other way. (A
+        # relative whose packet grows by a καί still cascades to unsure.)
+        return "FtIn", False, True
     if op.kind == "appos":
         # Apposition / attributive-article phrase restates: Ft → In*.
-        return "FtIn", True
+        return "FtIn", True, False
     if op.kind == "pp":
         # Implicit-proposition prepositional phrase: guess by preposition.
-        return _PP_REL.get(lemma, "WEd"), True
+        return _PP_REL.get(lemma, "WEd"), True, False
     if op.kind == "ptcp":
         # Adverbial participle: Way–End best guess, the participle side is W.
-        return "WEd", True
+        # Not sure: the Acts diagram reads Ἀκούσαντες as Temporal where this
+        # table says W/Ed — the participle's sense is contextual.
+        return "WEd", True, False
     if op.kind == "inf":
-        # Adverbial infinitive: purpose (M/Ed, the infinitive is Ed) unless the
-        # pattern is ἐν τῷ + inf (temporal) or διὰ τό + inf (causal).
+        # Adverbial infinitive: a preposition + article pattern carries its
+        # grammar-book sense (sure); anything else is best-guess purpose.
         ws = _seg_words(seg, words)
         if len(ws) >= 2 and ws[1].pos == "RA":
-            if _L(ws[0].lemma) == _L("ἐν"):
-                return "Tmp", True
-            if _L(ws[0].lemma) == _L("διά"):
-                return "Grnd", True
-        return "MEd", False
+            mapped = _INF_PREP_REL.get(_L(ws[0].lemma))
+            if mapped is not None:
+                rel, sure = mapped
+                return rel, not sure, sure
+        return "MEd", False, False
     if op.kind == "sub_conj":
         if lemma in PURPOSE:
-            return "MEd", False
+            # ἵνα: purpose vs. epexegetical is a reading — the Philippians
+            # student takes the tool's M/Ed as Ft/In.
+            return "MEd", False, False
         if lemma in RESULT:
-            return "CE", False
+            return "CE", False, True      # ὥστε: 2/2 exact (1 Thess)
         if lemma in CONDITIONAL:
-            return "CndE", False
+            return "CndE", False, True    # ἐάν/εἰ: 2/2 exact (1 John)
         if lemma in TEMPORAL:
-            return "Tmp", False
+            return "Tmp", False, True     # explicit temporal subordinator
         if lemma in LOCATIVE:
-            return "Loc", False
+            return "Loc", False, True     # explicit locative subordinator
         if lemma in COMPARATIVE:
-            return "Cmp", False
+            return "Cmp", False, True     # ὡς/ὥσπερ: 2/2 exact (1 Jn, Heb)
         if lemma in HOTI:
             prev = segs[j - 1] if j > 0 else None
             if prev is not None and _has_lemma(prev, words, VERBA_DICENDI):
-                return "FtIn", True   # content of saying/knowing
-            return "Grnd", True       # causal ὅτι
+                # Content of saying/knowing: 2/2 exact (1 John 5c-5d, 6a-6b).
+                return "FtIn", False, True
+            return "Grnd", True, False    # causal ὅτι: a reading
         return None  # unknown subordinator → treated as a serial join, review
     return None
 
@@ -271,12 +306,13 @@ class _Held:
     """A forward-attaching packet (protasis or sentence-initial dependent),
     waiting to become children[0] of its bracket at sentence end."""
 
-    __slots__ = ("packet", "rel", "review")
+    __slots__ = ("packet", "rel", "review", "sure")
 
-    def __init__(self, packet: dict, rel: str, review: bool):
+    def __init__(self, packet: dict, rel: str, review: bool, sure: bool = False):
         self.packet = packet
         self.rel = rel
         self.review = review
+        self.sure = sure
 
 
 def _assemble_sentence(indexed_segs: list[tuple[int, "Segment"]], words) -> dict:
@@ -285,13 +321,14 @@ def _assemble_sentence(indexed_segs: list[tuple[int, "Segment"]], words) -> dict
     stack: list[dict] = []
     held: _Held | None = None
 
-    def join_target_edge(new: dict, rel: str, review: bool, sub: bool) -> None:
+    def join_target_edge(new: dict, rel: str, review: bool, sub: bool,
+                         sure: bool = False) -> None:
         """Right-edge join against the current target (stack top, else held)."""
         edge = _edge_sub if sub else _edge_coord
         if stack:
-            stack.append(edge(stack.pop(), new, rel, review))
+            stack.append(edge(stack.pop(), new, rel, review, sure))
         elif held is not None:
-            held.packet = edge(held.packet, new, rel, review)
+            held.packet = edge(held.packet, new, rel, review, sure)
         else:
             stack.append(new)
 
@@ -304,51 +341,76 @@ def _assemble_sentence(indexed_segs: list[tuple[int, "Segment"]], words) -> dict
 
         if kind == "sub_conj" and fresh and lemma in _PROTASIS_REL:
             # Sentence-initial conditional/temporal/comparative clause:
-            # hold it, it attaches forward to the coming apodosis.
-            held = _Held(leaf, _PROTASIS_REL[lemma], False)
+            # hold it, it attaches forward to the coming apodosis. The
+            # relationship is the subordinator's own — sure.
+            held = _Held(leaf, _PROTASIS_REL[lemma], False, sure=True)
             continue
 
         call = _dependent_call(seg, j, segs, words)
         if call is not None and not (kind == "coord"):
-            rel, review = call
+            rel, review, sure = call
+            if kind == "rel" and sure:
+                # A relative's RELATIONSHIP is sure; its SCOPE only sometimes.
+                # The Eph 1:13-14 diagram tucks a trailing εἰς-phrase inside
+                # the relative's packet where this builder wraps outside it,
+                # and chained relatives (Eph 3:11-12) scope to the nearest
+                # clause rather than the packet. Airtight only when the
+                # relative CLOSES its sentence and pairs with a single bare
+                # clause — nothing can extend or re-scope it after that.
+                sure = (j == len(segs) - 1 and bool(stack)
+                        and stack[-1]["kind"] == "prop")
             if stack:
                 top = stack.pop()
-                stack.append(_sub(rel, top, leaf, dep_child=1, review=review))
+                stack.append(_sub(rel, top, leaf, dep_child=1, review=review,
+                                  sure=sure))
             elif held is not None:
-                held.packet = _sub(rel, held.packet, leaf, dep_child=1, review=review)
+                held.packet = _sub(rel, held.packet, leaf, dep_child=1,
+                                   review=review, sure=sure)
             else:
                 # Sentence opens with a dependent unit (initial participle,
-                # causal ὅτι, …): hold it forward like a protasis.
-                held = _Held(leaf, rel, review)
+                # causal ὅτι, …): hold it forward like a protasis. A
+                # sentence-INITIAL ὥστε is the inferential construction (the
+                # 1 Thess 4:18 diagram draws Ὥστε παρακαλεῖτε as ∴), not the
+                # result clause the CE call is sure about — never sure here.
+                held = _Held(leaf, rel, review, sure and rel != "CE")
             continue
 
         if kind == "coord" and not fresh:
             assert lemma is not None
             if lemma in GROUND or lemma in INFERENCE:
                 # Postpositive γάρ/οὖν mid-sentence: relate the new clause to
-                # the packet so far with the table relation.
+                # the packet so far with the table relation. γάρ is sure
+                # (4/4 exact across 1 Thess and Hebrews); οὖν is not — the
+                # Acts diagram reads a μὲν οὖν as C/E where this says ∴.
                 rel = "Grnd" if lemma in GROUND else "Inf"
+                sure = lemma in GROUND
                 if stack:
                     if len(stack) > 1:
                         stack[:] = [_chain("Ser", stack, review=True)]
-                    stack.append(_sub(rel, stack.pop(), leaf, dep_child=1))
+                    stack.append(_sub(rel, stack.pop(), leaf, dep_child=1,
+                                      sure=sure))
                 else:
                     assert held is not None
-                    held.packet = _sub(rel, held.packet, leaf, dep_child=1)
+                    held.packet = _sub(rel, held.packet, leaf, dep_child=1,
+                                       sure=sure)
             elif lemma in ADVERSATIVE:
+                # οὐ … ἀλλά is the textbook -/+ (1/1 exact, 1 Thess); a bare
+                # ἀλλά is a judgment.
                 prev = segs[j - 1]
                 confident = _has_lemma(prev, words, NEGATIVES)
-                join_target_edge(leaf, "NegPos", not confident, sub=True)
+                join_target_edge(leaf, "NegPos", not confident, sub=True,
+                                 sure=confident)
             elif lemma in ALTERNATIVE:
-                join_target_edge(leaf, "Alt", False, sub=False)
+                join_target_edge(leaf, "Alt", False, sub=False, sure=True)
             elif lemma in DE:
                 men_before = any(_has_lemma(s, words, MEN) for s in segs[:j])
                 if men_before:
-                    join_target_edge(leaf, "Alt", False, sub=False)
+                    join_target_edge(leaf, "Alt", False, sub=False, sure=True)
                 else:
                     join_target_edge(leaf, "Ser", True, sub=False)
             else:
-                # καί / οὐδέ / τε (and anything unrecognized): Series, review.
+                # καί / οὐδέ / τε (and anything unrecognized): Series, review —
+                # never sure: the 1 John student hears one of these καί as ∴.
                 join_target_edge(leaf, "Ser", True, sub=False)
             continue
 
@@ -364,7 +426,8 @@ def _assemble_sentence(indexed_segs: list[tuple[int, "Segment"]], words) -> dict
     if stack:
         main = _chain("Ser", stack, review=True)
     if held is not None and main is not None:
-        return _sub(held.rel, held.packet, main, dep_child=0, review=held.review)
+        return _sub(held.rel, held.packet, main, dep_child=0,
+                    review=held.review, sure=held.sure)
     if held is not None:
         return held.packet
     assert main is not None, "sentence produced no packet"
@@ -374,9 +437,9 @@ def _assemble_sentence(indexed_segs: list[tuple[int, "Segment"]], words) -> dict
 # ---------------------------------------------------------------------------
 # Inter-sentence assembly
 
-def _sentence_join(prev_segs: list, cur_segs: list, words) -> tuple[str, bool]:
-    """(relationship, review) joining the accumulated packet to the new
-    sentence. Ser/False is the deliberate dumb default."""
+def _sentence_join(prev_segs: list, cur_segs: list, words) -> tuple[str, bool, bool]:
+    """(relationship, review, sure) joining the accumulated packet to the new
+    sentence. Ser/False is the deliberate dumb default — and never sure."""
     first = cur_segs[0]
     lemma = _opener_lemma(first)
     conn = lemma if (lemma in _DISCOURSE and first.opener.kind == "coord") else None
@@ -393,23 +456,27 @@ def _sentence_join(prev_segs: list, cur_segs: list, words) -> tuple[str, bool]:
 
     if conn is not None:
         if conn in GROUND:
-            return "Grnd", False        # star on the supported (previous) side
+            # γάρ grounds what precedes: 4/4 exact (1 Thess ×2, Hebrews ×2).
+            return "Grnd", False, True  # star on the supported (previous) side
         if conn in INFERENCE:
-            return "Inf", False         # star on the new (inferred) side
+            # διό is sure — its sense is forced, and Eph 3:13 draws it
+            # exactly. οὖν is not: the Acts diagram draws a μὲν οὖν as C/E.
+            return "Inf", False, conn == _L("διό")
         if conn in DE:
             prev_has_men = any(_has_lemma(s, words, MEN) for s in prev_segs)
-            return ("Alt", False) if prev_has_men else ("Ser", True)
+            return ("Alt", False, True) if prev_has_men else ("Ser", True, False)
         if conn in ADVERSATIVE:
-            return "NegPos", True
+            return "NegPos", True, False
         if conn in ALTERNATIVE:
-            return "Alt", False
-        return "Ser", False             # bare καί chain: unflagged default
+            return "Alt", False, True
+        return "Ser", False, False      # bare καί chain: unflagged default
 
     # Speech content: previous sentence ends with a verbum dicendi + '·'.
+    # Not sure: the Acts diagram frames its speeches as S/R and Ft/In by turn.
     last_word = words[prev_segs[-1].end]
     if last_word.text.rstrip().endswith("·") and _L(last_word.lemma) in VERBA_DICENDI:
-        return "FtIn", True
-    return "Ser", False
+        return "FtIn", True, False
+    return "Ser", False, False
 
 
 def _fold_sentences(sentence_packets: list[tuple[dict, list]], words) -> dict:
@@ -424,16 +491,17 @@ def _fold_sentences(sentence_packets: list[tuple[dict, list]], words) -> dict:
     group_review = False
     prev_segs = sentence_packets[0][1]
     for packet, segs in sentence_packets[1:]:
-        rel, review = _sentence_join(prev_segs, segs, words)
+        rel, review, sure = _sentence_join(prev_segs, segs, words)
         if rel == "Ser":
             group.append(packet)
             group_review = group_review or review
         elif rel == "Alt":
-            group = [_coord("Alt", close(group, group_review), packet)]
+            group = [_coord("Alt", close(group, group_review), packet,
+                            sure=sure)]
             group_review = False
         else:
             group = [_sub(rel, close(group, group_review), packet,
-                          dep_child=1, review=review)]
+                          dep_child=1, review=review, sure=sure)]
             group_review = False
         prev_segs = segs
     return close(group, group_review)
@@ -489,15 +557,47 @@ def _propositions(segments: Sequence, words) -> list[dict]:
 def _strip_private(node: dict) -> None:
     """Remove builder bookkeeping documents never carry: the classifier's
     internal ``review`` flags (confidence labeling is not part of the
-    product)."""
+    product) and the ``_sure`` marks the confident mode prunes by."""
     node.pop("flag", None)
+    node.pop("_sure", None)
     for child in node.get("children", ()):
         _strip_private(child)
 
 
-def build_document(segments: list["Segment"]) -> dict:
+def _confident_forest(tree: dict) -> list[dict]:
+    """The maximal all-sure subtrees of ``tree``, in document order — the
+    connections the classifier is DETERMINISTICALLY right about, with
+    everything else dissolved back into its pieces for the analyst.
+
+    A bracket survives only if its own call is sure AND every bracket under
+    it survives: a sure relationship over an uncertain sub-grouping is an
+    uncertain bracket (the children it pairs are themselves a guess)."""
+    def keepable(node: dict) -> bool:
+        if node["kind"] == "prop":
+            return True
+        return bool(node.get("_sure")) and all(
+            keepable(child) for child in node["children"])
+
+    out: list[dict] = []
+
+    def walk(node: dict) -> None:
+        if keepable(node):
+            out.append(node)
+        else:
+            for child in node["children"]:
+                walk(child)
+
+    walk(tree)
+    return out
+
+
+def build_document(segments: list["Segment"], *,
+                   confident_only: bool = False) -> dict:
     """Assemble the segments of one aligned passage into a validated analysis
-    document."""
+    document. With ``confident_only`` the forest keeps only the maximal
+    all-sure subtrees (see :func:`_confident_forest`) — the joins the goldens
+    have never contradicted — and leaves everything else disconnected for the
+    analyst."""
     if not segments:
         raise ValueError("build_document needs at least one segment")
     words = load_words()
@@ -515,14 +615,16 @@ def build_document(segments: list["Segment"]) -> dict:
         for group in sentences
     ]
     tree = _fold_sentences(sentence_packets, words)
-    _strip_private(tree)
+    # Confident mode keeps only what is deterministically right; the full
+    # mode connects everything into a single root.
+    forest = _confident_forest(tree) if confident_only else [tree]
+    for root in forest:
+        _strip_private(root)
 
     doc = {
         "schemaVersion": SCHEMA_VERSION,
         "propositions": _propositions(segments, words),
-        # The first pass connects everything, so the forest has a single root;
-        # disconnected roots only appear once the user edits (DESIGN.md §3).
-        "forest": [tree],
+        "forest": forest,
     }
     validate_document(doc)  # a failure here is a builder bug — never ship it
     return doc

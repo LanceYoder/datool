@@ -16,6 +16,25 @@ import {
 /** How long typing must pause before the passage is located. */
 const LOCATE_DELAY_MS = 450;
 
+/** The remembered auto-analysis level — a preference, not analysis data. */
+const ANALYSIS_LEVEL_KEY = 'datool.analysisLevel';
+
+function loadMaximal(): boolean {
+  try {
+    return window.localStorage.getItem(ANALYSIS_LEVEL_KEY) === 'maximal';
+  } catch {
+    return false;
+  }
+}
+
+function saveMaximal(maximal: boolean): void {
+  try {
+    window.localStorage.setItem(ANALYSIS_LEVEL_KEY, maximal ? 'maximal' : 'minimal');
+  } catch {
+    /* a browser that blocks storage just forgets the choice */
+  }
+}
+
 /** Width the analysis will have on this screen — the app's own column. */
 function shellWidth(): number {
   return Math.min(window.innerWidth, 1600) - 64;
@@ -43,6 +62,9 @@ export default function HomePage() {
   const [showTrash, setShowTrash] = useState(false);
 
   const [text, setText] = useState('');
+  // Auto-analysis level: minimal draws only the deterministic connections;
+  // maximal proposes the full tree. Remembered per browser.
+  const [maximal, setMaximal] = useState<boolean>(loadMaximal);
   const [result, setResult] = useState<FirstPassResult | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -128,7 +150,7 @@ export default function HomePage() {
     setLocating(true);
     const seq = ++locateSeq.current;
     const timer = window.setTimeout(() => {
-      firstPass(wanted)
+      firstPass(wanted, maximal)
         .then((found) => {
           if (seq !== locateSeq.current) return;
           setResult(found);
@@ -146,7 +168,7 @@ export default function HomePage() {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [text]);
+  }, [text, maximal]);
 
   const create = async () => {
     if (result === null) return;
@@ -193,6 +215,37 @@ export default function HomePage() {
           >
             Create
           </button>
+          <div
+            className="level-toggle"
+            role="radiogroup"
+            aria-label="How much the auto-analysis proposes"
+            title="Minimal draws only the connections the tool is certain of; Full proposes a complete tree to correct"
+          >
+            <button
+              type="button"
+              role="radio"
+              aria-checked={!maximal}
+              className={maximal ? '' : 'on'}
+              onClick={() => {
+                setMaximal(false);
+                saveMaximal(false);
+              }}
+            >
+              Minimal
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={maximal}
+              className={maximal ? 'on' : ''}
+              onClick={() => {
+                setMaximal(true);
+                saveMaximal(true);
+              }}
+            >
+              Full
+            </button>
+          </div>
           {result !== null && <span className="alignment-line">{alignmentLine(result)}</span>}
           {result === null && (
             <span className="muted alignment-line">

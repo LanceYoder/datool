@@ -212,15 +212,37 @@ class TestFirstPass:
         body = response.json()
         document, alignment = body["document"], body["alignment"]
         assert document["schemaVersion"] == 2
-        # Fully analyzed: every proposition connected into one tree.
+        # Confident-only analysis: John 1:1 is three καί-joined clauses, and
+        # a καί join is a judgment call — everything stays loose here.
         assert document["propositions"]
-        assert len(document["forest"]) == 1
+        assert document["forest"] == [
+            {"kind": "prop", "ref": p["id"]} for p in document["propositions"]
+        ]
         assert alignment is not None
         assert alignment["ref"] == "John 1:1"
         assert alignment["exact"] is True
         assert alignment["matchedTokens"] == alignment["totalTokens"] == 17
         assert alignment["mismatchedPositions"] == []
         assert alignment["end"] - alignment["start"] == 16
+
+    def test_real_first_pass_maximal(self, client):
+        """maximal: true runs the full classifier — John 1:1 comes back as
+        one connected tree instead of loose clauses."""
+        pytest.importorskip("da.firstpass")
+        response = client.post(
+            "/api/first-pass", {"text": JOHN_1_1, "maximal": True}, format="json"
+        )
+        assert response.status_code == 200
+        document = response.json()["document"]
+        assert len(document["propositions"]) > 1
+        assert len(document["forest"]) == 1
+
+    def test_first_pass_maximal_must_be_boolean(self, client):
+        response = client.post(
+            "/api/first-pass", {"text": JOHN_1_1, "maximal": "yes"}, format="json"
+        )
+        assert response.status_code == 400
+        assert response.json()["errors"] == ["maximal must be a boolean"]
 
     def test_mocked_first_pass(self, client, monkeypatch):
         """Stub the firstpass boundary — works whether or not the module exists."""
@@ -234,8 +256,8 @@ class TestFirstPass:
         result = types.SimpleNamespace(document=stub_document, alignment=None)
         calls = []
 
-        def fake_first_pass(text):
-            calls.append(text)
+        def fake_first_pass(text, maximal=False):
+            calls.append((text, maximal))
             return result
 
         try:
@@ -250,7 +272,7 @@ class TestFirstPass:
         response = client.post("/api/first-pass", {"text": "ψευδόμεθα"}, format="json")
         assert response.status_code == 200
         assert response.json() == {"document": stub_document, "alignment": None}
-        assert calls == ["ψευδόμεθα"]
+        assert calls == [("ψευδόμεθα", False)]
 
 
 class TestTaxonomy:

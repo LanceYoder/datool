@@ -149,6 +149,33 @@ h2 {
   font-size: 0.9rem;
 }
 
+/* Minimal / Full auto-analysis — a two-way segmented control. */
+.level-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.level-toggle button {
+  border: none;
+  border-radius: 0;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  background: #fff;
+}
+
+.level-toggle button + button {
+  border-left: 1px solid var(--border);
+}
+
+.level-toggle button.on {
+  background: var(--bg-soft);
+  color: var(--text);
+  font-weight: 600;
+}
+
 button {
   font: inherit;
   padding: 0.35rem 0.9rem;

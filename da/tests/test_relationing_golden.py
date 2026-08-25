@@ -284,6 +284,61 @@ def test_relationing_scorecard(filename, ref):
                       alignment.end, EXPECTED[ref])
 
 
+# Confident-only mode: what entry actually ships. Every surviving bracket
+# must be one the student drew EXACTLY (relationship, star, and grouping) —
+# 100%% precision is the mode's contract, pinned per passage. The counts are
+# the recall side of the bargain: what determinism leaves for the human.
+CONFIDENT_KEPT = {
+    "1 John 1:5–7": 1,             # the ὡς comparison 7a/7b
+    "Philippians 1:9–11": 0,       # the ἵνα is a reading — left alone
+    "1 Thessalonians 1:6–10": 2,   # ὥστε C/E and οὐ … ἀλλά -/+
+    "Ephesians 1:13–14": 0,
+    "Acts 2:37–41": 0,             # narrative: nothing is deterministic
+}
+
+
+def _assert_confident_subset(tree, row_spans, start, end, ref):
+    student_exact = {
+        (b["rel"], b["star"], b["kids"])
+        for b in _student_brackets(tree, row_spans, [])
+    }
+    doc = build_document(segment(start, end), confident_only=True)
+    kept = _tool_brackets(doc)
+    for b in kept:
+        assert (b["rel"], b["star"], b["kids"]) in student_exact, (
+            f"confident mode kept a bracket the student did not draw: {b}"
+        )
+    assert len(kept) == CONFIDENT_KEPT[ref], (
+        f"confident mode kept {len(kept)} brackets, expected "
+        f"{CONFIDENT_KEPT[ref]}"
+    )
+
+
+@pytest.mark.parametrize(
+    "filename,ref", [(c[0], c[1]) for c in CASES], ids=[c[0][:21] for c in CASES]
+)
+def test_confident_mode_never_contradicts_the_student(filename, ref):
+    rows = student_rows(filename)
+    alignment = align(" ".join(rows))
+    assert alignment is not None and alignment.ref == ref
+    bounds = sorted(boundary_positions(rows, alignment.start, alignment.end))
+    row_spans = list(zip(
+        [alignment.start] + bounds,
+        [b - 1 for b in bounds] + [alignment.end],
+    ))
+    _assert_confident_subset(STUDENT_TREES[ref], row_spans, alignment.start,
+                             alignment.end, ref)
+
+
+@pytest.mark.parametrize(
+    "ref,row_spans,tree,expected", IMAGE_CASES, ids=[c[0] for c in IMAGE_CASES]
+)
+def test_confident_mode_never_contradicts_the_student_image(
+        ref, row_spans, tree, expected):
+    _assert_confident_subset(tree, row_spans, row_spans[0][0],
+                             row_spans[-1][1], ref)
+
+
 @pytest.mark.parametrize(
     "ref,row_spans,tree,expected", IMAGE_CASES, ids=[c[0] for c in IMAGE_CASES]
 )
