@@ -71,8 +71,14 @@ export interface BracketLayerProps {
   onDotClick: (dot: DotGeom) => void;
   onLabelClick: (pos: number, at: Point) => void;
   onStarClick: (pos: number) => void;
-  /** Double click: remove the connections at this dot. */
-  onDotDoubleClick: (dot: DotGeom) => void;
+  /** Right-click: remove the connections at this dot. */
+  onDotDelete: (dot: DotGeom) => void;
+  /**
+   * Where the pointer is, in overlay coordinates, while a dot is selected —
+   * the loose end of the connection being made. Null when nothing is selected
+   * or the pointer has not moved yet.
+   */
+  pointer: Point | null;
   /** Reader's display options — here, the per-relationship bracket colors. */
   view: ViewSettings;
 }
@@ -92,9 +98,12 @@ export default function BracketLayer({
   onDotClick,
   onLabelClick,
   onStarClick,
-  onDotDoubleClick,
+  onDotDelete,
+  pointer,
   view,
 }: BracketLayerProps) {
+  const selectedDot = dots.find((d) => d.id === selectedDotId);
+
   return (
     <svg className="bracket-layer interactive" width={width} height={height} style={{ left: 0 }}>
       <g className="spine-layer" pointerEvents="none">
@@ -123,6 +132,19 @@ export default function BracketLayer({
         ))}
       </g>
 
+      {/* The connection in progress: from the selected dot to the pointer, so
+          it is visible where the next click would land it. Inert. */}
+      {selectedDot !== undefined && pointer !== null && (
+        <line
+          className="rubber-band"
+          x1={selectedDot.x}
+          y1={selectedDot.y}
+          x2={pointer.x}
+          y2={pointer.y}
+          pointerEvents="none"
+        />
+      )}
+
       <g className="dot-layer">
         {dots.map((d) => {
           const selected = d.id === selectedDotId;
@@ -142,7 +164,10 @@ export default function BracketLayer({
               data-dot={d.id}
               onMouseDown={swallow}
               onClick={() => onDotClick(d)}
-              onDoubleClick={() => onDotDoubleClick(d)}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                onDotDelete(d);
+              }}
             >
               {d.stubX1 !== undefined && d.stubX2 !== undefined && (
                 <line

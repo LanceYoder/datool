@@ -12,16 +12,20 @@ describe('coerceSettings', () => {
   it('falls back to the defaults for anything missing or malformed', () => {
     expect(coerceSettings(null)).toEqual(DEFAULT_VIEW_SETTINGS);
     expect(coerceSettings('nonsense')).toEqual(DEFAULT_VIEW_SETTINGS);
-    expect(coerceSettings({ english: 'yes', colorCoding: 1 })).toEqual(DEFAULT_VIEW_SETTINGS);
+    expect(coerceSettings({ english: 'yes', colorCoding: 1, verbs: 'on' })).toEqual(
+      DEFAULT_VIEW_SETTINGS,
+    );
   });
 
   it('keeps stored booleans and valid colors, dropping invalid ones', () => {
     const settings = coerceSettings({
       english: false,
+      verbs: false,
       colorCoding: true,
       colors: { Grnd: '#123456', Inf: 'rebeccapurple', Ser: '#abc' },
     });
     expect(settings.english).toBe(false);
+    expect(settings.verbs).toBe(false);
     expect(settings.colorCoding).toBe(true);
     expect(settings.colors.Grnd).toBe('#123456');
     expect(settings.colors.Ser).toBe('#abc');
@@ -32,6 +36,14 @@ describe('coerceSettings', () => {
     const settings = coerceSettings(null);
     settings.colors.Grnd = '#000000';
     expect(DEFAULT_RELATION_COLORS.Grnd).not.toBe('#000000');
+  });
+});
+
+describe('defaults', () => {
+  it('ships with the English line and bold verbs on, color coding off', () => {
+    expect(DEFAULT_VIEW_SETTINGS.english).toBe(true);
+    expect(DEFAULT_VIEW_SETTINGS.verbs).toBe(true);
+    expect(DEFAULT_VIEW_SETTINGS.colorCoding).toBe(false);
   });
 });
 

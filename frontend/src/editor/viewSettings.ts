@@ -1,6 +1,6 @@
 // Display options that belong to the READER, not to the analysis: whether the
-// English reference line shows, whether brackets are colored by relationship,
-// and which color each relationship gets.
+// English reference line shows, whether the Greek verbs are bold, whether
+// brackets are colored by relationship, and which color each gets.
 //
 // They live in localStorage, never in the document — two people opening the
 // same analysis may want different colors, and a color choice must never make
@@ -42,6 +42,8 @@ export const NEUTRAL_LINE = '#374151';
 export interface ViewSettings {
   /** Show the English reference line above each proposition. */
   english: boolean;
+  /** Set the Greek verbs in bold — the clause backbone, at a glance. */
+  verbs: boolean;
   /** Draw each bracket in its relationship's color. */
   colorCoding: boolean;
   /** Relationship code → color. Missing codes fall back to NEUTRAL_LINE. */
@@ -50,6 +52,7 @@ export interface ViewSettings {
 
 export const DEFAULT_VIEW_SETTINGS: ViewSettings = {
   english: true,
+  verbs: true,
   colorCoding: false,
   colors: { ...DEFAULT_RELATION_COLORS },
 };
@@ -77,6 +80,7 @@ export function coerceSettings(raw: unknown): ViewSettings {
   }
   return {
     english: typeof source.english === 'boolean' ? source.english : DEFAULT_VIEW_SETTINGS.english,
+    verbs: typeof source.verbs === 'boolean' ? source.verbs : DEFAULT_VIEW_SETTINGS.verbs,
     colorCoding:
       typeof source.colorCoding === 'boolean'
         ? source.colorCoding

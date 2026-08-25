@@ -107,9 +107,6 @@ const TOO_WIDE_MS = 8000;
 /** How long a rejected connection shakes / the message stays up. */
 const FLASH_MS = 1600;
 
-/** How long a word click waits to see whether it is half of a double click. */
-const DOUBLE_CLICK_MS = 220;
-
 // ---------------------------------------------------------------------------
 // Row rendering (React node view)
 
@@ -125,10 +122,11 @@ interface RowContextValue {
   mainPids: ReadonlySet<string>;
   /** Reader's English-line toggle (viewSettings). */
   showEnglish: boolean;
+  /** Reader's verb-bolding toggle (viewSettings). */
+  showVerbs: boolean;
   /**
    * A single click on ANY word: the word-info popover (lemma, morphology,
-   * gloss). `index` is the corpus word index, null for raw text. The popover
-   * waits out the double-click window, so splitting never flashes it up.
+   * gloss). `index` is the corpus word index, null for raw text.
    */
   onWordClick: (
     pid: string,
@@ -138,7 +136,7 @@ interface RowContextValue {
     splittable: boolean,
     target: HTMLElement,
   ) => void;
-  /** A DOUBLE click on a splittable word: split the proposition after it. */
+  /** A right-click on a splittable word: split the proposition after it. */
   onWordSplit: (pid: string, ordinal: number) => void;
   onMergeBelow: (pid: string) => void;
 }
@@ -149,7 +147,7 @@ const RowContext = createContext<RowContextValue | null>(null);
 function rowTokens(
   node: ReactNodeViewProps['node'],
   words: ReadonlyMap<number, CorpusWord>,
-): { key: string | number; display: string; hover?: string; index?: number }[] {
+): { key: string | number; display: string; hover?: string; index?: number; verb?: boolean }[] {
   const { srcStart, srcEnd } = node.attrs as { srcStart: unknown; srcEnd: unknown };
   if (typeof srcStart === 'number' && typeof srcEnd === 'number') {
     const out = [];
@@ -161,6 +159,9 @@ function rowTokens(
           display: displayWordText(w.text),
           hover: `${w.lemma} · ${w.parsing}`,
           index: i,
+          // MorphGNT marks every verb form — finite, participle, infinitive —
+          // with the 'V-' part of speech.
+          verb: w.pos === 'V-',
         });
       }
     }
@@ -170,6 +171,11 @@ function rowTokens(
     .split(/\s+/)
     .filter(Boolean)
     .map((t, i) => ({ key: i, display: t }));
+}
+
+/** One word's class list: what it can do, and what it is. */
+function wordClass(splittable: boolean, verb: boolean): string {
+  return ['word', splittable ? 'splittable' : '', verb ? 'verb' : ''].filter(Boolean).join(' ');
 }
 
 /** The main point's red — wins over any stored per-proposition color. */
@@ -219,12 +225,14 @@ function PropositionRow({ node }: ReactNodeViewProps) {
                   const title =
                     (t.hover !== undefined ? t.hover : '') +
                     (splittable
-                      ? `${t.hover !== undefined ? '\n' : ''}double-click: split after this word`
-                      : '');
+                      ? `${t.hover !== undefined ? '\n' : ''}right-click: split after this word`
+                      : ctx.lastPid !== pid
+                        ? `${t.hover !== undefined ? '\n' : ''}right-click: merge with the one below`
+                        : '');
                   return (
                     <span
                       key={t.key}
-                      className={splittable ? 'word splittable' : 'word'}
+                      className={wordClass(splittable, t.verb === true && ctx.showVerbs)}
                       title={title === '' ? undefined : title}
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={(event) => {
@@ -239,10 +247,14 @@ function PropositionRow({ node }: ReactNodeViewProps) {
                           event.currentTarget,
                         );
                       }}
-                      onDoubleClick={(event) => {
+                      onContextMenu={(event) => {
+                        // Right-click divides: after this word, or — on the
+                        // last word, where there is nothing left to divide —
+                        // into the proposition below.
                         event.preventDefault();
                         event.stopPropagation();
                         if (splittable) ctx.onWordSplit(pid, ordinal);
+                        else if (ctx.lastPid !== pid) ctx.onMergeBelow(pid);
                       }}
                     >
                       {t.display}{' '}
@@ -250,22 +262,6 @@ function PropositionRow({ node }: ReactNodeViewProps) {
                   );
                 })
               : String(node.attrs.text)}
-            {/* Inside the text span, so it flows right after the last word. */}
-            {ctx !== null && ctx.lastPid !== pid && (
-              <button
-                type="button"
-                className="merge-below"
-                title="Merge this proposition with the one below it"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  ctx.onMergeBelow(pid);
-                }}
-              >
-                Merge below
-              </button>
-            )}
           </span>
         </div>
       </div>
@@ -372,6 +368,10 @@ interface Overlay {
 
 function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
   const [selectedDotId, setSelectedDotId] = useState<string | null>(null);
+  // Where the pointer is while a dot is selected: the loose end of the
+  // connection being made, drawn from the dot so the reader can see where the
+  // next click would put it.
+  const [pointer, setPointer] = useState<Point | null>(null);
   const [popover, setPopover] = useState<PopoverState | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [shake, setShake] = useState<ShakeState | null>(null);
@@ -391,13 +391,14 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
   const measuredRows = useRef('');
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const flashTimer = useRef<number | null>(null);
-  const wordClickTimer = useRef<number | null>(null);
-  const dotClickTimer = useRef<number | null>(null);
   // onSplit is defined further down (it needs the editor); the row context is
   // built before it, so it reaches the command through this ref.
   const onSplitRef = useRef<(pid: string, ordinal: number) => void>(() => {});
   // The width check runs once per loaded document (see the effect below).
   const widthChecked = useRef(false);
+  // onDotDelete is defined further down (it needs the editor); the key handler
+  // above reaches it through this ref.
+  const deleteDotRef = useRef<(dotId: string) => void>(() => {});
   const shakeSeq = useRef(0);
 
   const updateView = useCallback((next: ViewSettings) => {
@@ -477,6 +478,25 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     }
   });
 
+  // Follow the pointer only while a connection is in progress — no selection,
+  // no listener, so a resting analysis costs nothing.
+  useEffect(() => {
+    if (selectedDotId === null) {
+      setPointer(null);
+      return;
+    }
+    const shell = shellRef.current;
+    if (shell === null) return;
+    const onMove = (event: MouseEvent) => {
+      const rect = shell.getBoundingClientRect();
+      setPointer({ x: event.clientX - rect.left, y: event.clientY - rect.top });
+    };
+    window.addEventListener('mousemove', onMove);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+    };
+  }, [selectedDotId]);
+
   // Escape closes the popover and clears every selection; Mod-z / Mod-Shift-z
   // undo/redo (the editor is not contenteditable, so the shortcuts are ours),
   // with native undo left alone inside text fields.
@@ -486,6 +506,20 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
       if (event.key === 'Escape') {
         setPopover(null);
         setSelectedDotId(null);
+        return;
+      }
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        const target = event.target;
+        if (
+          target instanceof HTMLInputElement ||
+          target instanceof HTMLTextAreaElement ||
+          (target instanceof HTMLElement && target.isContentEditable)
+        ) {
+          return; // typing in a field, not acting on the analysis
+        }
+        if (selectedDotId === null) return;
+        event.preventDefault();
+        deleteDotRef.current(selectedDotId);
         return;
       }
       if (!(event.ctrlKey || event.metaKey)) return;
@@ -511,7 +545,9 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     return () => {
       window.removeEventListener('keydown', onKey);
     };
-  }, [editor]);
+    // selectedDotId is read by the Delete branch, so the handler is re-bound
+    // whenever the selection changes.
+  }, [editor, selectedDotId]);
 
   // Outside click closes the popover. The listener is added after the click
   // that opened it (popovers open on click, this listens for mousedown), so it
@@ -650,6 +686,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     () => ({
       words,
       showEnglish: view.english,
+      showVerbs: view.verbs,
       lastPid: pids.length > 0 ? (pids[pids.length - 1] ?? null) : null,
       mainPids,
       onWordClick: (pid, ordinal, word, index, splittable, target) => {
@@ -658,25 +695,14 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
         const shellRect = shell.getBoundingClientRect();
         const rect = target.getBoundingClientRect();
         const at = { x: rect.left - shellRect.left, y: rect.bottom - shellRect.top + 4 };
-        // Splitting is a double click, so hold the info popover until the
-        // double-click window has passed — otherwise every split would flash
-        // it open and shut. onWordSplit cancels this timer.
-        if (wordClickTimer.current !== null) window.clearTimeout(wordClickTimer.current);
-        wordClickTimer.current = window.setTimeout(() => {
-          wordClickTimer.current = null;
-          setSelectedDotId(null);
-          setPopover((prev) =>
-            prev !== null && prev.kind === 'word' && prev.pid === pid && prev.ordinal === ordinal
-              ? null // clicking the same word again dismisses the popover
-              : { kind: 'word', pid, ordinal, word, index, splittable, at },
-          );
-        }, DOUBLE_CLICK_MS);
+        setSelectedDotId(null);
+        setPopover((prev) =>
+          prev !== null && prev.kind === 'word' && prev.pid === pid && prev.ordinal === ordinal
+            ? null // clicking the same word again dismisses the popover
+            : { kind: 'word', pid, ordinal, word, index, splittable, at },
+        );
       },
       onWordSplit: (pid, ordinal) => {
-        if (wordClickTimer.current !== null) {
-          window.clearTimeout(wordClickTimer.current);
-          wordClickTimer.current = null;
-        }
         onSplitRef.current(pid, ordinal);
       },
       onMergeBelow: (pid) => {
@@ -685,7 +711,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
         mergeBelow(editor, pid, words);
       },
     }),
-    [words, pids, mainPids, editor, view.english],
+    [words, pids, mainPids, editor, view.english, view.verbs],
   );
 
   if (editor === null) return null;
@@ -717,18 +743,15 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     }, FLASH_MS);
   };
 
-  /** Double click on a dot: remove the connections it names — a bracket's own
-   * connection, or every bracket above a proposition. The single-click
-   * gesture (select, then connect) is held back the same way a word's is, so
-   * the first half of a double click never connects anything. */
-  const onDotDoubleClick = (dot: DotGeom) => {
-    if (dotClickTimer.current !== null) {
-      window.clearTimeout(dotClickTimer.current);
-      dotClickTimer.current = null;
-    }
+  /**
+   * Right-click a dot — or select it and press Delete — to remove the
+   * connections it names: a bracket's own connection, or every bracket above
+   * a proposition.
+   */
+  const onDotDelete = (dotId: string) => {
     setPopover(null);
     setSelectedDotId(null);
-    const ref = parseDotId(dot.id);
+    const ref = parseDotId(dotId);
     if (ref === null) return;
     if (ref.kind === 'bracket') {
       const pos = bracketPosAt(ref.index);
@@ -737,20 +760,13 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     }
     unzipToRoot(editor, ref.pid);
   };
+  deleteDotRef.current = onDotDelete;
 
   const onDotClick = (dot: DotGeom) => {
     // Every dot is a live handle, connected or not: a click selects it, a
     // click on the SAME dot unselects it, and a click on a second dot
     // connects the two (dissolving any old connections above either unit —
     // connectUnits' job). No modifier keys.
-    if (dotClickTimer.current !== null) window.clearTimeout(dotClickTimer.current);
-    dotClickTimer.current = window.setTimeout(() => {
-      dotClickTimer.current = null;
-      runDotClick(dot);
-    }, DOUBLE_CLICK_MS);
-  };
-
-  const runDotClick = (dot: DotGeom) => {
     setPopover(null);
     if (selectedDotId === null) {
       setSelectedDotId(dot.id);
@@ -898,6 +914,15 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
         <label className="switch">
           <input
             type="checkbox"
+            checked={view.verbs}
+            onChange={(event) => updateView({ ...view, verbs: event.target.checked })}
+          />
+          <span className="switch-track" aria-hidden="true" />
+          <span className="switch-label">Verbs</span>
+        </label>
+        <label className="switch">
+          <input
+            type="checkbox"
             checked={view.colorCoding}
             onChange={(event) => updateView({ ...view, colorCoding: event.target.checked })}
           />
@@ -966,7 +991,8 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
             onDotClick={onDotClick}
             onLabelClick={onLabelClick}
             onStarClick={onStarClick}
-            onDotDoubleClick={onDotDoubleClick}
+            onDotDelete={(dot) => onDotDelete(dot.id)}
+            pointer={pointer}
             view={view}
           />
         )}
