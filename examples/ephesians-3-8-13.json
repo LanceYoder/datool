@@ -1,7 +1,7 @@
 {
   "reference": "Ephesians 3:8–13",
-  "language": "english",
-  "source": "hand-drawn bracket diagram (NT 003 worked example)",
+  "language": "greek",
+  "source": "hand-drawn bracket diagram, with the Greek propositions as the student divided them (NT 223 TSA)",
   "mainPoint": [
     "p10"
   ],
@@ -10,82 +10,92 @@
     "propositions": [
       {
         "id": "p1",
-        "label": "1",
+        "label": "8a",
         "source": {
-          "kind": "raw",
-          "text": "8 To me, the very least of all the saints, this grace was given,"
+          "kind": "corpus",
+          "start": 104345,
+          "end": 104353
         }
       },
       {
         "id": "p2",
-        "label": "2",
+        "label": "8b",
         "source": {
-          "kind": "raw",
-          "text": "to preach to the Gentiles the fathomless riches of Christ,"
+          "kind": "corpus",
+          "start": 104354,
+          "end": 104361
         }
       },
       {
         "id": "p3",
-        "label": "3",
+        "label": "9a",
         "source": {
-          "kind": "raw",
-          "text": "9 and to bring to light for everyone"
+          "kind": "corpus",
+          "start": 104362,
+          "end": 104364
         }
       },
       {
         "id": "p4",
-        "label": "4",
+        "label": "9b",
         "source": {
-          "kind": "raw",
-          "text": "what is the plan of the mystery hidden for ages by God, who created all things,"
+          "kind": "corpus",
+          "start": 104365,
+          "end": 104381
         }
       },
       {
         "id": "p5",
-        "label": "5",
+        "label": "10–11",
         "source": {
-          "kind": "raw",
-          "text": "10 so that through the church the manifold wisdom of God might now be made known to the rulers and authorities in the heavenly places, according to the eternal purpose"
+          "kind": "corpus",
+          "start": 104382,
+          "end": 104404
         }
       },
       {
         "id": "p6",
-        "label": "6",
+        "label": "11",
         "source": {
-          "kind": "raw",
-          "text": "which he accomplished in Christ Jesus our Lord,"
+          "kind": "corpus",
+          "start": 104405,
+          "end": 104413
         }
       },
       {
         "id": "p7",
-        "label": "7",
+        "label": "12",
         "source": {
-          "kind": "raw",
-          "text": "12 in whom we have boldness and access with confidence through faith in him."
+          "kind": "corpus",
+          "start": 104414,
+          "end": 104426
         }
       },
       {
         "id": "p8",
-        "label": "8",
+        "label": "13a",
         "source": {
-          "kind": "raw",
-          "text": "13 So I ask you"
+          "kind": "corpus",
+          "start": 104427,
+          "end": 104428
         }
       },
       {
         "id": "p9",
-        "label": "9",
+        "label": "13b",
         "source": {
-          "kind": "raw",
-          "text": "not to lose heart over my sufferings for you,"
+          "kind": "corpus",
+          "start": 104429,
+          "end": 104436
         }
       },
       {
         "id": "p10",
-        "label": "10",
+        "label": "13c",
         "source": {
-          "kind": "raw",
-          "text": "which is your glory."
+          "kind": "corpus",
+          "start": 104437,
+          "end": 104440
         }
       }
     ],

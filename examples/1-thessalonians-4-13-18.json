@@ -1,7 +1,7 @@
 {
   "reference": "1 Thessalonians 4:13–18",
-  "language": "english",
-  "source": "hand-drawn bracket diagram (NT 003 worked example)",
+  "language": "greek",
+  "source": "hand-drawn bracket diagram, with the Greek propositions as the student divided them (NT 223 TSA)",
   "mainPoint": [
     "p15"
   ],
@@ -10,122 +10,137 @@
     "propositions": [
       {
         "id": "p1",
-        "label": "1",
+        "label": "13a",
         "source": {
-          "kind": "raw",
-          "text": "13 But we do not want for you to be ignorant, brothers, concerning those who are asleep,"
+          "kind": "corpus",
+          "start": 110138,
+          "end": 110146
         }
       },
       {
         "id": "p2",
-        "label": "2",
+        "label": "13b",
         "source": {
-          "kind": "raw",
-          "text": "in order that you may not grieve"
+          "kind": "corpus",
+          "start": 110147,
+          "end": 110149
         }
       },
       {
         "id": "p3",
-        "label": "3",
+        "label": "13c",
         "source": {
-          "kind": "raw",
-          "text": "just as even the rest of mankind who do not have hope."
+          "kind": "corpus",
+          "start": 110150,
+          "end": 110157
         }
       },
       {
         "id": "p4",
-        "label": "4",
+        "label": "14a",
         "source": {
-          "kind": "raw",
-          "text": "14 For since we believe"
+          "kind": "corpus",
+          "start": 110158,
+          "end": 110160
         }
       },
       {
         "id": "p5",
-        "label": "5",
+        "label": "14b",
         "source": {
-          "kind": "raw",
-          "text": "that Jesus died"
+          "kind": "corpus",
+          "start": 110161,
+          "end": 110163
         }
       },
       {
         "id": "p6",
-        "label": "6",
+        "label": "14c",
         "source": {
-          "kind": "raw",
-          "text": "and rose again,"
+          "kind": "corpus",
+          "start": 110164,
+          "end": 110165
         }
       },
       {
         "id": "p7",
-        "label": "7",
+        "label": "14d",
         "source": {
-          "kind": "raw",
-          "text": "so also will God, through Jesus Christ, bring with him those who have fallen asleep"
+          "kind": "corpus",
+          "start": 110166,
+          "end": 110177
         }
       },
       {
         "id": "p8",
-        "label": "8",
+        "label": "15a",
         "source": {
-          "kind": "raw",
-          "text": "15 For we say this by the word of the Lord"
+          "kind": "corpus",
+          "start": 110178,
+          "end": 110184
         }
       },
       {
         "id": "p9",
-        "label": "9",
+        "label": "15b",
         "source": {
-          "kind": "raw",
-          "text": "that we the living who remain until the coming of the Lord will in no way precede those who have fallen asleep"
+          "kind": "corpus",
+          "start": 110185,
+          "end": 110200
         }
       },
       {
         "id": "p10",
-        "label": "10",
+        "label": "16a",
         "source": {
-          "kind": "raw",
-          "text": "16 For the Lord himself will descend from heaven with a cry of command, with the voice of an archangel and with the trumpet of God,"
+          "kind": "corpus",
+          "start": 110201,
+          "end": 110216
         }
       },
       {
         "id": "p11",
-        "label": "11",
+        "label": "16b",
         "source": {
-          "kind": "raw",
-          "text": "and the dead in Christ will rise first,"
+          "kind": "corpus",
+          "start": 110217,
+          "end": 110223
         }
       },
       {
         "id": "p12",
-        "label": "12",
+        "label": "17a",
         "source": {
-          "kind": "raw",
-          "text": "17 then we the living who remain will be snatched up together with them in the clouds"
+          "kind": "corpus",
+          "start": 110224,
+          "end": 110235
         }
       },
       {
         "id": "p13",
-        "label": "13",
+        "label": "17b",
         "source": {
-          "kind": "raw",
-          "text": "to meet the Lord in the air;"
+          "kind": "corpus",
+          "start": 110236,
+          "end": 110241
         }
       },
       {
         "id": "p14",
-        "label": "14",
+        "label": "17c",
         "source": {
-          "kind": "raw",
-          "text": "and so we will always be with the Lord."
+          "kind": "corpus",
+          "start": 110242,
+          "end": 110247
         }
       },
       {
         "id": "p15",
-        "label": "15",
+        "label": "18",
         "source": {
-          "kind": "raw",
-          "text": "18 Therefore, encourage one another with these words."
+          "kind": "corpus",
+          "start": 110248,
+          "end": 110254
         }
       }
     ],
