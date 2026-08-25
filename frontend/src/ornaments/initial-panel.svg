@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- The ground an illuminated initial is set on: a coral frame, a burnished
+       gold fillet, and a lapis field carrying white filigree and gold buds.
+       The letter itself is TEXT, set over this — so the initial is whatever
+       the analysis is called, and the panel never has to know. -->
+  <rect x="0.8" y="0.8" width="62.4" height="62.4" rx="1.5" fill="#d4705f" stroke="#a2483a" stroke-width="1.6" />
+  <rect x="4.6" y="4.6" width="54.8" height="54.8" fill="#c9a227" stroke="#8a6a18" stroke-width="1.2" />
+  <rect x="7.6" y="7.6" width="48.8" height="48.8" fill="#4a6fa5" stroke="#2f4d78" stroke-width="1" />
+
+  <g fill="none" stroke="#eef2f8" stroke-width="1.15" stroke-linecap="round" opacity="0.85">
+    <path d="M12,12 C19,12 20,19 15,20 C11.6,20.7 10.4,17 13,16.2" />
+    <path d="M52,12 C45,12 44,19 49,20 C52.4,20.7 53.6,17 51,16.2" />
+    <path d="M12,52 C19,52 20,45 15,44 C11.6,43.3 10.4,47 13,47.8" />
+    <path d="M52,52 C45,52 44,45 49,44 C52.4,43.3 53.6,47 51,47.8" />
+    <path d="M32,8.8 C29,12.6 35,12.6 32,16.4" />
+    <path d="M32,55.2 C29,51.4 35,51.4 32,47.6" />
+  </g>
+
+  <g fill="#e8c86a">
+    <circle cx="16" cy="16" r="1.5" />
+    <circle cx="48" cy="16" r="1.5" />
+    <circle cx="16" cy="48" r="1.5" />
+    <circle cx="48" cy="48" r="1.5" />
+  </g>
+</svg>

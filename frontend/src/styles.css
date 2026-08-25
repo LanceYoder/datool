@@ -291,8 +291,20 @@ div.error-box {
   margin-top: 0.75rem;
 }
 
-.title-input {
+/* The title, and — for a skin that asks for it — the same title set the way a
+   manuscript would set it, standing over the input. Hidden everywhere else. */
+.title-field {
+  position: relative;
   flex: 1;
+  min-width: 0;
+}
+
+.title-illuminated {
+  display: none;
+}
+
+.title-input {
+  width: 100%;
   font: inherit;
   font-weight: 600;
   padding: 0.35rem 0.6rem;
@@ -323,6 +335,14 @@ div.error-box {
 .bracket-label {
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font-size: 13px;
+}
+
+/* "-", "+", "∴", "//" — a relationship written as a mark rather than a word.
+   At the letters' size these vanish into the tick they sit on, so they are
+   set larger and heavier in every design. */
+.bracket-label.symbol {
+  font-size: 20px;
+  font-weight: 700;
 }
 
 .bracket-star {

@@ -63,6 +63,32 @@ const DOT_HIT_R = 12;
 const LABEL_CHAR_W = 8;
 
 /**
+ * Whether a label is a MARK rather than a word — Negative–Positive is written
+ * "-" and "+", Inference "∴", Comparison "//". Set at the size a letter wants,
+ * a hyphen is four pixels of hairline sitting on a tick line, and it
+ * disappears into it; these are drawn bigger and heavier everywhere.
+ */
+function isSymbolLabel(text: string): boolean {
+  return text !== '' && !/[A-Za-z]/.test(text);
+}
+
+/**
+ * The label as it is SET. The taxonomy writes Negative–Positive's first half
+ * with a hyphen; a hyphen is a word-joiner, not an operator, and beside a "+"
+ * it reads as a stray tick. Drawn as a true minus, which is the same width as
+ * the plus it answers to. The data keeps its hyphen (data-label, and every
+ * selector that reads it).
+ */
+function labelGlyph(text: string): string {
+  return text === '-' ? '\u2212' : text;
+}
+
+/** Rough width of a label as drawn — marks are set larger, so they take more. */
+function labelWidth(text: string): number {
+  return text.length * (isSymbolLabel(text) ? LABEL_CHAR_W * 1.4 : LABEL_CHAR_W);
+}
+
+/**
  * How far a label sits from its bracket's spine: end labels start this far
  * right of it, mid (coordinate) labels end this far left of it. The bracket's
  * own dot sits ON the spine, so this is what keeps letters and dots apart.
@@ -537,7 +563,7 @@ export default function BracketLayer({
               // coordinate bracket's midpoint never runs through the letters.
               const x = mid ? b.x - LABEL_OFFSET : b.x + LABEL_OFFSET;
               const y = l.y - LABEL_RISE;
-              const w = Math.max(18, l.text.length * LABEL_CHAR_W + 10);
+              const w = Math.max(18, labelWidth(l.text) + 10);
               const hitX = mid ? x - w : x - 2;
               return (
                 <g
@@ -551,13 +577,15 @@ export default function BracketLayer({
                       the tick line's dot. */}
                   <rect x={hitX} y={y - 14} width={w} height={16} fill="transparent" />
                   <text
-                    className="bracket-label"
+                    className={
+                      isSymbolLabel(l.text) ? 'bracket-label symbol' : 'bracket-label'
+                    }
                     x={x}
                     y={y}
                     style={{ fill: ink(view, b.rel, LABEL_INK) }}
                     textAnchor={mid ? 'end' : 'start'}
                   >
-                    {l.text}
+                    {labelGlyph(l.text)}
                   </text>
                 </g>
               );
@@ -579,7 +607,7 @@ export default function BracketLayer({
                   b.x +
                   LABEL_OFFSET +
                   STAR_GAP +
-                  (label !== undefined ? label.text.length * LABEL_CHAR_W : 0);
+                  (label !== undefined ? labelWidth(label.text) : 0);
                 return (
                   <g
                     key={`star-${t.childIndex}`}

@@ -191,9 +191,10 @@
    edges — the same stack the notebook has, in vellum rather than paper. */
 [data-theme='book'] .analysis-page,
 [data-theme='book'] .home-page {
+  --page-pad: 1.4rem;
   position: relative;
   margin: 1.1rem auto 0;
-  padding: 0.5rem 1.4rem 1.6rem;
+  padding: 0.5rem var(--page-pad) 1.6rem;
   background: var(--vellum) url('./ornaments/vellum.svg') repeat;
   border: 54px solid transparent;
   border-image: url('./ornaments/frame.svg') 120 / 54px / 0 round;
@@ -218,14 +219,86 @@
   color: var(--rubric);
 }
 
+/* ---- Nothing is written across the spine ----
+   The title and its rubric belong to the verso, the commands to the recto,
+   and the fold passes down the clear page between them. */
+
+[data-theme='book'] .title-field,
+[data-theme='book'] .passage-ref {
+  max-width: calc(var(--tree-margin, 50%) - 1.5rem);
+}
+
+/* Held wide, so Save and Print are pushed clear of the fold and land on the
+   recto rather than straddling the spine behind the title. */
+[data-theme='book'] .title-field {
+  margin-right: auto;
+}
+
+[data-theme='book'] .analysis-toolbar {
+  gap: 0.5rem;
+}
+
 [data-theme='book'] .title-input {
   font-family: 'UnifrakturMaguntia', 'IM Fell English', Georgia, serif;
   font-size: 1.5rem;
   font-weight: 400;
-  color: #2f1c10;
+  color: transparent;
   background: transparent;
   border-color: transparent;
   box-shadow: none;
+  caret-color: #2f1c10;
+  padding-left: 3.6rem;
+}
+
+/* Typing is not illuminating: the moment the title is being edited it is
+   plain text in a plain field, and the initial steps aside (AnalysisPage
+   stops rendering it, so there is nothing here to hide). */
+[data-theme='book'] .title-field.editing .title-input {
+  color: #2f1c10;
+  padding-left: 0.6rem;
+}
+
+[data-theme='book'] .title-illuminated {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  font-family: 'IM Fell English', Georgia, serif;
+  font-size: 1.5rem;
+  line-height: 1.15;
+  color: #2f1c10;
+}
+
+/* The letter the analysis opens with, set on its ground: a coral frame, a
+   gold fillet, a lapis field with white filigree, and the letter itself
+   gilded and struck in blackletter over it. */
+[data-theme='book'] .title-initial {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  background: url('./ornaments/initial-panel.svg') no-repeat center / 100% 100%;
+  font-family: 'UnifrakturMaguntia', 'IM Fell English', Georgia, serif;
+  font-size: 2.1rem;
+  line-height: 1;
+  color: #f0dc95;
+  text-shadow:
+    0 1px 0 #6d4a12,
+    0 0 3px rgb(44 23 16 / 55%);
+  /* The face sits high in its em box; nudge it back to the middle of the
+     panel rather than the middle of its line. */
+  padding-bottom: 0.18em;
+}
+
+[data-theme='book'] .title-rest {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 [data-theme='book'] .passage-ref {
@@ -235,11 +308,16 @@
   color: var(--rubric);
 }
 
+/* The toolbar keeps a wash so rows do not read through it as they scroll
+   under, but it is not a bar ruled across the spread any more — no border to
+   carry the eye over the fold, and the wash is thin enough that the fold
+   passes through it. The reader's switches sit on the verso and the commands
+   on the recto; the toolbar-spacer between them is where the fold falls. */
 [data-theme='book'] .editor-toolbar {
-  background: linear-gradient(rgb(242 234 215 / 96%), rgb(233 220 191 / 96%));
-  border-bottom: 3px double var(--gold);
-  padding: 0.45rem 0.5rem;
-  border-radius: 2px;
+  background: rgb(242 234 215 / 88%);
+  border-bottom: none;
+  padding: 0.45rem 0;
+  border-radius: 0;
 }
 
 [data-theme='book'] .switch-track {
@@ -271,27 +349,34 @@
   background: transparent;
 }
 
-[data-theme='book'] .editor-shell::before {
+/* The fold runs the height of the LEAF — from the top of the written area to
+   the bottom of it — because that is what a fold does. So it is drawn by the
+   page, not by the editor's shell, and it is drawn OVER everything: the
+   shadow of a page curving into its spine falls on whatever is written there,
+   the toolbar included. Inert, and light enough at the seam that the verse
+   numbers standing beside it are untouched. */
+[data-theme='book'] .analysis-page::before {
   content: '';
   position: absolute;
-  z-index: -1;
-  top: -0.7rem;
-  bottom: -0.7rem;
-  left: calc(var(--tree-margin) - 104px);
+  z-index: 5;
+  pointer-events: none;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--page-pad) + var(--tree-margin, 50%) - 104px);
   width: 208px;
   background: linear-gradient(
     90deg,
     rgb(92 60 30 / 0%) 0%,
-    rgb(92 60 30 / 3%) 22%,
-    rgb(92 60 30 / 8%) 35%,
-    rgb(86 54 26 / 15%) 43%,
-    rgb(74 44 20 / 26%) 47.6%,
-    rgb(58 32 14 / 38%) 49.7%,
-    rgb(58 32 14 / 38%) 50.3%,
-    rgb(74 44 20 / 26%) 52.4%,
-    rgb(86 54 26 / 15%) 57%,
-    rgb(92 60 30 / 8%) 65%,
-    rgb(92 60 30 / 3%) 78%,
+    rgb(92 60 30 / 2%) 22%,
+    rgb(92 60 30 / 6%) 35%,
+    rgb(86 54 26 / 12%) 43%,
+    rgb(74 44 20 / 21%) 47.6%,
+    rgb(58 32 14 / 31%) 49.7%,
+    rgb(58 32 14 / 31%) 50.3%,
+    rgb(74 44 20 / 21%) 52.4%,
+    rgb(86 54 26 / 12%) 57%,
+    rgb(92 60 30 / 6%) 65%,
+    rgb(92 60 30 / 2%) 78%,
     rgb(92 60 30 / 0%) 100%
   );
 }
@@ -329,6 +414,10 @@
   font-family: 'IM Fell English', Georgia, serif;
   font-size: 14px;
   letter-spacing: 0.03em;
+}
+
+[data-theme='book'] .bracket-label.symbol {
+  font-size: 21px;
 }
 
 /* Penwork, not draughtsmanship: the rules are laid on with a slight taper of
@@ -411,6 +500,14 @@
 /* The block control is an illuminated stud: gilded to begin a block, rubric
    to close one, rimmed in ink so it reads over any band colour, and set on a
    disc of clear vellum so it reads over the seam between two. */
+/* A notes box centred on the spread would sit astride the spine. It is a
+   page's worth of writing, so it goes on the recto with the text. */
+[data-theme='book'] .notes-panel {
+  max-width: none;
+  margin-left: var(--tree-margin, 50%);
+  margin-right: 0;
+}
+
 [data-theme='book'] .section-control {
   border-radius: 50%;
   box-shadow:
@@ -715,6 +812,12 @@
   font-family: 'Caveat', cursive;
   font-size: 17px;
   font-weight: 600;
+}
+
+/* A hand runs small, and Caveat's strokes are thin — these need more. */
+[data-theme='notebook'] .bracket-label.symbol {
+  font-size: 26px;
+  font-weight: 700;
 }
 
 /* ---- The analyst's blocks, as a pass of highlighter ----
@@ -1124,6 +1227,12 @@
   text-transform: uppercase;
 }
 
+[data-theme='slate'] .bracket-label.symbol {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
 /* ---- The analyst's blocks, quieted ----
    White paper is what the palette was mixed for, so the colours stay as they
    are and only lose a little weight — enough that a block reads as a change
@@ -1212,10 +1321,18 @@
     box-shadow: none;
   }
 
-  [data-theme='book'] .editor-shell::before,
+  /* Paper does not need to be told it is paper: no fold shadow, no ruling. */
+  [data-theme='book'] .analysis-page::before,
   [data-theme='book'] .editor-shell::after,
-  [data-theme='notebook'] .editor-shell::before {
+  [data-theme='notebook'] .editor-shell::before,
+  [data-theme='notebook'] .editor-shell::after {
     display: none;
+  }
+
+  /* The illuminated title is the one piece of the skin worth printing, so it
+     stays — and the input underneath stays transparent behind it. */
+  [data-theme='book'] .notes-panel {
+    margin-left: 0;
   }
 
   [data-theme='book'] body,

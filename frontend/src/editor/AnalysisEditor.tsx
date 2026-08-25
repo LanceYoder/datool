@@ -314,9 +314,21 @@ export interface AnalysisEditorProps {
   document: AnalysisDocument;
   /** Fired after every edit with the document rebuilt from the editor. */
   onChange: (doc: AnalysisDocument) => void;
+  /**
+   * The x where the tree's margin ends and the text column begins, in px,
+   * whenever it changes. Only the layout knows it, and a skin that draws the
+   * page AROUND the editor — the book's fold runs the height of the whole
+   * leaf, not just this shell — needs it further up the tree than a CSS
+   * variable set here can reach.
+   */
+  onTreeMargin?: (margin: number) => void;
 }
 
-export default function AnalysisEditor({ document: baseDoc, onChange }: AnalysisEditorProps) {
+export default function AnalysisEditor({
+  document: baseDoc,
+  onChange,
+  onTreeMargin,
+}: AnalysisEditorProps) {
   const [words, setWords] = useState<Map<number, CorpusWord> | null>(null);
   const [taxonomy, setTaxonomy] = useState<TaxonomyEntry[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -364,7 +376,13 @@ export default function AnalysisEditor({ document: baseDoc, onChange }: Analysis
     return <p className="muted">Loading…</p>;
   }
   return (
-    <EditorInner baseDoc={baseDoc} words={words} taxonomy={taxonomy} onChange={onChange} />
+    <EditorInner
+      baseDoc={baseDoc}
+      words={words}
+      taxonomy={taxonomy}
+      onChange={onChange}
+      onTreeMargin={onTreeMargin}
+    />
   );
 }
 
@@ -373,6 +391,7 @@ interface InnerProps {
   words: Map<number, CorpusWord>;
   taxonomy: TaxonomyEntry[];
   onChange: (doc: AnalysisDocument) => void;
+  onTreeMargin?: (margin: number) => void;
 }
 
 /** The one floating thing on screen, if any. */
@@ -458,7 +477,7 @@ function VersePanel({
   );
 }
 
-function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
+function EditorInner({ baseDoc, words, taxonomy, onChange, onTreeMargin }: InnerProps) {
   const [selectedDotId, setSelectedDotId] = useState<string | null>(null);
   // Where the pointer is while a dot is selected: the loose end of the
   // connection being made, drawn from the dot so the reader can see where the
@@ -792,6 +811,14 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     // docTick + layoutTick drive re-measurement.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, docTick, layoutTick, baseDoc, taxonomyByCode]);
+
+  // Hand the fold's position up whenever it moves. In an effect, not in the
+  // layout itself: the overlay is computed during render, and telling anyone
+  // about it there would be a side effect in the middle of one.
+  const margin = overlay?.margin ?? null;
+  useEffect(() => {
+    if (margin !== null) onTreeMargin?.(margin);
+  }, [margin, onTreeMargin]);
 
   // A tree deeper than the screen is wide draws itself off both edges: the
   // analysis reads as empty. Rather than show that, drop the connections the
