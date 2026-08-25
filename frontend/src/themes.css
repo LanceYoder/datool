@@ -115,6 +115,29 @@
   text-shadow: none;
 }
 
+/* Minimal / Full sits in the same family as the design picker, so it is
+   dressed the same way — one strip, divided by a gold rule. */
+[data-theme='book'] .level-toggle {
+  border: 1px solid var(--gold);
+  border-radius: 2px;
+}
+
+[data-theme='book'] .level-toggle button {
+  border: none;
+  border-radius: 0;
+  background: linear-gradient(#f8f1de, #e8dabb);
+  box-shadow: none;
+}
+
+[data-theme='book'] .level-toggle button + button {
+  border-left: 1px solid var(--gold);
+}
+
+[data-theme='book'] .level-toggle button.on {
+  background: linear-gradient(#c9a227, #a07d1c);
+  color: #2c1710;
+}
+
 /* ---- Buttons and fields are little slips of parchment. ---- */
 
 [data-theme='book'] button:not(.menu-item, .popover-item, .menu-info, .link-button, .section-control),
@@ -433,6 +456,26 @@
   color: #fdfcf6;
 }
 
+[data-theme='notebook'] .level-toggle {
+  border: 2px solid rgb(31 63 143 / 35%);
+  border-radius: 26px 6px 22px 8px / 8px 22px 6px 26px;
+}
+
+[data-theme='notebook'] .level-toggle button {
+  border: none;
+  border-radius: 0;
+  background: none;
+}
+
+[data-theme='notebook'] .level-toggle button + button {
+  border-left: 2px solid rgb(31 63 143 / 25%);
+}
+
+[data-theme='notebook'] .level-toggle button.on {
+  background: var(--pen);
+  color: #fdfcf6;
+}
+
 [data-theme='notebook'] .title-input {
   font-family: 'Caveat', cursive;
   font-size: 1.6rem;
@@ -652,6 +695,32 @@
 }
 
 [data-theme='slate'] .theme-option.on {
+  background: #ffffff;
+  color: var(--slate-900);
+  box-shadow: 0 1px 2px rgb(23 25 28 / 14%);
+}
+
+/* Not a divided strip here: nothing has an edge, so the two halves are told
+   apart by which one is lifted onto white. */
+[data-theme='slate'] .level-toggle {
+  border: none;
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+  background: var(--slate-200);
+}
+
+[data-theme='slate'] .level-toggle button {
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+}
+
+[data-theme='slate'] .level-toggle button + button {
+  border-left: none;
+}
+
+[data-theme='slate'] .level-toggle button.on {
   background: #ffffff;
   color: var(--slate-900);
   box-shadow: 0 1px 2px rgb(23 25 28 / 14%);
