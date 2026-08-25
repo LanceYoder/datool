@@ -9,6 +9,7 @@
 //   3. labels, then stars LAST, so where a star hugs its letters the star
 //      wins the click (a mis-hit there used to open the relationship menu).
 
+import { COL_W, STUB_W } from './layout';
 import type { BracketGeom, DotGeom } from './layout';
 import type { Point } from './interaction';
 import type { ViewSettings } from './viewSettings';
@@ -95,6 +96,22 @@ export interface BracketLayerProps {
   view: ViewSettings;
 }
 
+/**
+ * The connection in progress as a bracket: out from the pointer to the spine,
+ * down the spine, and out to the dot. The spine stands one column left of
+ * whichever end is further left — where the bracket itself will be drawn once
+ * the connection is made.
+ */
+function rubberBandPath(dot: DotGeom, pointer: Point): string {
+  const spineX = Math.min(dot.x, pointer.x) - (COL_W - STUB_W);
+  return (
+    `M${pointer.x.toFixed(1)},${pointer.y.toFixed(1)} ` +
+    `L${spineX.toFixed(1)},${pointer.y.toFixed(1)} ` +
+    `L${spineX.toFixed(1)},${dot.y.toFixed(1)} ` +
+    `L${dot.x.toFixed(1)},${dot.y.toFixed(1)}`
+  );
+}
+
 /** Never let a click in the overlay move the ProseMirror selection. */
 function swallow(event: { preventDefault: () => void }): void {
   event.preventDefault();
@@ -144,15 +161,13 @@ export default function BracketLayer({
         ))}
       </g>
 
-      {/* The connection in progress: from the selected dot to the pointer, so
-          it is visible where the next click would land it. Inert. */}
+      {/* The connection in progress, drawn as the BRACKET it would become:
+          a spine where the new bracket's spine will stand, with a tick out to
+          the selected dot and another out to the pointer. Inert. */}
       {selectedDot !== undefined && pointer !== null && (
-        <line
+        <path
           className="rubber-band"
-          x1={selectedDot.x}
-          y1={selectedDot.y}
-          x2={pointer.x}
-          y2={pointer.y}
+          d={rubberBandPath(selectedDot, pointer)}
           pointerEvents="none"
         />
       )}
