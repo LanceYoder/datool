@@ -646,22 +646,21 @@ div.error-box {
    opened — the description beneath it. The "i" rides the LINE's right edge, so
    an open description never pulls it off center. */
 .menu-line {
-  position: relative;
+  display: flex;
+  align-items: baseline;
 }
 
 .menu-item {
-  padding-right: 2.1rem;
+  flex: 1;
+  padding-right: 0.35rem;
 }
 
+/* Sits on the item's own baseline, beside the shortcut key — and clear of the
+   list's scrollbar. */
 .menu-info {
-  position: absolute;
-  top: 0;
-  right: 0.15rem;
-  bottom: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.6rem;
+  flex: none;
+  width: 1.1rem;
+  margin-right: 0.7rem;
   padding: 0;
   border: none;
   background: none;
@@ -669,8 +668,9 @@ div.error-box {
   font-family: Georgia, 'Times New Roman', serif;
   font-style: italic;
   font-weight: 700;
-  font-size: 0.95rem;
-  line-height: 1;
+  font-size: 0.9rem;
+  line-height: 1.2;
+  text-align: center;
   opacity: 0;
 }
 
