@@ -70,6 +70,11 @@ export default function HomePage() {
   const [busy, setBusy] = useState(false);
   const [locating, setLocating] = useState(false);
   const locateSeq = useRef(0);
+  // An Enter pressed before the passage has finished locating. The key would
+  // otherwise do nothing for as long as the debounce is still running, which
+  // looks broken; instead the intent is held and spent the moment the first
+  // pass lands.
+  const createWhenLocated = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -155,9 +160,14 @@ export default function HomePage() {
           if (seq !== locateSeq.current) return;
           setResult(found);
           setErrors([]);
+          if (createWhenLocated.current) {
+            createWhenLocated.current = false;
+            void create(found);
+          }
         })
         .catch((err: unknown) => {
           if (seq !== locateSeq.current) return;
+          createWhenLocated.current = false;
           setResult(null);
           setErrors(errorMessages(err));
         })
@@ -170,16 +180,20 @@ export default function HomePage() {
     };
   }, [text, maximal]);
 
-  const create = async () => {
-    if (result === null) return;
+  /**
+   * Enter creates, so the passage that is created has to be passed IN rather
+   * than read from state: when Enter beats the debounce, the first pass that
+   * satisfies it has only just arrived and has not been through a render yet.
+   */
+  const create = async (found: FirstPassResult) => {
     setBusy(true);
     setErrors([]);
     try {
-      const title = result.alignment?.ref ?? 'Untitled analysis';
+      const title = found.alignment?.ref ?? 'Untitled analysis';
       // A proposed tree too wide to draw is never stored: the analysis starts
       // from its propositions instead. Deciding here — before it is saved —
       // is what keeps it from coming back.
-      const proposed = normalizeDocument(result.document);
+      const proposed = normalizeDocument(found.document);
       const document = fitsWidth(proposed.forest, shellWidth())
         ? proposed
         : withoutConnections(proposed);
@@ -205,12 +219,26 @@ export default function HomePage() {
           onChange={(e) => {
             setText(e.target.value);
             setResult(null);
+            createWhenLocated.current = false;
+          }}
+          onKeyDown={(event) => {
+            // A passage arrives by PASTE, not by being typed, so Enter is
+            // free for the thing the button does. Shift+Enter still breaks a
+            // line, for the rare hand-typed passage that needs one.
+            if (event.key !== 'Enter') return;
+            if (event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return;
+            event.preventDefault();
+            if (busy || text.trim() === '') return;
+            if (result === null) createWhenLocated.current = true;
+            else void create(result);
           }}
         />
         <div className="row-actions">
           <button
             className="primary"
-            onClick={() => void create()}
+            onClick={() => {
+              if (result !== null) void create(result);
+            }}
             disabled={busy || result === null}
           >
             Create
@@ -247,12 +275,8 @@ export default function HomePage() {
             </button>
           </div>
           {result !== null && <span className="alignment-line">{alignmentLine(result)}</span>}
-          {result === null && (
-            <span className="muted alignment-line">
-              {locating
-                ? 'Locating…'
-                : 'A reference finds the passage in the SBLGNT; anything else is matched as pasted text.'}
-            </span>
+          {result === null && locating && (
+            <span className="muted alignment-line">Locating…</span>
           )}
         </div>
         {errors.length > 0 && (
