@@ -63,13 +63,16 @@ const DOT_HIT_R = 12;
 const LABEL_CHAR_W = 8;
 
 /**
- * Whether a label is a MARK rather than a word — Negative–Positive is written
- * "-" and "+", Inference "∴", Comparison "//". Set at the size a letter wants,
- * a hyphen is four pixels of hairline sitting on a tick line, and it
- * disappears into it; these are drawn bigger and heavier everywhere.
+ * Whether a label is a SINGLE MARK standing in for a word — Negative–Positive
+ * is written "-" and "+", Inference "∴". Set at the size a letter wants, one
+ * of these is a few pixels of hairline sitting on a tick line and disappears
+ * into it, so they are drawn bigger and heavier everywhere.
+ *
+ * One character is the test, which is why Comparison's "//" is left alone: a
+ * pair of strokes already has the width to be seen, and blown up it shouts.
  */
 function isSymbolLabel(text: string): boolean {
-  return text !== '' && !/[A-Za-z]/.test(text);
+  return [...text].length === 1 && !/[A-Za-z]/.test(text);
 }
 
 /**

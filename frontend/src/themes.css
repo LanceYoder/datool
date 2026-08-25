@@ -192,12 +192,13 @@
 [data-theme='book'] .analysis-page,
 [data-theme='book'] .home-page {
   --page-pad: 1.4rem;
+  --frame-w: 54px;
   position: relative;
   margin: 1.1rem auto 0;
   padding: 0.5rem var(--page-pad) 1.6rem;
   background: var(--vellum) url('./ornaments/vellum.svg') repeat;
-  border: 54px solid transparent;
-  border-image: url('./ornaments/frame.svg') 120 / 54px / 0 round;
+  border: var(--frame-w) solid transparent;
+  border-image: url('./ornaments/frame.svg') 120 / var(--frame-w) / 0 round;
   box-shadow:
     -8px 6px 0 -2px #ecdfc2,
     -8px 6px 3px -1px rgb(44 23 16 / 34%),
@@ -360,8 +361,12 @@
   position: absolute;
   z-index: 5;
   pointer-events: none;
-  top: 0;
-  bottom: 0;
+  /* Out over the border on both ends. An absolutely positioned child is laid
+     out against the PADDING box, so top:0 would start the fold below the
+     frame and leave the leaf creased only where it is written on — which is
+     not what a fold does. It runs the whole leaf, ornament included. */
+  top: calc(-1 * var(--frame-w));
+  bottom: calc(-1 * var(--frame-w));
   left: calc(var(--page-pad) + var(--tree-margin, 50%) - 104px);
   width: 208px;
   background: linear-gradient(
@@ -771,22 +776,23 @@
     inset 13px 0 15px -10px rgb(24 30 44 / 58%);
 }
 
-/* The fold itself: the hairline where the two halves of the opening meet. */
+/* The binding: twin wire down the fold, which is what holds the two halves
+   of this thing together and says "notebook" before anything else does. It
+   stands a little right of the seam, in the only clear lane there is —
+   between the last proposition dot and the verse numbers (spiral.svg says
+   why) — and above the paper but under the writing, like real wire under a
+   hand. */
 [data-theme='notebook'] .editor-shell::after {
   content: '';
   position: absolute;
   z-index: -1;
-  top: 6px;
-  bottom: 6px;
-  left: calc(var(--tree-margin) - 1px);
-  width: 2px;
-  background: linear-gradient(
-    180deg,
-    transparent,
-    rgb(24 30 44 / 26%) 6%,
-    rgb(24 30 44 / 26%) 94%,
-    transparent
-  );
+  top: 4px;
+  bottom: 4px;
+  left: calc(var(--tree-margin) - 9px);
+  width: 22px;
+  background: url('./ornaments/spiral.svg') repeat-y left top;
+  background-size: 22px 34px;
+  filter: drop-shadow(0 1px 1px rgb(24 30 44 / 35%));
 }
 
 /* A ring drawn by hand is never quite a circle: the dots go through the

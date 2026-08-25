@@ -170,8 +170,13 @@ def parse_reference(text: str) -> tuple[int, int, int, int, int]:
     if c1 == 0:
         return book, 0, 0, 0, 0
     if v1 == 0:
-        # "Eph 1-2" reads as chapters, not verses.
-        return (book, c1, 0, v2 or c1, 0) if v2 else (book, c1, 0, c1, 0)
+        # "Eph 1-2" reads as chapters, not verses — a bare number on the right
+        # of the dash is another chapter. But "Phil 1-1:19" names a chapter
+        # AND a verse there, so it ends at that verse; reading its 19 as a
+        # chapter asked the corpus for Philippians 19.
+        if c2:
+            return book, c1, 0, c2, v2
+        return (book, c1, 0, v2 or c1, 0)
     end_chapter = c2 or c1
     end_verse = v2 or v1
     return book, c1, v1, end_chapter, end_verse
@@ -211,7 +216,11 @@ def resolve(text: str) -> Reference:
     end_bounds = _verse_bounds(book, c2, v2)
     name = BOOK_NAMES[book - 1]
     if start_bounds is None or end_bounds is None:
-        where = f"{name} {c1}:{v1}" if v1 else (f"{name} {c1}" if c1 else name)
+        # Name the end that is actually missing. Reporting the start for a
+        # bad end said "Philippians 1 is not in the New Testament", which is
+        # both untrue and no help in finding the typo.
+        bad_c, bad_v = (c1, v1) if start_bounds is None else (c2, v2)
+        where = f"{name} {bad_c}:{bad_v}" if bad_v else (f"{name} {bad_c}" if bad_c else name)
         raise ReferenceError(f"{where} is not in the New Testament")
     start, end = start_bounds[0], end_bounds[1]
     if start > end:

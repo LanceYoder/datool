@@ -46,6 +46,15 @@ class TestParseReference:
         assert parse_reference("Romans 8") == (6, 8, 0, 8, 0)
         assert parse_reference("Jude") == (26, 0, 0, 0, 0)
 
+    def test_a_bare_number_after_the_dash_is_a_chapter(self):
+        assert parse_reference("Eph 1-2") == (10, 1, 0, 2, 0)
+
+    def test_a_chapter_and_verse_after_the_dash_ends_at_that_verse(self):
+        # "Phil 1-1:19" is chapter 1 up to verse 19 — not chapters 1 to 19,
+        # which asked the corpus for a Philippians 19 and then blamed the
+        # start for being missing.
+        assert parse_reference("Phil 1-1:19") == (11, 1, 0, 1, 19)
+
     def test_rejects_empty_and_unknown(self):
         with pytest.raises(ReferenceError):
             parse_reference("")
@@ -83,6 +92,13 @@ class TestResolve:
     def test_a_verse_the_book_does_not_have(self):
         with pytest.raises(ReferenceError):
             resolve("Eph 99:1")
+
+    def test_a_span_reads_to_the_verse_after_the_dash(self):
+        assert resolve("Phil 1-1:19").ref == "Philippians 1:1–19"
+
+    def test_a_bad_END_is_named_rather_than_the_start(self):
+        with pytest.raises(ReferenceError, match="Philippians 1:99"):
+            resolve("Phil 1-1:99")
 
 
 class TestLooksLikeReference:
