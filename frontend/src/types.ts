@@ -67,6 +67,12 @@ export type TreeNode = PropRefNode | BracketNode;
 export interface Document {
   schemaVersion: 1 | 2;
   propositions: Proposition[];
+  /**
+   * Color blocks: the proposition ids that BEGIN one, in order. The document
+   * always opens inside its first block, so the first proposition is never
+   * listed; absent or empty means the passage is one undivided block.
+   */
+  sections?: string[];
   /** v1 only: the single connected root. Absent in v2. */
   tree?: TreeNode;
   /** v2: ordered forest roots. Absent in v1. */

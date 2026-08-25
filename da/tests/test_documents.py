@@ -412,3 +412,44 @@ class TestMainPoint:
 
     def test_legacy_document_walks_its_tree(self):
         assert main_point(legacy_doc()) == ["p4", "p5"]
+
+
+class TestSections:
+    """Color blocks: which propositions BEGIN one. Divisions the analyst drew,
+    stored with the analysis."""
+
+    def test_absent_and_empty_are_both_fine(self):
+        doc = partial_doc()
+        validate_document(doc)
+        doc["sections"] = []
+        validate_document(doc)
+
+    def test_later_propositions_may_begin_a_block(self):
+        doc = partial_doc()
+        doc["sections"] = ["p2", "p4"]
+        validate_document(doc)
+
+    def test_the_first_proposition_cannot_begin_one(self):
+        doc = partial_doc()
+        doc["sections"] = ["p1"]
+        assert problems_of(doc) == ["sections[0] cannot be the first proposition"]
+
+    def test_must_name_real_propositions(self):
+        doc = partial_doc()
+        doc["sections"] = ["nope", 7]
+        assert problems_of(doc) == [
+            "sections[0] must name a proposition",
+            "sections[1] must name a proposition",
+        ]
+
+    def test_no_duplicates_and_no_going_backwards(self):
+        doc = partial_doc()
+        doc["sections"] = ["p3", "p3"]
+        assert problems_of(doc) == ["sections[1] duplicates 'p3'"]
+        doc["sections"] = ["p4", "p2"]
+        assert problems_of(doc) == ["sections[1] is out of proposition order"]
+
+    def test_must_be_a_list(self):
+        doc = partial_doc()
+        doc["sections"] = "p2"
+        assert problems_of(doc) == ["sections must be a list"]

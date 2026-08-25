@@ -43,6 +43,7 @@ import type { ReactNodeViewProps } from '@tiptap/react';
 import type {
   CorpusWord,
   Document as AnalysisDocument,
+  DocumentV2,
   TaxonomyEntry,
 } from '../types';
 import { errorMessages, getCorpusWords, getTaxonomy } from '../api';
@@ -85,6 +86,15 @@ import BracketLayer from './BracketLayer';
 import type { PositionedBracket, ShakeState } from './BracketLayer';
 import RelationshipMenu from './RelationshipMenu';
 import ColorSettings from './ColorSettings';
+import SectionStrip from './SectionStrip';
+import {
+  addBreak as addSectionBreak,
+  pruneBreaks,
+  removeBreak as removeSectionBreak,
+  sectionColor,
+  sectionIndexByPid,
+  sectionsOf,
+} from './sections';
 import HelpPanel from './HelpPanel';
 import { loadViewSettings, saveViewSettings } from './viewSettings';
 import type { ViewSettings } from './viewSettings';
@@ -124,6 +134,8 @@ interface RowContextValue {
   showEnglish: boolean;
   /** Reader's verb-bolding toggle (viewSettings). */
   showVerbs: boolean;
+  /** Color block per pid, or null while color blocking is off. */
+  sectionOf: ReadonlyMap<string, number> | null;
   /**
    * A single click on ANY word: the word-info popover (lemma, morphology,
    * gloss). `index` is the corpus word index, null for raw text.
@@ -197,11 +209,17 @@ function PropositionRow({ node }: ReactNodeViewProps) {
       ? rowEnglish(srcStart, srcEnd, ctx.words)
       : [];
 
+  // The block's color sits behind the whole row — English line included, so a
+  // block reads as one band of the passage.
+  const section = ctx?.sectionOf?.get(pid);
+  const background = section === undefined ? undefined : sectionColor(section).background;
+
   return (
     <NodeViewWrapper
       as="div"
       className={isMain ? 'prop-row main-point' : 'prop-row'}
       data-pid={pid}
+      style={background === undefined ? undefined : { background }}
     >
       {/* The English line spans the row above the label so the label's baseline
           is the GREEK's, not the reference text's. */}
@@ -362,8 +380,20 @@ interface Overlay {
   dots: DotGeom[];
   margin: number;
   height: number;
+  /** Every measured row, by pid — what places the color-block bands. */
+  rowBoxes: ReadonlyMap<string, RowBox>;
   /** False when the tree needs more width than the shell can give it. */
   fits: boolean;
+}
+
+/**
+ * The document plus its color blocks, pruned to the propositions it still
+ * has: a merge or a split can strand a break, and a stranded break must never
+ * reach the server.
+ */
+function withSections(document: DocumentV2, breaks: readonly string[]): DocumentV2 {
+  const pruned = pruneBreaks(breaks, document.propositions.map((p) => p.id));
+  return pruned.length > 0 ? { ...document, sections: pruned } : document;
 }
 
 function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
@@ -396,6 +426,11 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
   const onSplitRef = useRef<(pid: string, ordinal: number) => void>(() => {});
   // The width check runs once per loaded document (see the effect below).
   const widthChecked = useRef(false);
+  // Color blocks: the pids that begin one. Kept beside the ProseMirror
+  // document (the tree knows nothing of them) and emitted with every change.
+  const [breaks, setBreaks] = useState<string[]>(() => baseDoc.sections ?? []);
+  const breaksRef = useRef(breaks);
+  breaksRef.current = breaks;
   // onDotDelete is defined further down (it needs the editor); the key handler
   // above reaches it through this ref.
   const deleteDotRef = useRef<(dotId: string) => void>(() => {});
@@ -429,7 +464,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
         // and win.
         setSelectedDotId(null);
         setPopover(null);
-        onChange(nodeToDocument(ed.state.doc, baseDoc));
+        onChange(withSections(nodeToDocument(ed.state.doc, baseDoc), breaksRef.current));
         setDocTick((t) => t + 1);
         setLayoutTick((t) => t + 1);
       },
@@ -656,6 +691,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
       dots: layoutDots(current.forest, rows, margin),
       margin,
       height: shellRect.height,
+      rowBoxes: rows,
       fits,
     };
     return lastOverlay.current;
@@ -687,6 +723,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
       words,
       showEnglish: view.english,
       showVerbs: view.verbs,
+      sectionOf: view.blocks ? sectionIndexByPid(pids, breaks) : null,
       lastPid: pids.length > 0 ? (pids[pids.length - 1] ?? null) : null,
       mainPids,
       onWordClick: (pid, ordinal, word, index, splittable, target) => {
@@ -711,7 +748,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
         mergeBelow(editor, pid, words);
       },
     }),
-    [words, pids, mainPids, editor, view.english, view.verbs],
+    [words, pids, mainPids, editor, view.english, view.verbs, view.blocks, breaks],
   );
 
   if (editor === null) return null;
@@ -814,6 +851,20 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
     splitProposition(editor, pos, ordinal + 1, words);
   };
   onSplitRef.current = onSplit;
+
+  /** The strip's + : begin a new color block at this proposition. */
+  const onAddBreak = (pid: string) => {
+    const next = addSectionBreak(breaks, pids, pid);
+    setBreaks(next);
+    onChange(withSections(nodeToDocument(editor.state.doc, baseDoc), next));
+  };
+
+  /** The strip's − : join this block to the one above it. */
+  const onRemoveBreak = (pid: string) => {
+    const next = removeSectionBreak(breaks, pids, pid);
+    setBreaks(next);
+    onChange(withSections(nodeToDocument(editor.state.doc, baseDoc), next));
+  };
 
   /** Toolbar: remove every connection at once (the propositions stay put). */
   const onClearTree = () => {
@@ -923,6 +974,15 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
         <label className="switch">
           <input
             type="checkbox"
+            checked={view.blocks}
+            onChange={(event) => updateView({ ...view, blocks: event.target.checked })}
+          />
+          <span className="switch-track" aria-hidden="true" />
+          <span className="switch-label">Blocks</span>
+        </label>
+        <label className="switch">
+          <input
+            type="checkbox"
             checked={view.colorCoding}
             onChange={(event) => updateView({ ...view, colorCoding: event.target.checked })}
           />
@@ -997,6 +1057,17 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
           />
         )}
         <EditorContent editor={editor} />
+        {view.blocks && overlay !== null && (
+          <SectionStrip
+            sections={sectionsOf(pids, breaks)}
+            pids={pids}
+            rowBoxes={overlay.rowBoxes}
+            breaks={breaks}
+            height={overlay.height}
+            onAdd={onAddBreak}
+            onRemove={onRemoveBreak}
+          />
+        )}
         {popoverNode}
       </div>
     </RowContext.Provider>

@@ -44,6 +44,8 @@ export interface ViewSettings {
   english: boolean;
   /** Set the Greek verbs in bold — the clause backbone, at a glance. */
   verbs: boolean;
+  /** Show the analyst's color blocks, and the strip that makes them. */
+  blocks: boolean;
   /** Draw each bracket in its relationship's color. */
   colorCoding: boolean;
   /** Relationship code → color. Missing codes fall back to NEUTRAL_LINE. */
@@ -53,6 +55,7 @@ export interface ViewSettings {
 export const DEFAULT_VIEW_SETTINGS: ViewSettings = {
   english: true,
   verbs: true,
+  blocks: true,
   colorCoding: false,
   colors: { ...DEFAULT_RELATION_COLORS },
 };
@@ -81,6 +84,7 @@ export function coerceSettings(raw: unknown): ViewSettings {
   return {
     english: typeof source.english === 'boolean' ? source.english : DEFAULT_VIEW_SETTINGS.english,
     verbs: typeof source.verbs === 'boolean' ? source.verbs : DEFAULT_VIEW_SETTINGS.verbs,
+    blocks: typeof source.blocks === 'boolean' ? source.blocks : DEFAULT_VIEW_SETTINGS.blocks,
     colorCoding:
       typeof source.colorCoding === 'boolean'
         ? source.colorCoding

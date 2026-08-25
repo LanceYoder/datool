@@ -11,7 +11,8 @@ The document shape (see docs/DESIGN.md §3, §7):
          "color": str?},
         ...
       ],
-      "forest": [node, ...]        # >= 1 roots, in proposition order
+      "forest": [node, ...],       # >= 1 roots, in proposition order
+      "sections": [str, ...]       # optional: pids that BEGIN a color block
     }
 
     node := {"kind": "prop", "ref": str}
@@ -32,7 +33,10 @@ Invariants enforced here (mirrored client-side by the editor schema):
   * the in-order leaves of the WHOLE FOREST (roots in list order) reference
     the propositions exactly once each, in list order (this is what makes
     crossing brackets unrepresentable);
-  * relationship codes come from the taxonomy; sources are well-formed.
+  * relationship codes come from the taxonomy; sources are well-formed;
+  * "sections" (the analyst's color blocks) names existing propositions, in
+    proposition order, never the first one — every document opens inside its
+    first block, so only the LATER starts are recorded.
 """
 
 from .taxonomy import RELATIONSHIPS
@@ -128,6 +132,31 @@ def validate_document(doc, corpus_size: int | None = None) -> None:
             problems.append(f"{where}.source.kind must be 'corpus' or 'raw'")
         if "color" in p and not isinstance(p["color"], str):
             problems.append(f"{where}.color must be a string")
+
+    # Color blocks: the pids at which a new block begins. Divisions of the
+    # passage the analyst drew, so they are stored with the analysis — but the
+    # first proposition never starts one, because the document already does.
+    sections = doc.get("sections")
+    if sections is not None:
+        if not isinstance(sections, list):
+            problems.append("sections must be a list")
+        else:
+            order = {pid: i for i, pid in enumerate(prop_ids)}
+            seen: set[str] = set()
+            previous = -1
+            for i, pid in enumerate(sections):
+                where = f"sections[{i}]"
+                if not isinstance(pid, str) or pid not in order:
+                    problems.append(f"{where} must name a proposition")
+                    continue
+                if order[pid] == 0:
+                    problems.append(f"{where} cannot be the first proposition")
+                elif pid in seen:
+                    problems.append(f"{where} duplicates '{pid}'")
+                elif order[pid] <= previous:
+                    problems.append(f"{where} is out of proposition order")
+                seen.add(pid)
+                previous = max(previous, order[pid])
 
     # In-order leaves of the whole forest, roots in list order.
     leaves: list[str] = []
