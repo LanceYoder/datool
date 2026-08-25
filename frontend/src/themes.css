@@ -187,6 +187,8 @@
 
 /* ---- The leaf: vellum, ruled and bordered. ---- */
 
+/* One leaf of the codex, and the leaves under it showing along both fore
+   edges — the same stack the notebook has, in vellum rather than paper. */
 [data-theme='book'] .analysis-page,
 [data-theme='book'] .home-page {
   position: relative;
@@ -195,7 +197,16 @@
   background: var(--vellum) url('./ornaments/vellum.svg') repeat;
   border: 54px solid transparent;
   border-image: url('./ornaments/frame.svg') 120 / 54px / 0 round;
-  box-shadow: 0 22px 46px rgb(0 0 0 / 50%);
+  box-shadow:
+    -8px 6px 0 -2px #ecdfc2,
+    -8px 6px 3px -1px rgb(44 23 16 / 34%),
+    8px 6px 0 -2px #ecdfc2,
+    8px 6px 3px -1px rgb(44 23 16 / 34%),
+    -15px 12px 0 -5px #e0d1ac,
+    -15px 12px 3px -4px rgb(44 23 16 / 30%),
+    15px 12px 0 -5px #e0d1ac,
+    15px 12px 3px -4px rgb(44 23 16 / 30%),
+    0 26px 50px rgb(0 0 0 / 52%);
 }
 
 [data-theme='book'] h2 {
@@ -424,8 +435,9 @@
   --tree-muted: var(--pen-light);
   /* The second pen on the desk: what you circle a thing with. */
   --tree-accent: var(--red-pen);
-  /* Nobody fills a circle in with a pen — they scribble it. */
-  --tree-dot-selected-fill: url('#datool-scribble');
+  /* Nobody fills a circle in with a pen — they scribble it, and the scribble
+     is drawn over the ring (BracketLayer), so the ring itself stays empty. */
+  --tree-dot-selected-fill: transparent;
 }
 
 [data-theme='notebook'] body {
@@ -692,29 +704,37 @@
     color-mix(in srgb, var(--block-ink, transparent) 26%, transparent) 97%,
     color-mix(in srgb, var(--block-ink, transparent) 9%, transparent) 100%
   );
-  --marker-main: linear-gradient(
-    92deg,
-    rgb(250 221 66 / 34%) 0%,
-    rgb(250 221 66 / 66%) 2%,
-    rgb(247 216 60 / 54%) 58%,
-    rgb(250 221 66 / 68%) 98%,
-    rgb(250 221 66 / 30%) 100%
-  );
-
   background: var(--marker-block);
 }
 
-/* The proposition everything else hangs off. Elsewhere it turns red; here you
-   would reach for the yellow marker and run it over the line — so the row is
-   struck through with highlighter and the words stay the colour they were. */
-[data-theme='notebook'] .prop-row.main-point {
-  background: var(--marker-main), var(--marker-block);
+/* ---- The main point, run over with a highlighter ----
+   Elsewhere it turns red; here you would reach for the yellow marker. The
+   stroke goes on the WORDS, not on the row: a band across the row is another
+   colour block, and a marker only ever covers what was written. Each word
+   carries its own trailing space, so consecutive words join into one
+   unbroken stroke that wraps with the line — and the ink is flat, because a
+   gradient along the stroke would restart at every word and come out
+   striped. What makes it a marker is the falloff top and bottom, and that it
+   runs a little past the letters. */
+
+[data-theme='notebook'] .prop-row.main-point .prop-text .word,
+[data-theme='notebook'] .prop-row.main-point .english-line > span {
+  padding: 0.14em 0;
+  background-image: linear-gradient(
+    180deg,
+    rgb(250 221 66 / 26%) 0%,
+    rgb(250 221 66 / 74%) 20%,
+    rgb(246 212 52 / 80%) 54%,
+    rgb(250 221 66 / 64%) 86%,
+    rgb(250 221 66 / 20%) 100%
+  );
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
 
 [data-theme='notebook'] .prop-row.main-point .prop-text {
   /* Not red here — the marker said it. The words keep the colour they had. */
   --main-point-ink: var(--text);
-  font-weight: 700;
 }
 
 /* The margin stripe is the same marker, run down the edge of the page. */
@@ -723,8 +743,10 @@
   border-radius: 7px;
 }
 
+/* Blue, not yellow: yellow is the highlighter's, and a hover over the main
+   point would otherwise be invisible. */
 [data-theme='notebook'] .word:hover {
-  background: rgb(250 224 90 / 45%);
+  background: rgb(31 63 143 / 13%);
 }
 
 /* The drawn box again, but drawn LARGE: the same trick at a button's scale

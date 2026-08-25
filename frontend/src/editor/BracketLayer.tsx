@@ -109,6 +109,39 @@ function wobble(seed: number): number {
 }
 
 /**
+ * A dot scribbled in, the way a pen actually fills a circle: back and forth
+ * across it, and past the line at the turns, because nobody stops exactly on
+ * it. A fill cannot do this — a fill is clipped to the shape it fills — so
+ * the scribble is a drawn stroke laid over the ring.
+ *
+ * Seeded from the dot's own position, so the same dot is scribbled the same
+ * way on every render.
+ */
+function scribblePath(cx: number, cy: number, r: number): string {
+  const passes = 11;
+  const reach = r * 1.3;
+  const point = (i: number): [number, number] => {
+    const y = -reach + (2 * reach * i) / passes;
+    // Half-width of the circle at this height, opened out so the stroke
+    // crosses the line — and, above and below the circle, a short overrun.
+    const inside = Math.max(0, r * r - Math.min(r, Math.abs(y)) ** 2);
+    const w = Math.sqrt(inside) * 1.12 + r * 0.34 + r * 0.16 * wobble(cx + cy * 3 + i);
+    return [cx + (i % 2 === 0 ? -w : w), cy + y];
+  };
+  const [x0, y0] = point(0);
+  let d = `M${x0.toFixed(2)},${y0.toFixed(2)}`;
+  for (let i = 1; i <= passes; i += 1) {
+    const [, py] = point(i - 1);
+    const [x, y] = point(i);
+    // The turn loops out past the end of the stroke rather than folding back
+    // on itself — that loop is what makes it read as a scribble.
+    const bulge = x + (x - cx) * 0.32;
+    d += `Q${bulge.toFixed(2)},${((py + y) / 2).toFixed(2)} ${x.toFixed(2)},${y.toFixed(2)}`;
+  }
+  return d;
+}
+
+/**
  * A stable hash of a point into [0, 1). Used to decide which of the margin's
  * creatures a bracket gets and whether it gets one at all: a plain weighted
  * sum will not do, because the columns are a fixed 72px apart and the rows a
@@ -325,19 +358,6 @@ export default function BracketLayer({
           <stop offset="100%" stopColor="#8a6a18" />
         </radialGradient>
 
-        {/* Nobody fills a circle evenly with a pen; they scribble it in. Fine
-            enough that a 5px dot gets several passes, and it goes through the
-            wobble filter with the rest of the dot layer. */}
-        <pattern id="datool-scribble" width="4" height="4" patternUnits="userSpaceOnUse">
-          <path
-            d="M-1,1 L1,-1 M0,4 L4,0 M3,5 L5,3 M-0.5,0.5 Q2,2.4 4.5,1.4"
-            style={{ stroke: 'var(--tree-accent, #1d4ed8)' }}
-            strokeWidth="0.9"
-            strokeLinecap="round"
-            fill="none"
-          />
-        </pattern>
-
         {quill && <DrolleryDefs />}
 
         <filter id="datool-pen" x="-5%" y="-5%" width="110%" height="110%">
@@ -486,6 +506,17 @@ export default function BracketLayer({
                 }}
                 strokeWidth={1.6}
               />
+              {pen && selected && (
+                <path
+                  className="dot-scribble"
+                  d={scribblePath(d.x, d.y, DOT_R)}
+                  fill="none"
+                  style={{ stroke: ACCENT }}
+                  strokeWidth={1.05}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              )}
             </g>
           );
         })}
