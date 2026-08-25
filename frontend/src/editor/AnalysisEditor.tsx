@@ -63,6 +63,7 @@ import {
   findBrackets,
   findPropositionPos,
   flipStar,
+  keepPageScroll,
   mergeBelow,
   removeSectionBreak,
   sectionBreaks,
@@ -1099,10 +1100,21 @@ function EditorInner({ baseDoc, words, taxonomy, onChange }: InnerProps) {
             {flash}
           </span>
         )}
-        <button type="button" disabled={!editor.can().undo()} onClick={() => editor.commands.undo()}>
+        {/* Undo and redo rebuild the same node views every other command does,
+            so they move the page the same way — and they are the two the
+            reader is most likely to press from halfway down a long analysis. */}
+        <button
+          type="button"
+          disabled={!editor.can().undo()}
+          onClick={() => keepPageScroll(() => editor.commands.undo())}
+        >
           Undo
         </button>
-        <button type="button" disabled={!editor.can().redo()} onClick={() => editor.commands.redo()}>
+        <button
+          type="button"
+          disabled={!editor.can().redo()}
+          onClick={() => keepPageScroll(() => editor.commands.redo())}
+        >
           Redo
         </button>
         <button

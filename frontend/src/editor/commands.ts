@@ -43,8 +43,43 @@ import { addBreak, removeBreak } from './sections';
  * undo together, which is the opposite of the "one gesture, one command, one
  * undo step" rule this module is built on.
  */
+/**
+ * Run a document change without letting the page move under the reader.
+ *
+ * Replacing a range rebuilds the React node views inside it, and for a moment
+ * the document is SHORTER than the position it is scrolled to — measured at
+ * 2399px falling to 2105px on a single disconnect. The browser clamps the
+ * scroll to what is left, and when the rows come back there is nothing to
+ * scroll back to: the clamp is permanent. Connect two units near the top of a
+ * long analysis and the page snaps to the top of the page.
+ *
+ * So the position is taken before the change and put back after — at once,
+ * and again on the next two frames, because the rows do not all return in the
+ * same tick that removed them.
+ */
+export function keepPageScroll(run: () => void): void {
+  if (typeof window === 'undefined') {
+    run();
+    return;
+  }
+  const x = window.scrollX;
+  const y = window.scrollY;
+  run();
+  const restore = () => {
+    if (window.scrollX !== x || window.scrollY !== y) window.scrollTo(x, y);
+  };
+  restore();
+  if (typeof window.requestAnimationFrame !== 'function') return;
+  window.requestAnimationFrame(() => {
+    restore();
+    window.requestAnimationFrame(restore);
+  });
+}
+
 function dispatch(editor: Editor, tr: Transaction): void {
-  editor.view.dispatch(closeHistory(tr));
+  keepPageScroll(() => {
+    editor.view.dispatch(closeHistory(tr));
+  });
 }
 
 /** U+2032 PRIME — suffixed to the label of a split's second half. */

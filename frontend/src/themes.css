@@ -256,9 +256,15 @@
 }
 
 /* ---- The spread: verso for the tree, recto for the text. ----
-   The recto is a second sheet laid over the first, so the fold is a shadow
-   falling leftward out of the text column — into the 17px of clear page
-   between the last dot and the verse numbers. */
+   The leaf IS the opening — one sheet of vellum, the same on both sides of
+   the fold. There is no second page laid over the first: a rectangle of
+   parchment with its own edge and its own shadow reads as a panel dropped on
+   the page, which is what it looked like.
+
+   What makes a centre is the way the two halves TURN into the spine. So the
+   only thing drawn here is the shadow the leaf casts on itself as it curves
+   down: symmetric about the fold, deepest at the seam, and gone by the time
+   either page is flat again. */
 
 [data-theme='book'] .editor-shell {
   isolation: isolate;
@@ -269,36 +275,38 @@
   content: '';
   position: absolute;
   z-index: -1;
-  top: -0.35rem;
-  bottom: -0.35rem;
-  left: var(--tree-margin);
-  right: -0.6rem;
-  background:
-    /* the scribe's ruling: a pale red rule bounding the written column */
-    linear-gradient(90deg, transparent 0 66px, rgb(168 38 28 / 20%) 66px 67px, transparent 67px),
-    linear-gradient(90deg, rgb(255 253 246 / 60%), rgb(255 253 246 / 0%) 110px),
-    var(--vellum) url('./ornaments/vellum.svg') repeat;
-  box-shadow:
-    -14px 0 22px rgb(58 36 18 / 30%),
-    inset 2px 0 0 rgb(107 74 42 / 30%),
-    inset 3px 0 0 rgb(255 255 255 / 55%);
+  top: -0.7rem;
+  bottom: -0.7rem;
+  left: calc(var(--tree-margin) - 104px);
+  width: 208px;
+  background: linear-gradient(
+    90deg,
+    rgb(92 60 30 / 0%) 0%,
+    rgb(92 60 30 / 3%) 22%,
+    rgb(92 60 30 / 8%) 35%,
+    rgb(86 54 26 / 15%) 43%,
+    rgb(74 44 20 / 26%) 47.6%,
+    rgb(58 32 14 / 38%) 49.7%,
+    rgb(58 32 14 / 38%) 50.3%,
+    rgb(74 44 20 / 26%) 52.4%,
+    rgb(86 54 26 / 15%) 57%,
+    rgb(92 60 30 / 8%) 65%,
+    rgb(92 60 30 / 3%) 78%,
+    rgb(92 60 30 / 0%) 100%
+  );
 }
 
-/* The vine that runs down the fold. It is drawn SLENDER — the tile scaled to
-   18px — because the only clear page between the last dot and the first verse
-   number is the width of a proposition's stub, and a stem is all that fits
-   there. Anything wider would be drawn through the dots. */
+/* The scribe's ruling: the pale red rule that bounds the written column on
+   the recto, pricked and ruled before a word was set down. */
 [data-theme='book'] .editor-shell::after {
   content: '';
   position: absolute;
   z-index: -1;
-  top: -0.35rem;
-  bottom: -0.35rem;
-  left: calc(var(--tree-margin) - 8px);
-  width: 18px;
-  background: url('./ornaments/vine.svg') repeat-y left top;
-  background-size: 18px 57px;
-  opacity: 0.9;
+  top: -0.7rem;
+  bottom: -0.7rem;
+  left: calc(var(--tree-margin) + 66px);
+  width: 1px;
+  background: rgb(168 38 28 / 22%);
 }
 
 /* The verse text is the reading, so it is set in the page's own press roman
