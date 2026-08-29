@@ -472,6 +472,7 @@
 [data-theme='book'] .color-settings,
 [data-theme='book'] .popover,
 [data-theme='book'] .notes-editor,
+[data-theme='book'] .textflow-body,
 [data-theme='book'] .verse-panel,
 [data-theme='book'] .analysis-list {
   border: 1px solid var(--border);
@@ -511,6 +512,29 @@
   max-width: none;
   margin-left: var(--tree-margin, 50%);
   margin-right: 0;
+}
+
+/* Once the notes share the foot of the leaf with the text flow, the spread
+   itself divides them — the notes take the verso, the flow the recto — so
+   neither needs to be pushed across the fold. */
+[data-theme='book'] .analysis-lower {
+  gap: 2rem;
+}
+
+[data-theme='book'] .analysis-lower .notes-panel {
+  margin-left: 0;
+}
+
+/* Rubricated, like every other heading on the leaf. */
+[data-theme='book'] .textflow-panel h2,
+[data-theme='book'] .notes-panel h2 {
+  font-variant: small-caps;
+  letter-spacing: 0.06em;
+  color: var(--rubric);
+}
+
+[data-theme='book'] .textflow-embedded {
+  color: var(--sepia);
 }
 
 [data-theme='book'] .section-control {
@@ -895,11 +919,29 @@
 [data-theme='notebook'] .color-settings,
 [data-theme='notebook'] .popover,
 [data-theme='notebook'] .notes-editor,
+[data-theme='notebook'] .textflow-body,
 [data-theme='notebook'] .verse-panel,
 [data-theme='notebook'] .analysis-list {
   border: 2px solid rgb(31 63 143 / 35%);
   border-radius: 26px 6px 22px 8px / 8px 22px 6px 26px;
   background: var(--paper);
+}
+
+/* Everything on this page is hand-drawn, headings included. */
+[data-theme='notebook'] .textflow-panel h2,
+[data-theme='notebook'] .notes-panel h2 {
+  font-family: 'Caveat', 'Patrick Hand', cursive;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+/* An aside pencilled in beside the clause. */
+[data-theme='notebook'] .textflow-embedded {
+  color: rgb(31 63 143 / 70%);
+}
+
+[data-theme='notebook'] .textflow-word:hover {
+  background: rgb(31 63 143 / 13%);
 }
 
 [data-theme='notebook'] .paste-area {
@@ -1083,6 +1125,7 @@
 [data-theme='slate'] .color-settings,
 [data-theme='slate'] .notes-editor,
 [data-theme='slate'] .notes-tools,
+[data-theme='slate'] .textflow-body,
 [data-theme='slate'] .verse-panel,
 [data-theme='slate'] .verses-select select,
 [data-theme='slate'] .error-box,
@@ -1160,6 +1203,31 @@
 [data-theme='slate'] .notes-tools {
   background: transparent;
   padding-left: 0;
+}
+
+/* The flow reads as a surface, not a box: a soft card, no rule around it. */
+[data-theme='slate'] .textflow-body {
+  background: var(--slate-100);
+  border-radius: 12px;
+  padding: 0.7rem 0.85rem;
+}
+
+[data-theme='slate'] .textflow-panel h2,
+[data-theme='slate'] .notes-panel h2 {
+  font-size: 0.86rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+[data-theme='slate'] .textflow-word:hover {
+  background: var(--slate-200);
+}
+
+[data-theme='slate'] .textflow-word.textflow-anchor {
+  background: var(--slate-200);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 [data-theme='slate'] .verse-panel {

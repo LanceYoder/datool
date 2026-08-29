@@ -12,9 +12,14 @@ The document shape (see docs/DESIGN.md §3, §7):
         ...
       ],
       "forest": [node, ...],       # >= 1 roots, in proposition order
-      "sections": [{"start": str, "color": int}, ...]   # optional color blocks
+      "sections": [{"start": str, "color": int}, ...],  # optional color blocks
                                    # (legacy: plain pid strings still load)
+      "textFlow": {"lines": [line, ...]}                # optional Text Flow
     }
+
+    line := {"start": int, "end": int, "indent": int,
+             "embedded": [{"start": int, "end": int,
+                           "style": "paren" | "bracket"}, ...]?}
 
     node := {"kind": "prop", "ref": str}
           | {"kind": "bracket", "rel": str, "prominent": int | None,
@@ -37,7 +42,14 @@ Invariants enforced here (mirrored client-side by the editor schema):
   * relationship codes come from the taxonomy; sources are well-formed;
   * "sections" (the analyst's color blocks) names existing propositions, in
     proposition order, never the first one — every document opens inside its
-    first block, so only the LATER starts are recorded.
+    first block, so only the LATER starts are recorded;
+  * "textFlow" (the student's Text Flow — the passage broken clause per line,
+    dependent clauses indented, embedded clauses marked in place) is one
+    gapless, ordered run of corpus words: each line picks up exactly where the
+    previous one stopped, and every embedded mark sits inside its own line.
+    It is a SEPARATE reading of the passage, so its range is its own — the
+    student may flow more or less than the propositions cover, and nothing
+    here cross-checks the two.
 """
 
 from .taxonomy import RELATIONSHIPS
@@ -174,6 +186,11 @@ def validate_document(doc, corpus_size: int | None = None) -> None:
                 seen.add(pid)
                 previous = max(previous, order[pid])
 
+    # The Text Flow: a clause-per-line reading of the Greek, kept alongside
+    # the analysis. Its own stretch of corpus, checked on its own terms.
+    if doc.get("textFlow") is not None:
+        _check_text_flow(doc["textFlow"], corpus_size, problems)
+
     # In-order leaves of the whole forest, roots in list order.
     leaves: list[str] = []
     for node, where in _roots(doc, legacy, problems):
@@ -235,6 +252,76 @@ def _walk_tree(node, where: str, leaves: list[str], problems: list[str]) -> None
             _walk_tree(child, f"{where}.children[{i}]", leaves, problems)
     else:
         problems.append(f"{where}.kind must be 'prop' or 'bracket'")
+
+
+MAX_INDENT = 8  # deeper than any clause a student nests by hand
+EMBEDDED_STYLES = ("paren", "bracket")
+
+
+def _is_index(value) -> bool:
+    """True for a plain integer (booleans are not word indexes)."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _check_text_flow(flow, corpus_size: int | None, problems: list[str]) -> None:
+    """Check the Text Flow: one gapless run of corpus words, line by line,
+    each line's embedded marks inside it and in order."""
+    if not isinstance(flow, dict):
+        problems.append("textFlow must be an object")
+        return
+    lines = flow.get("lines")
+    if not isinstance(lines, list) or not lines:
+        problems.append("textFlow.lines must be a non-empty list")
+        return
+
+    previous_end = None  # the end of the last line that gave us a usable one
+    for i, line in enumerate(lines):
+        where = f"textFlow.lines[{i}]"
+        if not isinstance(line, dict):
+            problems.append(f"{where} must be an object")
+            previous_end = None
+            continue
+        start, end = line.get("start"), line.get("end")
+        if not (_is_index(start) and _is_index(end) and 0 <= start <= end):
+            problems.append(f"{where} needs ints 0 <= start <= end")
+            start = end = None
+        elif corpus_size is not None and end >= corpus_size:
+            problems.append(f"{where} range exceeds the corpus")
+
+        # Contiguity: every line but the first picks up where the last stopped.
+        if start is not None and previous_end is not None and start != previous_end + 1:
+            problems.append(f"{where}.start must continue the previous line")
+        previous_end = end
+
+        indent = line.get("indent")
+        if not _is_index(indent) or not (0 <= indent <= MAX_INDENT):
+            problems.append(f"{where}.indent must be an int 0 <= indent <= {MAX_INDENT}")
+
+        if line.get("embedded") is None:
+            continue
+        embedded = line["embedded"]
+        if not isinstance(embedded, list):
+            problems.append(f"{where}.embedded must be a list")
+            continue
+        previous_embedded_end = None
+        for j, span in enumerate(embedded):
+            spot = f"{where}.embedded[{j}]"
+            if not isinstance(span, dict):
+                problems.append(f"{spot} must be an object")
+                previous_embedded_end = None
+                continue
+            e_start, e_end = span.get("start"), span.get("end")
+            if not (_is_index(e_start) and _is_index(e_end) and e_start <= e_end):
+                problems.append(f"{spot} needs ints start <= end")
+                e_start = e_end = None
+            elif start is not None and not (start <= e_start and e_end <= end):
+                problems.append(f"{spot} must lie inside its line")
+            if (e_start is not None and previous_embedded_end is not None
+                    and e_start <= previous_embedded_end):
+                problems.append(f"{spot} overlaps the previous embedded range")
+            previous_embedded_end = e_end
+            if span.get("style") not in EMBEDDED_STYLES:
+                problems.append(f"{spot}.style must be 'paren' or 'bracket'")
 
 
 def main_point(doc) -> list[str]:

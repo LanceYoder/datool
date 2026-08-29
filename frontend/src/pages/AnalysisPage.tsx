@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useParams } from 'react-router-dom';
-import type { Analysis, Document as AnalysisDocument } from '../types';
+import type { Analysis, Document as AnalysisDocument, TextFlow } from '../types';
 import { errorMessages, getAnalysis, updateAnalysis } from '../api';
 import AnalysisEditor from '../editor/AnalysisEditor';
 import NotesEditor from '../notes/NotesEditor';
+import TextFlowPanel from '../textflow/TextFlowPanel';
 
 /** Printable width of US Letter portrait at 0.5in margins, in CSS pixels. */
 const PRINT_WIDTH_PX = 7.5 * 96;
@@ -18,6 +19,9 @@ export default function AnalysisPage() {
   // survives saves (saving must not rebuild the editor).
   const [initialDoc, setInitialDoc] = useState<AnalysisDocument | null>(null);
   const draftRef = useRef<AnalysisDocument | null>(null);
+  // The text flow lives inside the same document, but the editor never sees
+  // it, so the page holds the current one for the panel to render.
+  const [textFlow, setTextFlow] = useState<TextFlow | null>(null);
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
@@ -40,6 +44,7 @@ export default function AnalysisPage() {
         setAnalysis(a);
         setInitialDoc(a.document);
         draftRef.current = a.document;
+        setTextFlow(a.document.textFlow ?? null);
         setTitle(a.title);
         setNotes(a.notes);
       })
@@ -63,10 +68,38 @@ export default function AnalysisPage() {
     };
   }, [dirty]);
 
+  // The editor rebuilds the document from its own state, which knows nothing
+  // of the text flow — so the flow the draft already carries is carried over
+  // rather than dropped by the next bracketing edit.
   const onDocumentChange = useCallback((doc: AnalysisDocument) => {
-    draftRef.current = doc;
+    const flow = draftRef.current?.textFlow;
+    draftRef.current = flow === undefined ? doc : { ...doc, textFlow: flow };
     setDirty(true);
   }, []);
+
+  // The mirror image: a flow edit merges into the LATEST draft, never into the
+  // document as it loaded, so it cannot undo concurrent proposition edits.
+  const onTextFlowChange = useCallback((flow: TextFlow) => {
+    const base = draftRef.current;
+    if (base === null) return;
+    draftRef.current = { ...base, textFlow: flow };
+    setTextFlow(flow);
+    setDirty(true);
+  }, []);
+
+  /** The passage the flow covers: every corpus-sourced proposition, end to end. */
+  const passageRange = useMemo(() => {
+    if (initialDoc === null) return null;
+    let min = Infinity;
+    let max = -Infinity;
+    for (const p of initialDoc.propositions) {
+      if (p.source.kind === 'corpus') {
+        min = Math.min(min, p.source.start);
+        max = Math.max(max, p.source.end);
+      }
+    }
+    return min > max ? null : { start: min, end: max };
+  }, [initialDoc]);
 
   const titleDirty = analysis !== null && title !== analysis.title;
   const notesDirty = analysis !== null && notes !== analysis.notes;
@@ -182,12 +215,22 @@ export default function AnalysisPage() {
             onChange={onDocumentChange}
             onTreeMargin={setTreeMargin}
           />
-          {/* has-notes is what the print sheet reads: an empty box prints
-              nothing rather than a blank page. */}
-          <section className={notes.trim() === '' ? 'notes-panel' : 'notes-panel has-notes'}>
-            <h2>Notes</h2>
-            <NotesEditor value={notes} onChange={setNotes} />
-          </section>
+          {/* Below the analysis, the two panels stand under the halves they
+              belong to: the notes under the tree, the text flow under the
+              Greek it re-reads. */}
+          <div className="analysis-lower">
+            {/* has-notes is what the print sheet reads: an empty box prints
+                nothing rather than a blank page. */}
+            <section className={notes.trim() === '' ? 'notes-panel' : 'notes-panel has-notes'}>
+              <h2>Notes</h2>
+              <NotesEditor value={notes} onChange={setNotes} />
+            </section>
+            <TextFlowPanel
+              flow={textFlow}
+              range={passageRange}
+              onChange={onTextFlowChange}
+            />
+          </div>
         </>
       )}
       {analysis === null && errors.length === 0 && <p className="muted">Loading…</p>}

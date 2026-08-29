@@ -71,9 +71,44 @@ export interface SectionBreak {
   color: number;
 }
 
+/**
+ * A stretch of one flow line set off from the clause around it: left where it
+ * stands in the word order, but wrapped and italicized so the eye can step
+ * over it. Ranges within a line are ordered and never overlap.
+ */
+export interface TextFlowEmbedded {
+  /** Inclusive corpus word index, within the owning line. */
+  start: number;
+  /** Inclusive corpus word index, within the owning line. */
+  end: number;
+  style: 'paren' | 'bracket';
+}
+
+/** One clause line of the text flow. */
+export interface TextFlowLine {
+  /** Inclusive corpus word range. */
+  start: number;
+  end: number;
+  /** Steps of indentation under what the clause modifies, 0..8. */
+  indent: number;
+  embedded?: TextFlowEmbedded[];
+}
+
+/**
+ * The pedagogical step BEFORE the bracketing: the passage broken into clause
+ * lines, dependent clauses indented under what they modify, word order kept.
+ * Lines are contiguous — each line's start is the previous line's end + 1 —
+ * so the flow covers one gapless corpus range.
+ */
+export interface TextFlow {
+  lines: TextFlowLine[];
+}
+
 export interface Document {
   schemaVersion: 1 | 2;
   propositions: Proposition[];
+  /** The text flow, when one has been started; absent until then. */
+  textFlow?: TextFlow;
   /**
    * Color blocks: the breaks that BEGIN one, in proposition order. The
    * document always opens inside its first block (first palette color), so
