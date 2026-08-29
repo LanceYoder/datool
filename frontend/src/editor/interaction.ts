@@ -152,11 +152,18 @@ export function mainPointRefs(forest: readonly TreeNode[]): string[] {
   return out;
 }
 
-/** One run of a row's English line: an optional verse marker, then text. */
+/** One English rendering, and the corpus word it renders. */
+export interface EnglishToken {
+  text: string;
+  /** Corpus index of the Greek word this renders — its card opens from here. */
+  index: number;
+}
+
+/** One run of a row's English line: an optional verse marker, then words. */
 export interface EnglishSegment {
   /** Verse number shown before the text — only where a verse BEGINS. */
   marker: number | null;
-  text: string;
+  tokens: EnglishToken[];
 }
 
 /**
@@ -168,6 +175,9 @@ export interface EnglishSegment {
  * verse-number marker opens a segment only where that verse's FIRST word
  * sits in this row — a row continuing mid-verse gets bare text. Words
  * without an aligned rendering are skipped; a row with none yields [].
+ *
+ * Each rendering keeps the index of the word it renders, so clicking an
+ * English word can open that Greek word's card.
  */
 export function rowEnglish(
   srcStart: number,
@@ -175,16 +185,17 @@ export function rowEnglish(
   words: ReadonlyMap<number, CorpusWord>,
 ): EnglishSegment[] {
   const out: EnglishSegment[] = [];
-  let current: { marker: number | null; parts: { ord: number; text: string }[] } | null = null;
+  let current:
+    | { marker: number | null; parts: { ord: number; text: string; index: number }[] }
+    | null = null;
 
   const flush = (): void => {
     if (current !== null && current.parts.length > 0) {
-      const text = current.parts
+      const tokens = current.parts
         .slice()
         .sort((a, b) => a.ord - b.ord)
-        .map((p) => p.text)
-        .join(' ');
-      out.push({ marker: current.marker, text });
+        .map((p) => ({ text: p.text, index: p.index }));
+      out.push({ marker: current.marker, tokens });
     }
   };
 
@@ -206,7 +217,7 @@ export function rowEnglish(
     if (w.eng !== null && w.eng !== '') {
       // Unaligned words have no order key; Greek position keeps them from
       // being dropped and can only misplace them within their own verse.
-      current.parts.push({ ord: w.engOrd ?? i, text: w.eng });
+      current.parts.push({ ord: w.engOrd ?? i, text: w.eng, index: i });
     }
   }
   flush();

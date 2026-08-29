@@ -112,6 +112,37 @@ const MENU_SIZE = { width: 272, height: 400 };
 /** Width the color-block strip stands in: the band plus air before the text. */
 const STRIP_LANE = 26;
 
+/**
+ * Where the relationship menu goes. In order of what it must not cover:
+ *
+ *  1. the TEXT — never, so its right edge stays left of the text column;
+ *  2. the TREE — if the whole tree fits to the right of the menu, it stands
+ *     clear of the outermost spine;
+ *  3. failing that, at least the BRACKET being labeled — the menu slides
+ *     above or below that bracket's own span rather than sitting on it.
+ *
+ * A tree deep enough to fill the margin leaves nowhere to stand: then the
+ * menu keeps rule 1 and takes whichever vertical berth is roomier.
+ */
+function menuPlacement(desired: Point, geom: PositionedBracket, overlay: Overlay): Point {
+  const rightOfText = overlay.margin - MENU_SIZE.width - TEXT_GAP;
+  const treeLeft = overlay.brackets.reduce((left, b) => Math.min(left, b.x), overlay.margin);
+  const leftOfTree = treeLeft - MENU_SIZE.width - TEXT_GAP;
+  const x = leftOfTree >= TEXT_GAP ? leftOfTree : Math.min(desired.x, rightOfText);
+
+  // Standing left of the whole tree covers nothing; otherwise the menu must
+  // still clear the bracket it belongs to.
+  if (x <= leftOfTree) return { x, y: desired.y };
+  const coversBracket = geom.x >= x && geom.x <= x + MENU_SIZE.width;
+  if (!coversBracket) return { x, y: desired.y };
+
+  const above = geom.top - MENU_SIZE.height - TEXT_GAP;
+  const below = geom.bottom + TEXT_GAP;
+  if (above >= TEXT_GAP) return { x, y: above };
+  if (below + MENU_SIZE.height <= overlay.height) return { x, y: below };
+  return { x, y: geom.top > overlay.height - geom.bottom ? above : below };
+}
+
 /** Clear space kept between the relationship menu and the text column. */
 const TEXT_GAP = 12;
 
@@ -153,6 +184,8 @@ interface RowContextValue {
     splittable: boolean,
     target: HTMLElement,
   ) => void;
+  /** A click on an ENGLISH word: the card of the Greek word it renders. */
+  onEnglishClick: (pid: string, index: number, target: HTMLElement) => void;
   /** A right-click on a splittable word: split the proposition after it. */
   onWordSplit: (pid: string, ordinal: number) => void;
   onMergeBelow: (pid: string) => void;
@@ -242,7 +275,23 @@ function PropositionRow({ node }: ReactNodeViewProps) {
         <div className="english-line" contentEditable={false}>
           {english.map((seg, i) => (
             <span key={i}>
-              {seg.marker !== null && <span className="ev">{seg.marker}</span>} {seg.text}{' '}
+              {seg.marker !== null && <span className="ev">{seg.marker}</span>}{' '}
+              {seg.tokens.map((token, j) => (
+                <span
+                  key={`${token.index}-${j}`}
+                  className="eng-word"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={(event) => {
+                    // The card of the GREEK word this renders: same card,
+                    // reached from the English side.
+                    event.preventDefault();
+                    event.stopPropagation();
+                    ctx.onEnglishClick(pid, token.index, event.currentTarget);
+                  }}
+                >
+                  {token.text}{' '}
+                </span>
+              ))}
             </span>
           ))}
         </div>
@@ -399,7 +448,10 @@ type PopoverState =
   | {
       kind: 'word';
       pid: string;
+      /** Word position in the row for Greek; the corpus index for English. */
       ordinal: number;
+      /** Which line the click came from — the two number their words apart. */
+      side: 'greek' | 'english';
       word: string;
       /** Corpus index (null for raw text — no info to show). */
       index: number | null;
@@ -855,9 +907,41 @@ function EditorInner({ baseDoc, words, taxonomy, onChange, onTreeMargin }: Inner
         const at = { x: rect.left - shellRect.left, y: rect.bottom - shellRect.top + 4 };
         setSelectedDotId(null);
         setPopover((prev) =>
-          prev !== null && prev.kind === 'word' && prev.pid === pid && prev.ordinal === ordinal
+          prev !== null &&
+          prev.kind === 'word' &&
+          prev.side === 'greek' &&
+          prev.pid === pid &&
+          prev.ordinal === ordinal
             ? null // clicking the same word again dismisses the popover
-            : { kind: 'word', pid, ordinal, word, index, splittable, at },
+            : { kind: 'word', side: 'greek', pid, ordinal, word, index, splittable, at },
+        );
+      },
+      onEnglishClick: (pid, index, target) => {
+        const shell = shellRef.current;
+        if (shell === null) return;
+        const shellRect = shell.getBoundingClientRect();
+        const rect = target.getBoundingClientRect();
+        const at = { x: rect.left - shellRect.left, y: rect.bottom - shellRect.top + 4 };
+        const greek = words.get(index);
+        setSelectedDotId(null);
+        setPopover((prev) =>
+          prev !== null &&
+          prev.kind === 'word' &&
+          prev.side === 'english' &&
+          prev.ordinal === index
+            ? null
+            : {
+                kind: 'word',
+                side: 'english',
+                pid,
+                ordinal: index,
+                // The headword is the GREEK the reading renders — an English
+                // word on its own says nothing the line has not already said.
+                word: greek === undefined ? '' : displayWordText(greek.text),
+                index,
+                splittable: false,
+                at,
+              },
         );
       },
       onWordSplit: (pid, ordinal) => {
@@ -1027,7 +1111,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange, onTreeMargin }: Inner
               </div>
               {info.gloss !== null && <div className="word-gloss">{info.gloss}</div>}
               <div className="word-parse muted">{describeParsing(info.pos, info.parsing)}</div>
-              {info.eng !== null && (
+              {info.eng !== null && info.eng.trim() !== '' && (
                 <div className="word-context muted">here: “{info.eng}”</div>
               )}
             </div>
@@ -1038,14 +1122,8 @@ function EditorInner({ baseDoc, words, taxonomy, onChange, onTreeMargin }: Inner
       const geom = overlay.brackets.find((b) => b.pos === popover.pos);
       const node = editor.state.doc.nodeAt(popover.pos);
       if (geom !== undefined && node !== null && node.type.name === 'bracket') {
-        // Never over the words: the menu lives in the bracket half, its right
-        // edge held clear of the text column (which starts at overlay.margin).
         const desired = popover.at ?? { x: geom.x + 8, y: geom.connectY + 8 };
-        const at = clampPopover(
-          { x: Math.min(desired.x, overlay.margin - MENU_SIZE.width - TEXT_GAP), y: desired.y },
-          MENU_SIZE,
-          bounds,
-        );
+        const at = clampPopover(menuPlacement(desired, geom, overlay), MENU_SIZE, bounds);
         popoverNode = (
           <div
             ref={popoverRef}

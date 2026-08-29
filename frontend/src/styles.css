@@ -361,6 +361,9 @@ div.error-box {
 .prop-row {
   display: flex;
   flex-direction: column;
+  /* Air between rows, so tightening the English onto its Greek separates the
+     pairs rather than merging them. */
+  padding-top: 6px;
   /* The analyst's block, laid on at this design's weight. The row publishes
      --block-bg and --block-ink (AnalysisEditor); painting is the sheet's job,
      so a skin can wash the block over its paper instead of covering it. */
@@ -405,14 +408,17 @@ div.error-box {
 }
 
 /* English (WEB) reference line above the Greek — display only. */
+/* The English sits DIRECTLY over the Greek it renders: the pair is what the
+   eye takes in, so the space INSIDE a pair is smaller than the space between
+   rows (.prop-row's padding). */
 .english-line {
   /* Indented to the Greek's left edge: label column + .prop-body padding. */
   padding-left: calc(var(--verse-label-w) + 10px);
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font-size: 0.92rem;
-  line-height: 1.5;
+  line-height: 1.35;
   color: var(--muted);
-  margin: 4px 0 0;
+  margin: 0 0 -7px;
 }
 
 .english-line .ev {
@@ -421,9 +427,15 @@ div.error-box {
   vertical-align: 0.35em;
 }
 
-.word:hover {
+.word:hover,
+.eng-word:hover {
   background: #eef2ff;
   border-radius: 3px;
+}
+
+/* An English word opens the card of the Greek word it renders. */
+.eng-word {
+  cursor: pointer;
 }
 
 /* ---- Interactive editor ---- */

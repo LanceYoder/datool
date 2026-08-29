@@ -151,26 +151,59 @@ describe('rowEnglish', () => {
 
   it("joins the row's own words' contextual English, marking the verse start", () => {
     expect(rowEnglish(124771, 124773, WORD_MAP)).toEqual([
-      { marker: 6, text: 'e124771 e124772 e124773' },
+      {
+        marker: 6,
+        tokens: [
+          { text: 'e124771', index: 124771 },
+          { text: 'e124772', index: 124772 },
+          { text: 'e124773', index: 124773 },
+        ],
+      },
     ]);
   });
 
   it('gives a mid-verse row bare text — no verse marker', () => {
     expect(rowEnglish(124777, 124779, WORD_MAP)).toEqual([
-      { marker: null, text: 'e124777 e124778 e124779' },
+      {
+        marker: null,
+        tokens: [
+          { text: 'e124777', index: 124777 },
+          { text: 'e124778', index: 124778 },
+          { text: 'e124779', index: 124779 },
+        ],
+      },
     ]);
   });
 
   it('starts a marked segment where a new verse begins inside the row', () => {
     expect(rowEnglish(124782, 124791, WORD_MAP)).toEqual([
-      { marker: null, text: 'e124782 e124783' },
-      { marker: 7, text: 'e124789 e124790 e124791' },
+      {
+        marker: null,
+        tokens: [
+          { text: 'e124782', index: 124782 },
+          { text: 'e124783', index: 124783 },
+        ],
+      },
+      {
+        marker: 7,
+        tokens: [
+          { text: 'e124789', index: 124789 },
+          { text: 'e124790', index: 124790 },
+          { text: 'e124791', index: 124791 },
+        ],
+      },
     ]);
   });
 
   it('skips words with no aligned rendering and empty rows', () => {
     expect(rowEnglish(124775, 124777, WORD_MAP)).toEqual([
-      { marker: null, text: 'e124775 e124777' }, // 124776 is null
+      {
+        marker: null,
+        tokens: [
+          { text: 'e124775', index: 124775 },
+          { text: 'e124777', index: 124777 }, // 124776 is null
+        ],
+      },
     ]);
     expect(rowEnglish(124776, 124776, WORD_MAP)).toEqual([]);
     expect(rowEnglish(200000, 200002, WORD_MAP)).toEqual([]); // outside the map
