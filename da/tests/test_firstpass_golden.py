@@ -1,26 +1,38 @@
 """Golden tests for initial entry and the full analyzer.
 
 ``first_pass`` — what initial entry actually runs — segments a located paste
-into clause propositions (stage 1) and draws ONLY the deterministic
-connections (stage 2 in confident-only mode); everything else stays loose
-for the analyst. An unaligned paste splits on punctuation into disconnected
+into clause propositions (stage 1) and draws the MINIMAL analysis (stage 2 in
+confident-only mode). Since the DA expert's re-tier, "minimal" means every
+grammar-forced call PLUS every sensible default (a reading right ~80%+ of the
+time); only genuinely undecidable joins — a bare ἀλλά, an apposition, an
+implicit-proposition PP, an unknown subordinator, a speculative grouping —
+stay loose. An unaligned paste still splits on punctuation into disconnected
 raw propositions (no morphology, no proposed structure).
 
 The analyzer is also tested over hand-built, contract-shaped segments so the
 classifier's calls are pinned independently of live segmentation. Passages
 come from the course's worked examples: 1 John 1:5–7 (examples/da1.xlsx) and
-Hebrews 4:9–12 (Five Step walkthrough). We assert what an explicit
-connective settles (the confident calls) and only the best-guess default
-where the call is a judgment.
+Hebrews 4:9–12 (Five Step walkthrough). Both are fully connective-driven, so
+under the new tiering their minimal analysis IS their full analysis — the
+tests below assert exactly that structure, not merely "more than before".
+
+The focused unit tests at the end pin the individual rulings (ἵνα's asking-verb
+branch, ὥστε ± infinitive, causal ὅτι, the καί/δέ Series defaults and the
+adverbial-participle chart) against real corpus passages. The English-cue layer
+that now sits over several of those rules has its own suite in
+``test_english_cues.py``; where a cue changes an expectation here, the comment
+says so.
 """
 
 import json
 from dataclasses import dataclass
 
 from da.corpus import load_words
+from da.corpus.reference import resolve
 from da.documents import main_point, validate_document
 from da.firstpass import first_pass
-from da.treebuild import build_document
+from da.segmentation import segment
+from da.treebuild import _dependent_call, build_document
 
 
 # ---------------------------------------------------------------------------
@@ -89,6 +101,21 @@ def roundtrip(doc):
     doc2 = json.loads(json.dumps(doc))
     validate_document(doc2)
     assert main_point(doc2) == main_point(doc)
+
+
+# --- Expected-tree constructors (documents carry no flags) ------------------
+
+def SER(first, second):
+    return {"kind": "bracket", "rel": "Ser", "prominent": None,
+            "children": [first, second]}
+
+
+def SUB(rel, prominent, first, second, reversed_=False):
+    node = {"kind": "bracket", "rel": rel, "prominent": prominent,
+            "children": [first, second]}
+    if reversed_:
+        node["reversed"] = True
+    return node
 
 
 # ---------------------------------------------------------------------------
@@ -219,13 +246,20 @@ def test_build_document_1john_hand_segments():
     roundtrip(doc)
 
 
-def test_first_pass_1john_1_5_7_keeps_only_sure_connections():
-    """Entry runs the analyzer in CONFIDENT-ONLY mode: pre-split into clause
-    propositions, with only the deterministic connections drawn. In this
-    passage that is exactly one — the ὡς comparison 7a/7b (2/2 exact in the
-    goldens). Every other join here rides a καί or an asyndeton (judgment
-    calls the goldens contradict), so everything else stays loose, and the
-    conditionals cascade away with the uncertain packets they would pair."""
+def test_first_pass_1john_1_5_7_minimal_tier():
+    """Entry runs the analyzer at the MINIMAL level. Re-tiered (expert
+    ruling): every join in this passage is now either grammar-forced or a
+    sensible default, so minimal draws the WHOLE tree —
+
+      * 5b relative → Ft/In (sure; the old scope guard is gone);
+      * 5c/5e/6c/6e/7d καί → Series (RULING: the Series default is sure);
+      * 5d, 6b ὅτι after a verbum dicendi → Ft/In;
+      * 6a/7a ἐάν → Conditional, 7b ὡς → Comparison;
+      * 5→6 asyndeton and 6→7 δέ (no μέν) → Series (RULING: sure).
+
+    The one call the 1 John student reads differently — 5d/5e as ∴ rather
+    than Series — is exactly the kind of default the analyst re-labels in one
+    click, which is the trade the ruling makes."""
     words = load_words()
     text = " ".join(w.text for w in words[J_START:J_END + 1])
     result = first_pass(text)
@@ -243,13 +277,20 @@ def test_first_pass_1john_1_5_7_keeps_only_sure_connections():
     assert [(p["source"]["start"], p["source"]["end"]) for p in props] == J_SPANS
 
     ids = by_label(doc)
-    expected = [{"kind": "prop", "ref": ids[l]} for l in J_LABELS]
-    expected[10:12] = [{
-        "kind": "bracket", "rel": "Cmp", "prominent": 0, "reversed": True,
-        "children": [{"kind": "prop", "ref": ids["7a"]},
-                     {"kind": "prop", "ref": ids["7b"]}],
-    }]
-    assert doc["forest"] == expected
+    p = {l: {"kind": "prop", "ref": ids[l]} for l in J_LABELS}
+    verse5 = SUB("FtIn", 1,
+                 SUB("FtIn", 1, p["5a"], SER(p["5b"], p["5c"])),
+                 SER(p["5d"], p["5e"]))
+    verse6 = SUB("CndE", 1,
+                 SUB("FtIn", 1, p["6a"], SER(p["6b"], p["6c"])),
+                 SER(p["6d"], p["6e"]))
+    verse7 = SUB("CndE", 1,
+                 SUB("Cmp", 0, p["7a"], p["7b"], reversed_=True),
+                 SER(p["7c"], p["7d"]))
+    assert doc["forest"] == [SER(SER(verse5, verse6), verse7)]
+
+    # Nothing in this passage is undecidable, so minimal == Full here.
+    assert doc["forest"] == build_document(segment(J_START, J_END))["forest"]
     roundtrip(doc)
 
 
@@ -294,12 +335,20 @@ def assert_hebrews_structure(doc):
     assert g12["prominent"] == 0
     assert g12.get("flag") is None
 
-    # Σπουδάσωμεν οὖν: inference, star on the οὖν sentence (the new side).
+    # Σπουδάσωμεν οὖν: inference, star on the οὖν side (the new one).
+    # SECTIONING (docs/sectioning.md): οὖν is a strong seam, so v11 OPENS a
+    # section — and the Inference's supported side is that whole section (v11
+    # together with the v12 γάρ grounding it), not the v11 sentence alone.
+    # Located by where the supported side starts; its full extent, and the
+    # extent of the section it is joined to, are asserted with it.
     inf = the((b for b in brackets(tree)
-               if b["rel"] == "Inf" and span(doc, b["children"][1]) == H_V11),
-              "Inf bracket over the οὖν sentence")
+               if b["rel"] == "Inf"
+               and span(doc, b["children"][1])[0] == H_V11[0]),
+              "Inf bracket over the οὖν section")
     assert inf["prominent"] == 1
     assert inf.get("flag") is None
+    assert span(doc, inf["children"][1]) == (H_V11[0], H_V12[1])
+    assert span(doc, inf["children"][0]) == (H_START, H_V10[1])
 
     # ἵνα clause: Means–End, confident, star on the ἵνα (End) child.
     med = the((b for b in brackets(tree)
@@ -320,14 +369,22 @@ def test_build_document_hebrews_hand_segments():
         ["9", "10a", "10b", "11a", "11b", "12"]
     assert_hebrews_structure(doc)
 
-    # With this segmentation the discourse shape is fully determined:
-    # Grnd[Inf[Grnd[v9, v10], v11], v12], and the star walk ends at ἵνα.
+    # With this segmentation the discourse shape is fully determined. The οὖν
+    # SEAM at v11 splits the passage into two sections — [v9, v10] and
+    # [v11, v12] — so the shape is Inf[Grnd[v9, v10], Grnd[v11, v12]]: each
+    # γάρ grounds the sentence it follows inside its own section, and the
+    # Inference joins the two sections. (Before sectioning the fold ran flat
+    # across the passage and gave Grnd[Inf[Grnd[v9, v10], v11], v12], which
+    # let the v12 γάρ ground the whole argument rather than the exhortation
+    # it actually follows.) The star walk still ends at ἵνα.
     tree = the_root(doc)
-    assert tree["rel"] == "Grnd" and tree["prominent"] == 0
-    inner_inf = tree["children"][0]
-    assert inner_inf["rel"] == "Inf" and inner_inf["prominent"] == 1
-    inner_grnd = inner_inf["children"][0]
-    assert inner_grnd["rel"] == "Grnd" and inner_grnd["prominent"] == 0
+    assert tree["rel"] == "Inf" and tree["prominent"] == 1
+    first_section = tree["children"][0]
+    assert first_section["rel"] == "Grnd" and first_section["prominent"] == 0
+    assert span(doc, first_section) == (H_START, H_V10[1])
+    second_section = tree["children"][1]
+    assert second_section["rel"] == "Grnd" and second_section["prominent"] == 0
+    assert span(doc, second_section) == (H_V11[0], H_V12[1])
     assert main_point(doc) == ["p5"]  # ἵνα μὴ … πέσῃ
 
     # The trailing ὥσπερ clause: comparison, reversed so '//' labels it,
@@ -339,11 +396,14 @@ def test_build_document_hebrews_hand_segments():
     roundtrip(doc)
 
 
-def test_first_pass_hebrews_4_9_12_keeps_only_sure_connections():
-    """Confident-only entry on Hebrews: the γάρ ground and the ὥσπερ
-    comparison survive — nested, because every bracket inside the packet is
-    itself sure — while the ἵνα (purpose vs. epexegetical), the οὖν
-    (∴ vs. C/E per the Acts diagram) and the v12 participles stay loose."""
+def test_first_pass_hebrews_4_9_12_minimal_tier():
+    """Minimal entry on Hebrews, re-tiered. Everything the old strict tier
+    left loose is now in: the οὖν of v11 (RULING: the whole INFERENCE class is
+    always sure), its ἵνα (RULING: no asking verb in front of σπουδάσωμεν, so
+    the purpose reading M/Ed is the sure default), and the two v12 participles
+    (Ζῶν precedes its clause and διϊκνούμενος follows it — both present, so
+    chart rules 10 and 9). The γάρ grounds and the ὥσπερ comparison keep the
+    places they already held."""
     words = load_words()
     text = " ".join(w.text for w in words[H_START:H_END + 1])
     result = first_pass(text)
@@ -357,24 +417,24 @@ def test_first_pass_hebrews_4_9_12_keeps_only_sure_connections():
         "9", "10a", "10b", "11a", "11b", "12a", "12b",
     ]
     ids = by_label(doc)
+    p = {l: {"kind": "prop", "ref": i} for l, i in ids.items()}
+    # SECTIONING: the οὖν seam at v11 makes [9, 10] and [11, 12] two sections,
+    # joined by the Inference. Each γάρ grounds inside its own section — the
+    # v12 γάρ now grounds the exhortation it follows rather than the whole
+    # argument (see test_build_document_hebrews_hand_segments).
     assert doc["forest"] == [
-        {
-            "kind": "bracket", "rel": "Grnd", "prominent": 0,
-            "children": [
-                {"kind": "prop", "ref": ids["9"]},
-                {
-                    "kind": "bracket", "rel": "Cmp", "prominent": 0,
-                    "reversed": True,
-                    "children": [{"kind": "prop", "ref": ids["10a"]},
-                                 {"kind": "prop", "ref": ids["10b"]}],
-                },
-            ],
-        },
-        {"kind": "prop", "ref": ids["11a"]},
-        {"kind": "prop", "ref": ids["11b"]},
-        {"kind": "prop", "ref": ids["12a"]},
-        {"kind": "prop", "ref": ids["12b"]},
+        SUB("Inf", 1,
+            SUB("Grnd", 0, p["9"],
+                SUB("Cmp", 0, p["10a"], p["10b"], reversed_=True)),
+            SUB("Grnd", 0,
+                SUB("MEd", 1, p["11a"], p["11b"]),
+                SUB("WEd", 0, p["12a"], p["12b"], reversed_=True))),
     ]
+    # Two sections, so the passage carries one colour block: it opens at the
+    # first proposition of the οὖν section (11a).
+    assert doc["sections"] == [{"start": ids["11a"], "color": 1}]
+    # Nothing here is undecidable either, so minimal == Full.
+    assert doc["forest"] == build_document(segment(H_START, H_END))["forest"]
     roundtrip(doc)
 
 
@@ -428,6 +488,208 @@ def test_verse6_alone_matches_design_worked_example():
     assert leaf_refs(apodosis) == ["p4", "p5"]
     # Star walk: conditional → apodosis packet; coordinate → whole packet.
     assert main_point(doc) == ["p4", "p5"]
+
+
+# ---------------------------------------------------------------------------
+# The re-tiering rulings, pinned against real corpus passages.
+#
+# Each test locates a genuine NT example through the corpus loader, segments
+# it, and asks the classifier for its (relationship, review, sure) call —
+# ``sure`` being exactly "this join belongs in the minimal analysis".
+
+def passage(ref: str):
+    """Live segments for a reference, plus the segment list itself."""
+    r = resolve(ref)
+    return segment(r.start, r.end), (r.start, r.end)
+
+
+def opened_by(segments, lemma: str) -> int:
+    """Index of the (first) segment opened by ``lemma``."""
+    for i, s in enumerate(segments):
+        if s.opener is not None and s.opener.lemma == lemma:
+            return i
+    raise AssertionError(f"no segment opened by {lemma!r}")
+
+
+def call_for(segments, index: int, precedes: bool):
+    """The classifier's (rel, review, sure) call for one dependent segment.
+    ``precedes`` is the shift-reduce position the assembler would pass: True
+    when the segment is held and attaches forward, False when it attaches
+    backward to the packet already built."""
+    return _dependent_call(segments[index], index, segments, load_words(),
+                           precedes=precedes)
+
+
+# --- ἵνα: the asking-verb conditional rule ---------------------------------
+
+def test_hina_after_an_asking_verb_is_content_ftin():
+    """John 17:15 οὐκ ἐρωτῶ | ἵνα ἄρῃς αὐτοὺς ἐκ τοῦ κόσμου — ἐρωτάω is an
+    asking verb, so the ἵνα clause states the CONTENT of the request."""
+    segs, _ = passage("John 17:15")
+    assert call_for(segs, opened_by(segs, "ἵνα"), precedes=False) == \
+        ("FtIn", False, True)
+    # The verse's SECOND ἵνα (ἀλλ’ ἵνα τηρήσῃς) also depends on ἐρωτῶ, but its
+    # immediately preceding clause is the first ἵνα clause, so the one-clause
+    # lookback cannot see that far (expert-questions.md Open #8). RECOMPUTED
+    # for the English-cue layer: the BSB writes "that You keep them from the
+    # evil one", and the "that" cue outranks the verb list — so the content
+    # reading now comes out right without widening the lookback. See
+    # da/tests/test_english_cues.py.
+    assert call_for(segs, 2, precedes=False) == ("FtIn", False, True)
+
+
+def test_hina_without_an_asking_verb_is_purpose_med():
+    """Hebrews 4:11 σπουδάσωμεν … | ἵνα μὴ … πέσῃ. σπουδάζω is not an asking
+    verb, so purpose is the sure default — and the BSB's "so that" cue agrees
+    with it (for ἵνα that phrase reads as purpose, not result)."""
+    heb, _ = passage("Hebrews 4:11")
+    assert call_for(heb, opened_by(heb, "ἵνα"), precedes=False) == \
+        ("MEd", False, True)
+
+
+def test_hina_english_that_overrides_the_purpose_default():
+    """John 3:16 … ἔδωκεν, | ἵνα πᾶς ὁ πιστεύων … μὴ ἀπόληται.
+
+    RECOMPUTED for the English-cue layer, and the layer's clearest COST. The
+    verb-list rule reads this ἵνα as purpose (δίδωμι is not an asking verb),
+    which is the right analysis; the BSB renders it with the archaic English
+    purpose-"that" ("that everyone who believes in Him shall not perish"), and
+    the cue table reads a leading "that" as content. Per the approved design
+    the cue overrides the verb list, so the call flips to Ft/In here.
+
+    Left as the design specifies rather than patched: it is one bracket for
+    the analyst to re-label, and it is the concrete case to put to the expert
+    when asking whether "that" should require corroboration (an asking verb
+    anywhere in the sentence) before it outranks the purpose default."""
+    segs, _ = passage("John 3:16")
+    i = opened_by(segs, "ἵνα")
+    assert call_for(segs, i, precedes=False) == ("FtIn", False, True)
+
+
+# --- ὥστε: sure only with an infinitive ------------------------------------
+
+def test_hoste_with_an_infinitive_is_a_sure_cause_effect():
+    """1 Thess 1:7 ὥστε γενέσθαι ὑμᾶς τύπον … — the clause's predicate is the
+    infinitive γενέσθαι (mood 'N'), the textbook result construction."""
+    segs, _ = passage("1 Thessalonians 1:6-7")
+    assert call_for(segs, opened_by(segs, "ὥστε"), precedes=False) == \
+        ("CE", False, True)
+
+
+def test_hoste_with_a_finite_verb_is_a_best_guess_only():
+    """John 3:16 … ὥστε τὸν υἱὸν τὸν μονογενῆ ἔδωκεν — a finite verb, the
+    actual-result use. Still C/E in Full, but never in minimal."""
+    segs, _ = passage("John 3:16")
+    assert call_for(segs, opened_by(segs, "ὥστε"), precedes=False) == \
+        ("CE", False, False)
+
+
+# --- ὅτι: causal is now sure -----------------------------------------------
+
+def test_causal_hoti_is_a_sure_ground():
+    """Matt 5:3 Μακάριοι οἱ πτωχοὶ τῷ πνεύματι, | ὅτι αὐτῶν ἐστιν ἡ βασιλεία
+    — no verbum dicendi in front of it, so the ὅτι is causal."""
+    segs, _ = passage("Matthew 5:3")
+    assert call_for(segs, opened_by(segs, "ὅτι"), precedes=False) == \
+        ("Grnd", False, True)
+    # It reaches the document: the whole verse is one sure Ground bracket.
+    doc = build_document(segs, confident_only=True)
+    assert doc["forest"] == [
+        SUB("Grnd", 0, {"kind": "prop", "ref": "p1"},
+            {"kind": "prop", "ref": "p2"}),
+    ]
+
+
+def test_hoti_after_a_verbum_dicendi_stays_content():
+    """Matt 9:18 … λέγων | ὅτι Ἡ θυγάτηρ μου ἄρτι ἐτελεύτησεν."""
+    segs, _ = passage("Matthew 9:18")
+    assert call_for(segs, opened_by(segs, "ὅτι"), precedes=False) == \
+        ("FtIn", False, True)
+
+
+# --- καί / δέ: the Series defaults reach minimal ----------------------------
+
+def test_bare_kai_clauses_join_as_series_in_minimal():
+    """John 1:1 — three καί-joined clauses. Every bracket is binary, so the
+    run nests to the left; RULING: a καί Series is a sure default, so minimal
+    draws it instead of leaving three loose roots."""
+    segs, _ = passage("John 1:1")
+    doc = build_document(segs, confident_only=True)
+    p1, p2, p3 = ({"kind": "prop", "ref": f"p{i}"} for i in (1, 2, 3))
+    assert doc["forest"] == [SER(SER(p1, p2), p3)]
+
+
+def test_de_without_men_joins_as_series_in_minimal():
+    """Mark 1:8 ἐγὼ ἐβάπτισα ὑμᾶς ὕδατι, | αὐτὸς δὲ βαπτίσει ὑμᾶς … — a
+    mid-sentence δέ with no μέν in front of it: Series, sure."""
+    segs, _ = passage("Mark 1:8")
+    assert [s.opener.lemma for s in segs if s.opener] == ["δέ"]
+    doc = build_document(segs, confident_only=True)
+    assert doc["forest"] == [SER({"kind": "prop", "ref": "p1"},
+                                {"kind": "prop", "ref": "p2"})]
+
+
+# --- Adverbial participles (docs/participle-rules.md) ----------------------
+
+def test_participle_rule_1_kaiper_is_adversative():
+    """Heb 5:8 καίπερ ὢν υἱός, | ἔμαθεν … — the particle makes the concession
+    explicit, so the reading is not a guess at all."""
+    segs, _ = passage("Hebrews 5:8")
+    i = opened_by(segs, "εἰμί")
+    assert call_for(segs, i, precedes=True) == ("Adv", False, True)
+    tree = build_document(segs, confident_only=True)["forest"]
+    # Adv labels the concessive child; the star stays on the main clause.
+    assert len(tree) == 1 and tree[0]["rel"] == "Adv"
+    assert tree[0]["prominent"] == 1
+    assert not tree[0].get("reversed")
+    assert tree[0]["children"][0] == {"kind": "prop", "ref": "p1"}
+
+
+def test_participle_rule_2_genitive_absolute_is_temporal():
+    """Matt 8:5 Εἰσελθόντος δὲ αὐτοῦ εἰς Καφαρναοὺμ | προσῆλθεν αὐτῷ
+    ἑκατόνταρχος — a genitive participle with its own genitive subject.
+
+    This one also shows the precedence order doing real work: the participle
+    is aorist and the main verb is an aorist indicative, so without rule 2 the
+    attendant-circumstance rule (7) would coordinate it as Series."""
+    segs, _ = passage("Matthew 8:5")
+    i = opened_by(segs, "εἰσέρχομαι")
+    assert call_for(segs, i, precedes=True) == ("Tmp", False, True)
+    tree = build_document(segs, confident_only=True)["forest"]
+    assert len(tree) == 1 and tree[0]["rel"] == "Tmp"
+    assert tree[0]["prominent"] == 1      # star on the main clause
+    assert tree[0]["children"][0] == {"kind": "prop", "ref": "p1"}
+
+
+def test_participle_rule_3_future_participle_is_purpose():
+    """Acts 8:27 … ὃς ἐληλύθει | προσκυνήσων εἰς Ἰερουσαλήμ — "future
+    adverbial participles always belong here"."""
+    segs, _ = passage("Acts 8:27")
+    i = opened_by(segs, "προσκυνέω")
+    assert load_words()[segs[i].opener.index].tense == "F"
+    assert call_for(segs, i, precedes=False) == ("MEd", False, True)
+
+
+def test_participle_rule_4_legon_rides_with_its_dicendi_clause():
+    """Matt 9:18 … προσεκύνει αὐτῷ | λέγων | ὅτι … — the redundant participle
+    of saying joins its clause as the WAY the saying happened; the Ft/In over
+    the speech content is the dicendi machinery's own join, not a second
+    bracket around the participle."""
+    segs, _ = passage("Matthew 9:18")
+    i = opened_by(segs, "λέγω")
+    assert call_for(segs, i, precedes=False) == ("WEd", False, True)
+
+
+def test_participle_rule_7_attendant_circumstance_coordinates():
+    """Matt 2:8 Πορευθέντες | ἐξετάσατε ἀκριβῶς περὶ τοῦ παιδίου — aorist
+    participle before an aorist imperative: the chart's five-feature test.
+    Coordinate, so the bracket has no star."""
+    segs = segment(561, 566)
+    i = opened_by(segs, "πορεύομαι")
+    assert call_for(segs, i, precedes=True) == ("Ser", False, True)
+    doc = build_document(segs, confident_only=True)
+    assert doc["forest"] == [SER({"kind": "prop", "ref": "p1"},
+                                {"kind": "prop", "ref": "p2"})]
 
 
 def test_no_document_ever_carries_flags():

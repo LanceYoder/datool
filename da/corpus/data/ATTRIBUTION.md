@@ -11,10 +11,11 @@ copied unmodified from <https://github.com/morphgnt/sblgnt>
 
 The English reference layers:
 
-- `bsb-nt.tsv` (verse text) and `bsb-word-english.tsv` (per-word contextual
-  English with BSB word-order keys) are generated from the Berean Standard
-  Bible and its interlinear tables, <https://bereanbible.com> — dedicated to
-  the public domain.
+- `bsb-nt.tsv` (verse text), `bsb-word-english.tsv` (per-word contextual
+  English with BSB word-order keys), and `bsb-structure.tsv` (paragraph,
+  section-heading, and quotation marks per word) are generated from the
+  Berean Standard Bible and its interlinear tables,
+  <https://bereanbible.com> — dedicated to the public domain.
 - `glosses.tsv` is generated from TBESG — the Translators Brief lexicon of
   Extended Strongs for Greek, STEPBible.org data by Tyndale House, Cambridge
   (CC BY 4.0, <https://github.com/STEPBible/STEPBible-Data>).

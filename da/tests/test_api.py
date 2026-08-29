@@ -156,6 +156,34 @@ class TestAnalysisCrud:
         assert created.json()["document"] == legacy
         assert created.json()["passageRef"] == "John 1:1"
 
+    def test_create_with_text_flow_round_trips(self, client, john_1_1):
+        """A document carrying the student's Text Flow saves and reads back."""
+        document = small_document(john_1_1)
+        start, end = john_1_1.start, john_1_1.end
+        document["textFlow"] = {
+            "lines": [
+                {"start": start, "end": start + 4, "indent": 0},
+                {"start": start + 5, "end": end, "indent": 1,
+                 "embedded": [
+                     {"start": start + 6, "end": start + 7, "style": "paren"}]},
+            ],
+        }
+        created = client.post("/api/analyses", {"document": document}, format="json")
+        assert created.status_code == 201
+        pk = created.json()["id"]
+        assert created.json()["document"] == document
+        assert client.get(f"/api/analyses/{pk}").json()["document"] == document
+
+        # An invalid flow is refused, like any other document problem.
+        bad = client.put(
+            f"/api/analyses/{pk}",
+            {"document": dict(document, textFlow={"lines": []})},
+            format="json",
+        )
+        assert bad.status_code == 400
+        assert any("textFlow" in e for e in bad.json()["errors"])
+        assert client.get(f"/api/analyses/{pk}").json()["document"] == document
+
     def test_create_invalid_document_400(self, client, john_1_1):
         document = small_document(john_1_1)
         document["forest"][0]["rel"] = "Zorp"
@@ -212,12 +240,22 @@ class TestFirstPass:
         body = response.json()
         document, alignment = body["document"], body["alignment"]
         assert document["schemaVersion"] == 2
-        # Confident-only analysis: John 1:1 is three καί-joined clauses, and
-        # a καί join is a judgment call — everything stays loose here.
+        # Minimal analysis. Since the expert's re-tier a καί Series is a sure
+        # DEFAULT, not a judgment call left loose, so John 1:1's three
+        # καί-joined clauses come back connected — left-nested, one binary
+        # bracket per join — exactly as the full analysis draws them.
         assert document["propositions"]
-        assert document["forest"] == [
-            {"kind": "prop", "ref": p["id"]} for p in document["propositions"]
-        ]
+        ids = [p["id"] for p in document["propositions"]]
+        assert len(ids) == 3
+        prop = [{"kind": "prop", "ref": i} for i in ids]
+        assert document["forest"] == [{
+            "kind": "bracket", "rel": "Ser", "prominent": None,
+            "children": [
+                {"kind": "bracket", "rel": "Ser", "prominent": None,
+                 "children": [prop[0], prop[1]]},
+                prop[2],
+            ],
+        }]
         assert alignment is not None
         assert alignment["ref"] == "John 1:1"
         assert alignment["exact"] is True

@@ -14,8 +14,8 @@ a spreadsheet. Scoring is identical:
   GROUPED   same child spans, different relationship/star;
   missed    no bracket with that grouping at all.
 
-The pinned expectations ARE the current scorecard — DA1 8/13, DA2 1/5,
-DA3 6/6 (the connective-driven chain), DA4 1/6, Acts 2:37–41 3/15 — so any
+The pinned expectations ARE the current scorecard — DA1 8/13, DA2 2/5,
+DA3 5/6 (the connective-driven chain), DA4 1/6, Acts 2:37–41 4/15 — so any
 classifier change that loses a currently-correct call fails loudly, and any
 improvement shows up as a deliberate expectation update. The known
 divergences, in comments, are the discussion list for improving stage 2.
@@ -142,19 +142,32 @@ ACTS = B("top-sr", "SR", 1,                           # far-left 'S' / 'R*'
 
 # The pinned Acts scorecard: narrative is the classifier's weak suit. What
 # matches is again the connective/participle-driven tail of v40 — the λέγων
-# W/Ed exactly (reversed, star on the Ed side) and both v40/v37 series; the
-# drawing's Tmp on Ἀκούσαντες comes out grouped (the tool reads the aorist
-# participle as W/Ed). Binary coordinate chaining is what earns ser-38bc: a
-# run of τε/δέ/asyndeton clauses now nests to the left, one bracket per join,
-# so the pairs the student drew can appear instead of one flat packet. Still
-# missed: the S/R speech frames have no morphological signal (so sr-37,
-# prog-38 and the packet edges around 38a never form), the tool splits v39 at
-# τοῖς εἰς μακράν rather than ὅσους, reads οὖν (v41) as Inf where the student
-# draws C/E, and over-splits ὡσεὶ τρισχίλιαι in v41.
+# W/Ed exactly (reversed, star on the Ed side; chart rule 4 keeps the
+# redundant participle of saying riding with its dicendi clause) and both
+# v40/v37 series. Binary coordinate chaining is what earns ser-38bc: a run of
+# τε/δέ/asyndeton clauses nests to the left, one bracket per join, so the
+# pairs the student drew can appear instead of one flat packet. tmp-37 is
+# GAINED by the English-cue layer: chart rule 7 (aorist participle before an
+# aorist indicative) coordinates Ἀκούσαντες as attendant-circumstance Series,
+# and its simplified test cannot tell "when they heard" from "they heard and
+# …" — but the BSB writes "When the people heard this", and the cue outranks
+# rules 5–11. The student's Temporal reading now matches exactly.
+# ftin-40 is GAINED by SECTIONING (docs/sectioning.md): the speech of v40
+# opens a quotation, which is a hard seam — and by the expert's ruling the
+# speech verb rides WITH the speech, so the seam falls before the dicendi
+# sentence (… καὶ παρεκάλει αὐτοὺς λέγων·) rather than between it and
+# "Σώθητε …". That dicendi sentence and its speech are therefore one section,
+# and the Ft/In over the speech content scopes to it alone instead of to
+# everything from v37 — exactly the bracket the drawing puts there.
+# Still missed: the S/R speech frames have no morphological signal, the tool
+# splits v39 at τοῖς εἰς μακράν rather than ὅσους, reads οὖν (v41) as Inf
+# where the student draws C/E — the expert's ruling makes that Inference sure
+# — and it over-splits ὡσεὶ τρισχίλιαι in v41.
 IMAGE_CASES = [
     ("Acts 2:37–41", ACTS_ROWS, ACTS, {
-        "exact": {"ser-37bc", "ser-38bc", "wed-40", "ser-40ab"},
-        "grouped": {"tmp-37"},
+        "exact": {"ser-37bc", "ser-38bc", "wed-40", "ser-40ab", "tmp-37",
+                  "ftin-40"},
+        "grouped": {"sr-37", "prog-38"},
     }),
 ]
 
@@ -171,17 +184,25 @@ EXPECTED = {
         "grouped": {"v5-inf"},
     },
     "Philippians 1:9–11": {
-        "exact": {"med-10a"},
-        # ftin-9: the student reads the ἵνα as epexegetical (Ft/In), the tool
-        # as purpose (M/Ed). The 10b-11b tail nests differently throughout.
-        "grouped": {"ftin-9"},
+        # ftin-9 GAINED by the expert's ἵνα conditional rule: προσεύχομαι is
+        # an asking verb, so "καὶ τοῦτο προσεύχομαι ἵνα …" states the CONTENT
+        # of the prayer (Ft/In) — exactly the student's reading — instead of
+        # the old flat purpose default. The 10b-11b tail still nests
+        # differently throughout.
+        "exact": {"med-10a", "ftin-9"},
+        "grouped": set(),
     },
     "1 Thessalonians 1:6–10": {
-        # The connective-driven chain is fully correct: two γάρ Grounds, both
-        # ὥστε C/E pairs, the ἀλλά -/+, and the participle W/Ed.
-        "exact": {"grnd-outer", "grnd-inner", "ce-67", "wed-6", "ce-8",
-                  "negpos"},
-        "grouped": set(),
+        # The connective-driven chain: two γάρ Grounds, both ὥστε C/E pairs
+        # (both are ὥστε + infinitive, so both stay sure), and the ἀλλά -/+.
+        # wed-6 LOST to exact by the participle ruling: δεξάμενοι is an aorist
+        # participle FOLLOWING its clause, a case the Wallace/Keating chart
+        # gives no rule for, so it lands in the residual tier (Tmp) where the
+        # student reads means (W/Ed). The grouping still matches — the analyst
+        # re-labels one bracket. Flagged for the expert as the residual tier's
+        # main cost.
+        "exact": {"grnd-outer", "grnd-inner", "ce-67", "ce-8", "negpos"},
+        "grouped": {"wed-6"},
     },
     "Ephesians 1:13–14": {
         "exact": {"ftin-13ab"},
@@ -284,40 +305,106 @@ def test_relationing_scorecard(filename, ref):
                       alignment.end, EXPECTED[ref])
 
 
-# Confident-only mode: what entry actually ships. Every surviving bracket
-# must be one the student drew EXACTLY (relationship, star, and grouping) —
-# 100%% precision is the mode's contract, pinned per passage. The counts are
-# the recall side of the bargain: what determinism leaves for the human.
-CONFIDENT_KEPT = {
-    "1 John 1:5–7": 1,             # the ὡς comparison 7a/7b
-    "Philippians 1:9–11": 0,       # the ἵνα is a reading — left alone
-    "1 Thessalonians 1:6–10": 2,   # ὥστε C/E and οὐ … ἀλλά -/+
-    "Ephesians 1:13–14": 0,
-    "Acts 2:37–41": 0,             # narrative: nothing is deterministic
+# Minimal mode: what entry actually ships.
+#
+# The old contract here was "every surviving bracket is one the student drew
+# EXACTLY" — 100% precision against the diagrams. The DA expert's re-tier
+# RETIRES that contract: minimal now carries sensible defaults (a reading
+# right ~80%+ of the time) as well as grammar-forced calls, and a default is
+# by definition something a particular student may read otherwise. What
+# replaces it is a pinned scorecard, so every classifier change still has to
+# be argued for bracket by bracket:
+#
+#   kept          how many brackets minimal draws (the recall side);
+#   exact         the student brackets minimal reproduces exactly;
+#   contradicts   the student brackets minimal groups the same way but
+#                 labels differently — the price of the defaults, named.
+#
+# Everything else minimal draws is structure the student's diagram simply
+# does not pair (usually because the tool's segmentation differs there).
+MINIMAL_SCORECARD = {
+    "1 John 1:5–7": {
+        "kept": 13,
+        "exact": {"v5-ftin", "v5-ftin-inner", "v5-ser", "v6-cnde", "v6-ser",
+                  "v7-cnde", "v7-cmp", "v7-ser"},
+        # 5d-5e: the student hears "and THEREFORE" (∴); the καί says Series.
+        "contradicts": {"v5-inf"},
+    },
+    "Philippians 1:9–11": {
+        # Only the ἵνα content bracket: the 10b-11b tail is built out of
+        # appositions and implicit-proposition PPs, which stay unruled and
+        # therefore out of minimal — and their uncertainty cascades upward.
+        "kept": 1,
+        "exact": {"ftin-9"},
+        "contradicts": set(),
+    },
+    "1 Thessalonians 1:6–10": {
+        "kept": 10,
+        "exact": {"grnd-outer", "grnd-inner", "ce-67", "ce-8", "negpos"},
+        # δεξάμενοι: residual-tier Tmp where the student reads W/Ed.
+        "contradicts": {"wed-6"},
+    },
+    "Ephesians 1:13–14": {
+        # The relative clause of 13b (ἐν ᾧ καὶ πιστεύσαντες …) is the only
+        # sure join; the student's own bracket there spans different rows.
+        "kept": 1,
+        "exact": set(),
+        "contradicts": set(),
+    },
+    "Acts 2:37–41": {
+        "kept": 12,
+        # tmp-37 GAINED by the English cue: the BSB's "When the people heard
+        # this" overrides the attendant-circumstance Series of chart rule 7.
+        # ftin-40 GAINED by SECTIONING: the v40 quote seam rides back over the
+        # dicendi sentence it belongs to, so the speech's Ft/In scopes to that
+        # introduction (40a–40c | 40d) instead of to everything since v37.
+        "exact": {"ser-37bc", "ser-38bc", "wed-40", "ser-40ab", "tmp-37",
+                  "ftin-40"},
+        # The narrative frames: the tool coordinates where the drawing reads
+        # Situation–Response and Progression.
+        "contradicts": {"sr-37", "prog-38"},
+    },
 }
 
 
-def _assert_confident_subset(tree, row_spans, start, end, ref):
-    student_exact = {
-        (b["rel"], b["star"], b["kids"])
-        for b in _student_brackets(tree, row_spans, [])
-    }
-    doc = build_document(segment(start, end), confident_only=True)
-    kept = _tool_brackets(doc)
+def _assert_minimal_scorecard(tree, row_spans, start, end, ref):
+    student = _student_brackets(tree, row_spans, [])
+    by_exact = {(b["rel"], b["star"], b["kids"]): b["name"] for b in student}
+    by_grouping = {b["kids"]: b["name"] for b in student}
+
+    segments = segment(start, end)
+    kept = _tool_brackets(build_document(segments, confident_only=True))
+    full = {(b["rel"], b["star"], b["kids"])
+            for b in _tool_brackets(build_document(segments))}
+
+    exact, contradicts = set(), set()
     for b in kept:
-        assert (b["rel"], b["star"], b["kids"]) in student_exact, (
-            f"confident mode kept a bracket the student did not draw: {b}"
-        )
-    assert len(kept) == CONFIDENT_KEPT[ref], (
-        f"confident mode kept {len(kept)} brackets, expected "
-        f"{CONFIDENT_KEPT[ref]}"
+        key = (b["rel"], b["star"], b["kids"])
+        # Tiering invariant: minimal is a SUBSET of Full, never its own tree.
+        assert key in full, f"minimal drew a bracket Full does not: {b}"
+        if key in by_exact:
+            exact.add(by_exact[key])
+        elif b["kids"] in by_grouping:
+            contradicts.add(by_grouping[b["kids"]])
+
+    expected = MINIMAL_SCORECARD[ref]
+    assert len(kept) == expected["kept"], (
+        f"minimal kept {len(kept)} brackets, expected {expected['kept']}"
+    )
+    assert exact == expected["exact"], (
+        f"minimal's exact set changed: gained {sorted(exact - expected['exact'])}, "
+        f"lost {sorted(expected['exact'] - exact)}"
+    )
+    assert contradicts == expected["contradicts"], (
+        f"minimal now contradicts {sorted(contradicts)}, "
+        f"expected {sorted(expected['contradicts'])}"
     )
 
 
 @pytest.mark.parametrize(
     "filename,ref", [(c[0], c[1]) for c in CASES], ids=[c[0][:21] for c in CASES]
 )
-def test_confident_mode_never_contradicts_the_student(filename, ref):
+def test_minimal_tier_scorecard(filename, ref):
     rows = student_rows(filename)
     alignment = align(" ".join(rows))
     assert alignment is not None and alignment.ref == ref
@@ -326,17 +413,16 @@ def test_confident_mode_never_contradicts_the_student(filename, ref):
         [alignment.start] + bounds,
         [b - 1 for b in bounds] + [alignment.end],
     ))
-    _assert_confident_subset(STUDENT_TREES[ref], row_spans, alignment.start,
-                             alignment.end, ref)
+    _assert_minimal_scorecard(STUDENT_TREES[ref], row_spans, alignment.start,
+                              alignment.end, ref)
 
 
 @pytest.mark.parametrize(
     "ref,row_spans,tree,expected", IMAGE_CASES, ids=[c[0] for c in IMAGE_CASES]
 )
-def test_confident_mode_never_contradicts_the_student_image(
-        ref, row_spans, tree, expected):
-    _assert_confident_subset(tree, row_spans, row_spans[0][0],
-                             row_spans[-1][1], ref)
+def test_minimal_tier_scorecard_image(ref, row_spans, tree, expected):
+    _assert_minimal_scorecard(tree, row_spans, row_spans[0][0],
+                              row_spans[-1][1], ref)
 
 
 @pytest.mark.parametrize(

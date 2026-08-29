@@ -150,6 +150,33 @@ stored as the pids that begin one (the first proposition never appears: the
 document already opens inside its first block). Blocks are never proposed
 automatically; the editor's right-edge strip adds and removes them by hand.
 
+A document may also carry `"textFlow"` — the student's **Text Flow**, the passage
+written out one clause per line, dependent clauses indented under what they modify,
+embedded clauses marked in place. It is a pedagogical reading kept alongside the
+analysis, not a second copy of it:
+
+```jsonc
+{
+  "textFlow": {
+    "lines": [
+      { "start": 124771, "end": 124772, "indent": 0 },
+      { "start": 124773, "end": 124777, "indent": 1,
+        "embedded": [ { "start": 124774, "end": 124775, "style": "paren" } ] },
+      { "start": 124778, "end": 124788, "indent": 2 }
+    ]
+  }
+}
+```
+
+Invariants: `lines` holds at least one line; every `start`/`end` is an inclusive
+corpus range inside the corpus; the lines are **contiguous and ordered** — each
+line begins one word after the previous line ends, so the flow is one gapless run
+of words; `indent` is an integer 0–8; each `embedded` range lies inside its own
+line, the ranges are strictly ordered and non-overlapping, and `style` is `"paren"`
+or `"bracket"`. The flow's range is its OWN — the student may flow a wider or
+narrower stretch than the propositions cover, so nothing cross-checks the two.
+Legacy v1 documents simply carry no `textFlow`.
+
 Star walk: root `prominent: 1` → the Series packet → coordinate FAN, so the walk
 continues into each member. Main point: **6d + 6e jointly** ("we are lying and do
 not practice the truth") — matching the student's analysis. Every coordinate fans,
@@ -205,16 +232,35 @@ Redistributing the files is how MorphGNT itself is distributed.
 
 > **Status: stage 1 ON; stage 2 level is the USER'S choice at creation.**
 > The Minimal/Full toggle on the home page (API: `maximal` on
-> `/api/first-pass`) picks between confident-only mode — ONLY the
-> deterministic connections, the `_sure` calls in `da/treebuild.py`, each
-> justified by an explicit marker plus golden-diagram evidence — and the
-> full classifier, every judgment call included. Minimal is the default.
-> Both modes are golden-tested; every diagram added to `examples/`
-> automatically audits the sure-call table
-> (test_confident_mode_never_contradicts_the_diagram). Raw (unaligned)
-> pastes arrive as disconnected punctuation-split roots: no morphology, no
-> proposed structure. Review flags never reach documents (confidence
-> labeling was removed from the product).
+> `/api/first-pass`) picks between minimal mode — the `_sure` calls in
+> `da/treebuild.py` — and the full classifier, every judgment call included.
+> Minimal is the default. Both modes are golden-tested; every diagram added
+> to `examples/` audits the tiering
+> (`test_minimal_tier_against_the_diagram`). Raw (unaligned) pastes arrive
+> as disconnected punctuation-split roots: no morphology, no proposed
+> structure. Review flags never reach documents (confidence labeling was
+> removed from the product).
+
+**What "minimal" means (the DA expert's re-tier).** `_sure` means exactly one
+thing: *this join belongs in the minimal analysis*. It covers two kinds of
+call, not one:
+
+- calls the **grammar forces** — an explicit subordinator (ἐάν, ὅταν, ὥστε +
+  infinitive, ὡς), οὐ … ἀλλά, μέν … δέ, a preposition + articular infinitive;
+- **sensible defaults** — readings a competent analyst starts from and that
+  the rule gets right roughly 80%+ of the time: δέ → Series, καί → Series,
+  asyndeton → Series, οὖν → Inference, ἵνα → purpose (or content after an
+  asking verb), causal ὅτι → Ground, a relative clause → Fact–Interpretation,
+  an aorist participle before its clause → Temporal.
+
+A default that is usually right is worth drawing: re-labelling one bracket is
+cheaper for the analyst than drawing the whole structure by hand. Only
+**genuinely undecidable** joins stay out of minimal — a bare ἀλλά, an
+apposition, an implicit-proposition prepositional phrase, an unknown
+subordinator, and the speculative groupings (which clauses of an asyndetic run
+belong together). `build_document(confident_only=True)` keeps the maximal
+all-sure subtrees and dissolves everything else into disconnected roots; the
+API contract is unchanged, and Full still connects everything into one tree.
 
 No ML/LLM in v1. The honest 80/20: relations signaled by explicit connectives are the
 easy 80%; the rest is the user's interpretive work, and the pipeline's job there is to
@@ -243,8 +289,10 @@ propose a structurally valid default and get out of the way.
   comma-preceded article apposition (Eph 1:13 τὸ εὐαγγέλιον…), and the
   attributive article + preposition construction (Phil 1:11 τὸν διὰ Ἰησοῦ
   Χριστοῦ) split into their own propositions, classified by preposition
-  (εἰς/πρός→M-Ed, ἐν→Loc, διά/ἐκ/ἀπό→G, ἕως/ἄχρι/μέχρι→T; appositions→Ft-In),
-  always review-flagged. Over-splits are repaired with the editor's merge.
+  (εἰς/πρός→M-Ed, ἐν→Loc, διά/ἐκ/ἀπό→G, ἕως/ἄχρι/μέχρι→T; appositions→Ft-In).
+  These stay OUT of the minimal analysis — the expert has not ruled on them,
+  and which proposition a bare phrase implies is the interpretive call.
+  Over-splits are repaired with the editor's merge.
 
 Each segment records *why* it opened (connective lemma, relative, participle,
 infinitive, prepositional phrase, apposition, asyndeton) — that metadata
@@ -260,37 +308,125 @@ by construction):
 - Connective → relationship table (our own compilation from standard grammar — **not**
   Beale's copyrighted lexicon):
 
-  | Signal | Relationship | Confidence |
+  | Signal | Relationship | In minimal? |
   |---|---|---|
-  | γάρ | Ground `G` | confident |
-  | οὖν, διό, ἄρα | Inference `∴` | confident |
-  | ἵνα, ὅπως | Means–End `M/Ed` | confident |
-  | ὥστε | Cause–Effect `C/E` | confident |
-  | ἐάν, εἰ | Conditional `C?/E` | confident |
-  | ὅταν, ὅτε | Temporal `T` | confident |
-  | ὅπου, οὗ | Locative `L` | confident |
-  | καθώς, ὥσπερ, ὡς | Comparison `//` | confident |
-  | οὐ … ἀλλά | Negative–Positive `−/+` | confident |
-  | μέν … δέ | Alternative `Alt` | confident |
-  | καί joining clauses | Series `S` | **review** |
-  | δέ | Series/Alt/Adv → best guess | **review** |
-  | ὅτι after λέγω/οἶδα/γινώσκω-class | Fact–Interpretation `Ft/In` | **review** |
-  | ὅτι otherwise | Ground `G` | **review** |
-  | adverbial participle | Way `W` (or `T`) | **review** |
-  | asyndeton | Series `S` | *(unflagged at discourse level, see below)* |
+  | γάρ | Ground `G` | yes — grammar |
+  | οὖν, διό, ἄρα, ὅθεν, τοίνυν | Inference `∴` | yes — grammar (mid- *and* inter-sentence) |
+  | ἵνα, ὅπως — English cue "that" | Fact–Interpretation `Ft/In` (content) | yes — cue |
+  | ἵνα, ὅπως — English cue "so that"/"in order that" | Means–End `M/Ed` (purpose) | yes — cue |
+  | ἵνα, ὅπως after an asking verb (ἐρωτάω, αἰτέω, παρακαλέω, δέομαι, προσεύχομαι, εὔχομαι, ἀξιόω) | Fact–Interpretation `Ft/In` (content of the request) | yes — default |
+  | ἵνα, ὅπως otherwise | Means–End `M/Ed` (purpose) | yes — default |
+  | ὥστε **+ infinitive** | Cause–Effect `C/E` | yes — grammar |
+  | ὥστε + finite verb, English cue "so that"/"as a result" | Cause–Effect `C/E` | yes — cue |
+  | ὥστε + finite verb, English cue "therefore"/"so then" | Inference `∴` | yes — cue |
+  | ὥστε + finite verb, no cue (incl. sentence-initial ∴-use) | Cause–Effect `C/E` | no — best guess |
+  | ἐάν, εἰ | Conditional `C?/E` | yes — grammar |
+  | ὅταν, ὅτε, ἕως, πρίν … | Temporal `T` | yes — grammar |
+  | ὅπου, οὗ | Locative `L` | yes — grammar |
+  | καθώς, ὥσπερ, καθάπερ, ὡσεί | Comparison `//` | yes — grammar |
+  | ὡς | Comparison `//`, or Temporal `T` / `Ft/In` when the English cue says so | yes |
+  | οὐ … ἀλλά | Negative–Positive `−/+` | yes — grammar |
+  | bare ἀλλά | Negative–Positive `−/+` | **no — undecidable** |
+  | μέν … δέ | Alternative `Alt` | yes — grammar |
+  | δέ without μέν | Series `S` | yes — default |
+  | καί, οὐδέ, τε joining clauses | Series `S` | yes — default |
+  | asyndeton (within or between sentences) | Series `S` | yes — default |
+  | verbum dicendi + `·` opening speech | Fact–Interpretation `Ft/In` | yes — default (re-mark S/R by hand) |
+  | ὅτι — English cue "that" / "because" | `Ft/In` / Ground `G` (the primary test) | yes — cue |
+  | ὅτι with no English cue, after λέγω/οἶδα/γινώσκω-class | Fact–Interpretation `Ft/In` | yes — grammar |
+  | ὅτι otherwise (causal) | Ground `G` | yes — default |
+  | relative clause | Fact–Interpretation `Ft/In` | yes — default (nearest-clause scope) |
+  | preposition + articular infinitive (εἰς τό, ἐν τῷ, διὰ τό …) | per the table | yes — grammar |
+  | other adverbial infinitive | Means–End `M/Ed` | yes — default |
+  | adverbial participle | English cue, else `docs/participle-rules.md` | yes — every tier |
+  | apposition, implicit-proposition PP | Fact–Interpretation / by preposition | **no — unruled** |
+  | unknown subordinator or coordinator | Series `S` | **no** |
 
 - Between sentences: everything is connected into **one complete tree**. Sentence-initial
   connectives classify via the table; asyndeton and bare καί default to a Series chain,
-  **unflagged** — discourse-level defaults are ordinary brackets the user re-labels as
-  their interpretation forms.
-- Ambiguous connectives (the `review` rows) get a best-guess label plus a **`review`
-  flag**, rendered visually distinct until the user confirms (one click) or re-labels.
+  nesting to the left, one binary bracket per join.
+- The internal `review` markers are private bookkeeping only: they never reach a
+  document, and the minimal/Full split is driven entirely by `_sure`.
+
+**Sectioning — big–small–big** (`docs/sectioning.md`, built). The sentence
+fold does not run over the whole passage. By the expert's ruling the passage
+is first chunked into its major logical **sections**, each section is folded
+internally, and only then are the section packets folded together — everything
+inside a section connects before the section connects outward. A section is a
+run of WHOLE sentences, so stage 1 and within-sentence assembly are untouched.
+Seams are scored from a weighted indicator table (`SEAM_WEIGHTS`, threshold 1,
+one entry per indicator so adding one is a line) read off the BSB structure
+marks (`da/corpus/structure.py`): a section **heading** and both bounds of a
+**quotation** are hard seams (weight 2), a **paragraph** break and
+sentence-initial **οὖν** strong ones (weight 1), and the **English period** is
+the soft vote, detected but weighted 0 until it is calibrated. The critical
+ruling is that *the speech verb rides with its speech*: a seam before a
+quotation falls BEFORE the dicendi sentence introducing it (the `VERBA_DICENDI`
++ `·` machinery, λέγων included), never between the two, and a quotation
+opening mid-sentence never splits that sentence. One further seam is
+structure-dependent and comes after the within-section fold: a sentence-level
+γάρ Ground whose support **develops** — a coordinate or a Fact–Interpretation
+inside it — is section-sized and is promoted to a section of its own. The
+section fold then reuses `_sentence_join` unchanged, the new section's first
+sentence deciding the relationship (γάρ → Ground, οὖν → Inference, δέ/καί/
+asyndeton → Series, a dicendi close before a speech section → Ft/In), with its
+normal tiers: sectioning changes the SHAPE of the minimal analysis rather than
+the tier of any join, since a within-fold join cannot cross a seam by
+construction. The sections are also emitted as the document's `sections`
+colour blocks, so the division the analyzer read is visible in the editor
+immediately. Corpus-wide the NT's 10,523 sentences fall into 4,575 sections
+(2.3 sentences each) and every chapter still builds and validates in both
+modes.
+
+**The English-cue layer** (`docs/english-cue-rules.md`, built) sits over the
+ambiguous triggers. Greek connectives and participles are systematically
+ambiguous, but the aligned BSB translation says which sense the context
+carries — the translators already did the interpretive work. For each such
+segment `da/treebuild.py` assembles its aligned English in BSB word order
+(`segment_english`, grouping by verse since the order keys only compare within
+one) and matches the LEADING phrase against the cue table (`leading_cue`,
+longest-first and word-boundary anchored); the connective's own cell is a
+fallback probe (`opener_english`) for single-word connectives whose segment
+opens with something else. It applies to **ὅτι** (cue primary — "that" → Ft/In,
+"because"/"for" → Ground — with the verbum-dicendi heuristic as the fallback
+for the direct speech the BSB leaves unmarked), **adverbial participles** (the
+cue outranks the tense/position defaults, chart rules 5–11, but not the
+grammar-forced rules 1–4), **ὥστε + finite verb** (out of minimal by the
+ruling, RESURRECTED to a sure C/E by "so that"/"as a result" or to a sure
+Inference by "therefore"), **ἵνα/ὅπως** (the cue overrides the asking-verb
+list) and **ὡς** alone among the comparatives ("when" → Temporal, "that" →
+Ft/In). Cue-derived calls are `_sure`: a translator's reading is exactly the
+sensible-default tier. A contrastive "but" is detected but deliberately not
+acted on, and implicit-proposition PPs take no cue — both are open questions.
+A segment with no usable English falls back to the grammar-only rules
+unchanged. Corpus-wide the layer relabels 2.3% of the brackets Full draws;
+against the worked diagrams it gains Acts 2:37's Temporal on Ἀκούσαντες.
+
+**Adverbial participles** get their own classifier — the Wallace/Keating chart as an
+ordered rule list (`docs/participle-rules.md`, source `documents/Adverbial
+Participles.pdf`): καίπερ → Adversative, genitive absolute → Temporal, future →
+Means–End, λέγων introducing speech → rides with its dicendi clause as `W/Ed`,
+then **the English cue**, then perfect or οὐ-negated → Ground, aorist before an aorist
+imperative/indicative → attendant-circumstance Series, aorist before its clause →
+Temporal, present after → `W/Ed`, present before → Temporal, residual → Temporal.
+Every tier joins the minimal analysis. "Before/after its clause" is the segment's
+position in the shift-reduce pass: held and attaching forward = before, attaching
+backward to the stack = after.
 
 **Golden tests:** the course materials contain worked analyses — Heb 4:9–12 (Five Step
 walkthrough) and 1 John 1:5–10 (`examples/da1.xlsx`). The first-pass test suite runs
-those passages and compares output structure against the documented answers, asserting
-both what must match (explicit-connective calls) and what is allowed to differ
-(review-flagged judgment calls).
+those passages and compares output structure against the documented answers. Both are
+fully connective-driven, so their minimal analysis is now identical to their full one.
+The four student spreadsheets and the transcribed hand-drawn diagrams carry pinned
+scorecards in `da/tests/test_relationing_golden.py` and `test_tree_golden.py`: how many
+brackets each mode draws, which of the student's it reproduces exactly, and which
+defaults it labels differently — so every classifier change has to be argued for
+bracket by bracket. `da/tests/test_english_cues.py` pins the cue layer the same way:
+every expectation is a real NT verse whose BSB English actually carries the cue, and
+`da/tests/test_sectioning.py` pins sectioning at three levels — the seam scorer on its
+own (marks in, seams out), the detection against real passages with the BSB marks
+asserted beside the seam they cause, and the consequences (the promotion pass, the
+section fold, the no-join-spans-a-seam invariant, the colour blocks).
 
 ## 6. Editor foundation: ProseMirror via Tiptap
 
