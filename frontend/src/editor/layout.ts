@@ -371,9 +371,12 @@ export function layoutBrackets(
 // Dots — the handles the UI hangs interaction off.
 
 export interface DotGeom {
-  /** Stable across a layout pass: 'prop:<pid>' or 'bracket:<preorderIndex>'. */
+  /**
+   * Stable across a layout pass: 'prop:<pid>', 'bracket:<preorderIndex>' or
+   * 'hole:<preorderIndex>'.
+   */
   id: string;
-  kind: 'prop' | 'bracket';
+  kind: 'prop' | 'bracket' | 'hole';
   x: number;
   y: number;
   /**
@@ -410,11 +413,14 @@ export function layoutDots(
   const { columns } = computeColumns(forest);
   const dots: DotGeom[] = [];
   let bracketIndex = 0;
+  let holeIndex = 0;
 
   // `loose` is true for a unit hanging from nothing: a forest root, or one
   // an edit left in a hole. Both draw the same stub, and both are ready to be
   // picked up and connected.
-  const visit = (node: TreeNode, loose: boolean): void => {
+  // `hangX` is where the tick pointing AT this node stops, for a hole: the
+  // end of the hanging line, and where its dot belongs.
+  const visit = (node: TreeNode, loose: boolean, hangX: number | null): void => {
     if (node.kind === 'prop') {
       const y = rowY(rows, node.ref);
       const dot: DotGeom = {
@@ -433,7 +439,21 @@ export function layoutDots(
     }
 
     if (isHole(node)) {
-      for (const child of node.children) visit(child, true);
+      // The loose end of the tick that points here is a handle: the hole can
+      // be picked up and connected like any other unit, which is how what
+      // fell out gets back into the tree.
+      const index = holeIndex;
+      holeIndex += 1;
+      if (hangX !== null) {
+        dots.push({
+          id: `hole:${index}`,
+          kind: 'hole',
+          x: hangX,
+          y: connectY(node, rows),
+          root: true,
+        });
+      }
+      for (const child of node.children) visit(child, true, null);
       return;
     }
 
@@ -459,9 +479,9 @@ export function layoutDots(
 
     // A bracket's children hang from IT, so they are not loose — except what
     // sits in a hole, which the branch above has already handled.
-    for (const child of node.children) visit(child, false);
+    for (const child of node.children) visit(child, false, x + HANG_W);
   };
 
-  for (const root of forest) visit(root, true);
+  for (const root of forest) visit(root, true, null);
   return dots;
 }

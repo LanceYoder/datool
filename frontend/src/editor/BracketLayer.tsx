@@ -514,6 +514,9 @@ export default function BracketLayer({
           // units that are currently disconnected, for styling and tests.
           const classes = ['dot-group'];
           if (d.root) classes.push('root');
+          // The loose end of a hanging relationship: a handle like any other,
+          // marked so it reads as an end waiting for something.
+          if (d.kind === 'hole') classes.push('loose-end');
           if (selected) classes.push('selected');
           if (shaking) classes.push('shake');
           return (

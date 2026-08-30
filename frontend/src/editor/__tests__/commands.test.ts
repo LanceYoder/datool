@@ -12,6 +12,7 @@ import {
   deleteRelationship,
   disconnectRoot,
   findBrackets,
+  findHoles,
   findPropositionPos,
   flipStar,
   mergeBelow,
@@ -849,5 +850,39 @@ describe('deleteRelationship', () => {
     ed.commands.undo();
     ed.commands.undo();
     expect(ed.getJSON()).toEqual(before);
+  });
+});
+
+describe('a hanging end connects like any other unit', () => {
+  it('picks the hole up and brackets it with its neighbour', () => {
+    const doc = firstJohn16(); // CndE[ FtIn[p1, Adv[p2,p3]], Ser[p4,p5] ]
+    const ed = open(doc);
+    deleteRelationship(ed, bracketPos(ed, 'Adv')); // FtIn[p1, hole[p2,p3]]
+
+    const holePos = findHoles(ed.state.doc)[0]!;
+    const pos = connectUnits(ed, propPos(ed, 'p1'), holePos, TAXONOMY, 'Grnd');
+    expect(pos).not.toBeNull();
+    ed.state.doc.check();
+
+    // p1 and the loose group are bracketed together; the hole still hangs
+    // inside it, waiting to be sorted out, and CndE never moved.
+    const forest = forestOf(ed, doc);
+    const cnde = forest[0] as BracketNode;
+    expect(cnde).toMatchObject({ kind: 'bracket', rel: 'CndE' });
+    expect(cnde.children[0]).toEqual({
+      kind: 'bracket',
+      rel: 'Grnd',
+      prominent: 0,
+      children: [prop('p1'), { kind: 'hole', children: [prop('p2'), prop('p3')] }],
+    });
+  });
+
+  it('closing the hole from inside leaves no hole and no hanging end', () => {
+    const doc = firstJohn16();
+    const ed = open(doc);
+    deleteRelationship(ed, bracketPos(ed, 'Adv'));
+    expect(findHoles(ed.state.doc)).toHaveLength(1);
+    connectUnits(ed, propPos(ed, 'p2'), propPos(ed, 'p3'), TAXONOMY, 'Adv');
+    expect(findHoles(ed.state.doc)).toHaveLength(0);
   });
 });

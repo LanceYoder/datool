@@ -1353,3 +1353,9 @@ div.error-box {
   stroke-dasharray: 3 3;
   opacity: 0.7;
 }
+
+/* The dot at a hanging end: hollow and dashed, an end waiting for something
+   rather than a connection already made. */
+.dot-group.loose-end .dot {
+  stroke-dasharray: 2.5 2;
+}

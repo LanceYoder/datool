@@ -102,7 +102,10 @@ export function relationshipForKey(
 }
 
 /** What a DotGeom id points at (see layoutDots). */
-export type DotRef = { kind: 'prop'; pid: string } | { kind: 'bracket'; index: number };
+export type DotRef =
+  | { kind: 'prop'; pid: string }
+  | { kind: 'bracket'; index: number }
+  | { kind: 'hole'; index: number };
 
 /** Read a dot id ('prop:<pid>' | 'bracket:<preorderIndex>') back apart. */
 export function parseDotId(id: string): DotRef | null {
@@ -115,6 +118,12 @@ export function parseDotId(id: string): DotRef | null {
     const index = Number(raw);
     if (raw === '' || !Number.isInteger(index) || index < 0) return null;
     return { kind: 'bracket', index };
+  }
+  if (id.startsWith('hole:')) {
+    const raw = id.slice('hole:'.length);
+    const index = Number(raw);
+    if (raw === '' || !Number.isInteger(index) || index < 0) return null;
+    return { kind: 'hole', index };
   }
   return null;
 }

@@ -913,6 +913,15 @@ export interface BracketHit {
  * order layoutBrackets emits its BracketGeoms and layoutDots numbers its
  * 'bracket:<preorderIndex>' ids, so the two zip index-for-index.
  */
+export function findHoles(doc: PMNode): number[] {
+  const hits: number[] = [];
+  doc.descendants((node, pos) => {
+    if (node.type.name === 'hole') hits.push(pos);
+    return true;
+  });
+  return hits;
+}
+
 export function findBrackets(doc: PMNode): BracketHit[] {
   const hits: BracketHit[] = [];
   doc.descendants((node, pos) => {

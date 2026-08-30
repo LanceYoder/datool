@@ -415,3 +415,40 @@ describe('holes: units an edit left unattached', () => {
     expect(byId.get('prop:a')?.stubX1).toBeDefined();
   });
 });
+
+describe('a hanging end is a handle', () => {
+  const p = (ref: string): TreeNode => ({ kind: 'prop', ref });
+  const rows = new Map([
+    ['a', 10],
+    ['b', 30],
+    ['c', 50],
+  ]);
+  const hole: TreeNode = { kind: 'hole', children: [p('a'), p('b')] };
+  const grnd: BracketNode = {
+    kind: 'bracket',
+    rel: 'Grnd',
+    prominent: 0,
+    children: [hole, p('c')],
+  };
+
+  it('puts a dot where the hanging tick stops, so the end can be picked up', () => {
+    const dots = layoutDots([grnd], rows, 500);
+    const end = dots.find((d) => d.kind === 'hole');
+    expect(end).toBeDefined();
+    expect(end!.id).toBe('hole:0');
+    expect(end!.root).toBe(true); // hanging from nothing
+    // It sits at the end of the tick that points at it, not on the spine.
+    const { brackets } = layoutBrackets([grnd], rows, 500);
+    const hanging = brackets[0]!.ticks.find((t) => t.hanging === true);
+    expect(end!.x).toBe(hanging!.x1);
+    expect(end!.y).toBe(hanging!.y);
+  });
+
+  it('gives a loose end no dot when nothing hangs above it', () => {
+    // A hole at the top of the forest hangs from nothing: its units carry
+    // their own dots, and there is no tick to hold a handle.
+    const dots = layoutDots([hole], rows, 500);
+    expect(dots.find((d) => d.kind === 'hole')).toBeUndefined();
+    expect(dots.map((d) => d.id)).toEqual(['prop:a', 'prop:b']);
+  });
+});

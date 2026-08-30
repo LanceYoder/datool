@@ -61,6 +61,7 @@ import {
   connectUnits,
   deleteRelationship,
   findBrackets,
+  findHoles,
   findPropositionPos,
   flipStar,
   keepPageScroll,
@@ -970,12 +971,15 @@ function EditorInner({ baseDoc, words, taxonomy, onChange, onTreeMargin }: Inner
   const bracketPosAt = (index: number): number | null =>
     findBrackets(editor.state.doc)[index]?.pos ?? null;
 
+  const holePosAt = (index: number): number | null =>
+    findHoles(editor.state.doc)[index] ?? null;
+
   const dotPos = (id: string): number | null => {
     const ref = parseDotId(id);
     if (ref === null) return null;
-    return ref.kind === 'prop'
-      ? findPropositionPos(editor.state.doc, ref.pid)
-      : bracketPosAt(ref.index);
+    if (ref.kind === 'prop') return findPropositionPos(editor.state.doc, ref.pid);
+    if (ref.kind === 'hole') return holePosAt(ref.index);
+    return bracketPosAt(ref.index);
   };
 
   const rejectConnection = (dotId: string, message: string) => {
@@ -1005,6 +1009,16 @@ function EditorInner({ baseDoc, words, taxonomy, onChange, onTreeMargin }: Inner
       // above it stands.
       const pos = bracketPosAt(ref.index);
       if (pos !== null) deleteRelationship(editor, pos);
+      return;
+    }
+    if (ref.kind === 'hole') {
+      // The hanging end itself: what goes is the relationship it hangs from,
+      // which frees this loose group into whatever holds them both.
+      const pos = holePosAt(ref.index);
+      if (pos === null) return;
+      const $pos = editor.state.doc.resolve(pos);
+      if ($pos.depth === 0) return;
+      deleteRelationship(editor, $pos.before($pos.depth));
       return;
     }
     // A proposition: the one relationship it hangs from, and no more.
