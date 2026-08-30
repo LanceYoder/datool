@@ -9,7 +9,7 @@
 //   3. labels, then stars LAST, so where a star hugs its letters the star
 //      wins the click (a mis-hit there used to open the relationship menu).
 
-import { COL_W, STUB_W } from './layout';
+import { COL_W, HANG_W, STUB_W } from './layout';
 import type { BracketGeom, DotGeom } from './layout';
 import type { Point } from './interaction';
 import type { ViewSettings } from './viewSettings';
@@ -273,12 +273,25 @@ export interface BracketLayerProps {
 }
 
 /**
- * The connection in progress as a bracket: out from the pointer to the spine,
- * down the spine, and out to the dot. The spine stands one column left of
- * whichever end is further left — where the bracket itself will be drawn once
- * the connection is made.
+ * The connection in progress.
+ *
+ * From a HANGING END, the line is picked up: it stays the tick it already is,
+ * running from its own spine to wherever the pointer has taken it. Nothing new
+ * is drawn, because nothing new is being made — an end that hangs is being
+ * carried to what it should hold.
+ *
+ * From any other dot, it is the BRACKET that would be made: out from the
+ * pointer to a spine one column left of whichever end is further left — where
+ * the bracket itself will stand — down that spine, and out to the dot.
  */
 function rubberBandPath(dot: DotGeom, pointer: Point): string {
+  if (dot.kind === 'hole') {
+    // The tick's own origin: its spine, HANG_W back from where it stopped.
+    return (
+      `M${(dot.x - HANG_W).toFixed(1)},${dot.y.toFixed(1)} ` +
+      `L${pointer.x.toFixed(1)},${pointer.y.toFixed(1)}`
+    );
+  }
   const spineX = Math.min(dot.x, pointer.x) - (COL_W - STUB_W);
   return (
     `M${pointer.x.toFixed(1)},${pointer.y.toFixed(1)} ` +

@@ -728,6 +728,23 @@ function EditorInner({ baseDoc, words, taxonomy, onChange, onTreeMargin }: Inner
     // whenever the selection changes.
   }, [editor, selectedDotId]);
 
+  // A unit being carried is DROPPED by clicking anywhere that is not another
+  // handle: having picked something up and thought better of it, the way out
+  // is to click away, not to find the dot again. Landing on a dot is left to
+  // the dot's own handler, which is what connects the two.
+  useEffect(() => {
+    if (selectedDotId === null) return;
+    const onDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('.dot-group') !== null) return;
+      setSelectedDotId(null);
+    };
+    window.document.addEventListener('mousedown', onDown, true);
+    return () => {
+      window.document.removeEventListener('mousedown', onDown, true);
+    };
+  }, [selectedDotId]);
+
   // Outside click closes the popover. The listener is added after the click
   // that opened it (popovers open on click, this listens for mousedown), so it
   // can never close its own opening gesture.
