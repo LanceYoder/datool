@@ -474,7 +474,7 @@ describe('splitProposition', () => {
     expect(out.propositions.map((p) => p.label)).toEqual(['6a', '6b', '6–7']);
   });
 
-  it('unzips a nested proposition first: its ancestors dissolve, both halves are roots', () => {
+  it('frees a nested proposition from ONE relationship: the rest of the tree stands', () => {
     const doc = firstJohn16();
     const ed = open(doc);
     // p2 = ὅτι κοινωνίαν ἔχομεν μετ’ αὐτοῦ (124773–124777), buried under
@@ -483,15 +483,19 @@ describe('splitProposition', () => {
     ed.state.doc.check();
 
     const out = nodeToDocument(ed.state.doc, doc);
-    // CndE, FtIn and Adv are gone; the untouched Ser packet survives.
-    expect(out.forest).toHaveLength(5);
-    expect(out.forest.slice(0, 4)).toEqual([
-      prop('p1'),
-      prop('p2'),
-      { kind: 'prop', ref: out.propositions[2]!.id },
-      prop('p3'),
-    ]);
-    expect(out.forest[4]).toMatchObject({ kind: 'bracket', rel: 'Ser', flag: 'review' });
+    // Only Adv — the relationship that described p2 — gives way; its units
+    // wait in a hole, and CndE, FtIn and the Ser packet all stand.
+    expect(out.forest).toHaveLength(1);
+    expect(out.forest[0]).toMatchObject({ kind: 'bracket', rel: 'CndE' });
+    const cnde = out.forest[0] as BracketNode;
+    const ftin = cnde.children[0] as BracketNode;
+    expect(ftin).toMatchObject({ kind: 'bracket', rel: 'FtIn' });
+    expect(ftin.children[0]).toEqual(prop('p1'));
+    expect(ftin.children[1]).toEqual({
+      kind: 'hole',
+      children: [prop('p2'), { kind: 'prop', ref: out.propositions[2]!.id }, prop('p3')],
+    });
+    expect(cnde.children[1]).toMatchObject({ kind: 'bracket', rel: 'Ser', flag: 'review' });
     // The five corpus propositions re-letter a–e; the raw one keeps '6e'.
     expect(out.propositions.map((p) => p.label)).toEqual([
       '6a', '6b', '6c', '6d', '6e', '6e',
@@ -512,9 +516,20 @@ describe('splitProposition', () => {
     expect(out.propositions[4]?.source).toEqual({ kind: 'raw', text: 'καὶ οὐ' });
     expect(out.propositions[5]?.source).toEqual({ kind: 'raw', text: 'ποιοῦμεν τὴν ἀλήθειαν·' });
     expect(out.propositions[5]?.label).toBe('6e′');
-    // Only the Ser packet holding p5 (and the root above it) came apart.
-    expect(out.forest).toHaveLength(4);
-    expect(out.forest[0]).toMatchObject({ kind: 'bracket', rel: 'FtIn' });
+    // Only the Ser packet that held p5 gave way; CndE and everything under
+    // its other side stand, and the two halves wait in Ser's slot.
+    expect(out.forest).toHaveLength(1);
+    const cnde = out.forest[0] as BracketNode;
+    expect(cnde).toMatchObject({ kind: 'bracket', rel: 'CndE' });
+    expect(cnde.children[0]).toMatchObject({ kind: 'bracket', rel: 'FtIn' });
+    expect(cnde.children[1]).toEqual({
+      kind: 'hole',
+      children: [
+        prop('p4'),
+        prop('p5'),
+        { kind: 'prop', ref: out.propositions[5]!.id },
+      ],
+    });
   });
 
   it('rejects out-of-range split points and non-propositions, dispatching nothing', () => {
@@ -531,11 +546,12 @@ describe('splitProposition', () => {
 });
 
 describe('mergeBelow', () => {
-  it('merges across two trees, unzipping both and re-joining contiguous ranges', () => {
+  it('merges across two trees, dissolving only down to their common ancestor', () => {
     const doc = firstJohn16();
     const ed = open(doc);
     // p3 sits under CndE > FtIn > Adv; p4 under CndE > Ser. Their corpus
-    // ranges are contiguous (…124782 | 124783…).
+    // ranges are contiguous (…124782 | 124783…). CndE is their common
+    // ancestor and a forest root, so what it held comes out loose.
     expect(mergeBelow(ed, 'p3', WORD_MAP)).toBe(true);
     ed.state.doc.check();
 

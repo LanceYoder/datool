@@ -276,28 +276,33 @@ function unzipUnitInTransaction(tr: Transaction, handle: UnitHandle): number | n
  *
  * @returns the new bracket's position, or null.
  */
-export function connectUnits(
+/**
+ * Replace two adjacent units with one node, dissolving only what lies between
+ * them and their common ancestor. Everything above that ancestor stands, and
+ * whatever it held that is not the new node waits in a HOLE (see the module
+ * head). Returns the transaction and where the new node landed, or null when
+ * the two cannot be joined — nothing is dispatched here.
+ *
+ * Both connecting (the new node is a bracket over the pair) and merging (the
+ * new node is one proposition made of both) are this operation.
+ */
+function rejoinUnits(
   editor: Editor,
   posA: number,
   posB: number,
-  taxonomy: readonly TaxonomyEntry[],
-  rel = 'Ser',
-): number | null {
-  const entry = taxonomyEntry(taxonomy, rel);
-  if (entry === undefined) return null;
-
+  make: (first: PMNode, second: PMNode) => PMNode,
+): { tr: Transaction; at: number | null } | null {
   const { state } = editor;
   const { doc } = state;
   if (posA === posB) return null;
   const nodeA = unitNodeAt(doc, posA);
   const nodeB = unitNodeAt(doc, posB);
   if (nodeA === null || nodeB === null) return null;
-  // Overlapping ranges: one unit contains the other — nothing to connect.
+  // Overlapping ranges: one unit contains the other — nothing to join.
   if (posA < posB + nodeB.nodeSize && posB < posA + nodeA.nodeSize) return null;
 
-  const bracketType = state.schema.nodes.bracket;
   const holeType = state.schema.nodes.hole;
-  if (bracketType === undefined || holeType === undefined) return null;
+  if (holeType === undefined) return null;
 
   const $a = doc.resolve(posA);
   const $b = doc.resolve(posB);
@@ -312,7 +317,7 @@ export function connectUnits(
   container.forEach((child, _offset, index) => {
     const $unit = index === $a.index(shared) ? $a : index === $b.index(shared) ? $b : null;
     if ($unit === null || shared === $unit.depth) {
-      items.push(child);   // a bystander, or the unit itself
+      items.push(child); // a bystander, or the unit itself
       return;
     }
     dissolved = true;
@@ -325,12 +330,8 @@ export function connectUnits(
   if (Math.abs(indexA - indexB) !== 1) return null; // not adjacent: nothing to do
 
   const low = Math.min(indexA, indexB);
-  const prominent = defaultProminent(entry, 2);
-  const bracket = bracketType.create(
-    { rel, prominent, reversed: derivedReversed(entry, 2, prominent), flag: null },
-    [items[low]!, items[low + 1]!],
-  );
-  const merged = [...items.slice(0, low), bracket, ...items.slice(low + 2)];
+  const joined = make(items[low]!, items[low + 1]!);
+  const merged = [...items.slice(0, low), joined, ...items.slice(low + 2)];
 
   const tr = state.tr;
   if (shared === 0) {
@@ -345,17 +346,38 @@ export function connectUnits(
     tr.replaceWith($a.before(shared), $a.after(shared), merged);
   } else {
     // Whatever held them is gone, and its slot is inside a bracket that
-    // survives: the pieces wait there, in a hole — unless the new bracket is
-    // all that is left, and takes the slot itself.
-    const replacement =
-      merged.length === 1 ? merged[0]! : holeType.create(null, merged);
+    // survives: the pieces wait there, in a hole — unless the new node is all
+    // that is left, and takes the slot itself.
+    const replacement = merged.length === 1 ? merged[0]! : holeType.create(null, merged);
     tr.replaceWith($a.before(shared), $a.after(shared), replacement);
   }
   // Read the position off the transaction's own document: dispatching applies
   // exactly this transaction, so what holds there holds after.
-  const at = findBracketPos(tr.doc, bracket);
-  dispatch(editor, tr);
-  return at;
+  return { tr, at: findNode(tr.doc, joined) };
+}
+
+export function connectUnits(
+  editor: Editor,
+  posA: number,
+  posB: number,
+  taxonomy: readonly TaxonomyEntry[],
+  rel = 'Ser',
+): number | null {
+  const entry = taxonomyEntry(taxonomy, rel);
+  if (entry === undefined) return null;
+  const bracketType = editor.state.schema.nodes.bracket;
+  if (bracketType === undefined) return null;
+
+  const prominent = defaultProminent(entry, 2);
+  const outcome = rejoinUnits(editor, posA, posB, (first, second) =>
+    bracketType.create(
+      { rel, prominent, reversed: derivedReversed(entry, 2, prominent), flag: null },
+      [first, second],
+    ),
+  );
+  if (outcome === null) return null;
+  dispatch(editor, outcome.tr);
+  return outcome.at;
 }
 
 /**
@@ -378,7 +400,7 @@ function loosen(node: PMNode, depth: number, $unit: ResolvedPos): PMNode[] {
 }
 
 /** Where a freshly built node ended up, by identity. */
-function findBracketPos(doc: PMNode, target: PMNode): number | null {
+function findNode(doc: PMNode, target: PMNode): number | null {
   let found: number | null = null;
   doc.descendants((node, pos) => {
     if (found !== null) return false;
@@ -479,6 +501,35 @@ export function clearConnections(editor: Editor, undoable = true): boolean {
  */
 function unzipInTransaction(tr: Transaction, pid: string): boolean {
   return unzipUnitInTransaction(tr, { kind: 'prop', pid }) !== null;
+}
+
+/**
+ * Free the proposition `pid` from the ONE relationship it hangs from: that
+ * bracket becomes a hole holding what it held, and everything above it
+ * stands. A proposition that is already a root is left where it is. Returns
+ * the proposition's position afterwards, or null when it cannot be found.
+ */
+function loosenInTransaction(tr: Transaction, pid: string): number | null {
+  const pos = findPropositionPos(tr.doc, pid);
+  if (pos === null) return null;
+  const $pos = tr.doc.resolve(pos);
+  if ($pos.depth === 0) return pos; // loose already
+  const holeType = tr.doc.type.schema.nodes.hole;
+  if (holeType === undefined) return null;
+
+  const parent = $pos.node($pos.depth);
+  const children: PMNode[] = [];
+  parent.forEach((child) => {
+    // A hole inside a hole is one hole: what waits, waits together.
+    if (child.type.name === 'hole') child.forEach((inner) => children.push(inner));
+    else children.push(child);
+  });
+  const from = $pos.before($pos.depth);
+  const to = $pos.after($pos.depth);
+  // A root bracket needs no hole: its children become roots, unattached
+  // already. Anywhere else the slot must be held.
+  tr.replaceWith(from, to, $pos.depth === 1 ? children : holeType.create(null, children));
+  return findPropositionPos(tr.doc, pid);
 }
 
 /**
@@ -684,14 +735,16 @@ export function splitProposition(
     };
   }
 
+  // One proposition becomes two, so the relationship it hung from no longer
+  // describes it: that ONE relationship gives way and its units wait in a
+  // hole. Everything above stands.
   const tr = state.tr;
-  if (!unzipInTransaction(tr, pid)) return false;
-  const rootPos = findPropositionPos(tr.doc, pid);
-  if (rootPos === null) return false;
-  const root = tr.doc.nodeAt(rootPos);
-  if (root === null) return false;
+  const loosePos = loosenInTransaction(tr, pid);
+  if (loosePos === null) return false;
+  const loose = tr.doc.nodeAt(loosePos);
+  if (loose === null) return false;
 
-  tr.replaceWith(rootPos, rootPos + root.nodeSize, [
+  tr.replaceWith(loosePos, loosePos + loose.nodeSize, [
     type.create(attrsA),
     type.create(attrsB),
   ]);
@@ -741,7 +794,6 @@ export function mergeBelow(
   if (index === -1) return false;
   const nextEntry = props[index + 1];
   if (nextEntry === undefined) return false; // last proposition
-  const nextPid = String(nextEntry.node.attrs.pid);
 
   const a = props[index]!.node.attrs;
   const b = nextEntry.node.attrs;
@@ -760,22 +812,14 @@ export function mergeBelow(
     merged = { ...a, srcStart: null, srcEnd: null, rawText: text, text };
   }
 
-  const tr = state.tr;
-  if (!unzipInTransaction(tr, pid)) return false;
-  if (!unzipInTransaction(tr, nextPid)) return false;
-
-  const posA = findPropositionPos(tr.doc, pid);
-  const posB = findPropositionPos(tr.doc, nextPid);
-  if (posA === null || posB === null) return false;
-  const nodeA = tr.doc.nodeAt(posA);
-  const nodeB = tr.doc.nodeAt(posB);
-  if (nodeA === null || nodeB === null) return false;
-  // Both are roots now, and consecutive propositions with nothing between.
-  if (posA + nodeA.nodeSize !== posB) return false;
-
-  tr.replaceWith(posA, posB + nodeB.nodeSize, type.create(merged));
-  if (words !== null) relabelCorpusInTransaction(tr, words);
-  dispatch(editor, tr);
+  // The two become one, and only what stood between them goes: the same
+  // surgery a connection makes, with a proposition in place of a bracket.
+  const posA = props[index]!.pos;
+  const posB = nextEntry.pos;
+  const outcome = rejoinUnits(editor, posA, posB, () => type.create(merged));
+  if (outcome === null) return false;
+  if (words !== null) relabelCorpusInTransaction(outcome.tr, words);
+  dispatch(editor, outcome.tr);
   return true;
 }
 
