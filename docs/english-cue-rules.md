@@ -8,9 +8,12 @@ rendered "because" it is Ground. If a participle is rendered "if …" the
 relation is Conditional; "in order to …" Means–End; "with the result …"
 Cause–Effect; "because …" Ground; "although …" Adversative.
 
-> **Status: built.** `segment_english` / `leading_cue` / `opener_english` /
-> `contrastive_cue` live in `da/treebuild.py`; the per-trigger wiring is in
-> `_dependent_call`, `_participle_call` and `_protasis_rel`. The suite is
+> **Status: built.** `segment_english` / `leading_cue` / `opener_english`
+> live in `da/treebuild.py`; the per-trigger wiring is in `_dependent_call`
+> and `_participle_call`. (There is no `contrastive_cue` and no "but"/"yet"
+> row in the cue table — see the δέ / bare-ἀλλά entry below — and no separate
+> `_protasis_rel`: forward-attaching clauses go through `_dependent_call` like
+> everything else.) The suite is
 > `da/tests/test_english_cues.py` (33 tests, every expectation read off real
 > corpus verses). Deviations from the draft below are listed at the end.
 
@@ -52,7 +55,7 @@ comparable within one verse; the groups are then concatenated in corpus order.
 | "just as", "as " | Cmp — but **Tmp for a participle** (per-trigger override) |
 | "that" | FtIn |
 | "and", "also", "now" | Ser |
-| "but", "yet" | contrastive: DETECTED, NEVER ACTED ON (Open #1) |
+| _(no "but"/"yet" row)_ | contrastive: NOT A CUE — see Open #1 |
 
 Matching is leading-anchored, longest-phrase-first, and word-boundary anchored
 — which is exactly what the draft's trailing spaces ("for ", "as ", "by ")
@@ -78,13 +81,16 @@ encoded: "for" fires, "forgive" does not.
   "that" → Ft/In, "so that"/"in order that"/"in order to" → M/Ed; no
   applicable cue → the verb-list rule as before.
 - **ὡς** (and only ὡς among the comparatives): "just as"/"as" → Cmp,
-  "when"/"while" → Tmp, "that" → Ft/In; no cue → Cmp. A sentence-initial ὡς
-  reaches the assembler as a held protasis rather than through
-  `_dependent_call`, so `_protasis_rel` consults the cue there too (restricted
-  to Cmp/Tmp — a sentence-initial ὡς is never the content use).
-- **δέ and bare ἀλλά**: `contrastive_cue` detects the "but"/"yet", and
-  NOTHING acts on it. δέ keeps its Series default; a bare ἀλλά stays Neg/Pos
-  out of minimal. See `expert-questions.md` Open #1.
+  "when"/"while" → Tmp, "that" → Ft/In; no cue → Cmp. POSITION narrows the
+  set: a ὡς clause that PRECEDES its main clause (the held, forward-attaching
+  case) drops Ft/In, since the content use follows the verb that governs it.
+  `_dependent_call` makes that call from the `precedes` flag it is already
+  passed — there is no separate protasis path.
+- **δέ and bare ἀλλά**: the table carries NO contrastive row, so the BSB's
+  "but"/"yet" is not matched at all. δέ keeps its Series default; a bare ἀλλά
+  stays Neg/Pos out of minimal. See `expert-questions.md` Open #1 — which
+  contrary relationship a "but" marks is the unruled question, so detecting
+  one would buy nothing.
 - **Implicit-proposition PPs**: no cue, by decision — Open #3 is whether the
   implied proposition is drawable at all, not which relation it would take.
 
@@ -130,11 +136,14 @@ encoded: "for" fires, "forgive" does not.
    They carry no cue and would block every leading match, so a cell with no
    letters or digits contributes nothing.
 7. **The sentence-initial ὥστε is only half reachable.** An inferential ὥστε
-   usually OPENS its sentence (Rom 7:12, 1 Thess 4:18), and a sentence-initial
-   dependent is held forward — so its relationship materializes only if the
-   same sentence continues to an independent clause. Between sentences the
-   fold still uses the discourse table, which has no ὥστε entry. Extending
-   `_sentence_join` was out of scope for this change.
+   usually OPENS its sentence (Rom 7:12, 1 Thess 4:18). A sentence-initial
+   dependent is HELD by `_assemble_sentence` — the generic held branch, the
+   same one every forward-attaching clause takes — and the held packet only
+   becomes a bracket if that sentence continues to an independent clause;
+   a hold left dangling at sentence end is returned as its bare packet.
+   Between sentences the fold still uses the discourse table
+   (`_sentence_join`), which has no ὥστε entry. Carrying a dangling hold
+   forward is `expert-questions.md` Open #14, not part of this change.
 
 ## Known costs — for the expert
 

@@ -62,11 +62,11 @@ class Sectioned:
         located = resolve(ref)
         self.ref = located.ref
         self.segments = segment(located.start, located.end)
-        groups = _sentences(self.segments)
-        self.packets = [
-            _Packet(_assemble_sentence(group, self.words), segs, segs)
-            for group, segs in ((g, [s for _, s in g]) for g in groups)
-        ]
+        self.packets = []
+        for group in _sentences(self.segments):
+            segs = [s for _, s in group]
+            self.packets.append(
+                _Packet(_assemble_sentence(group, segs, self.words), segs, segs))
         self.marks = [_sentence_marks(p.opening, self.words) for p in self.packets]
         self.seams = _seams(self.marks)
         self.sections = _sections(self.packets, self.words)

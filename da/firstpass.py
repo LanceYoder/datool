@@ -2,13 +2,18 @@
 analysis out.
 
 The automatic analyzer has two levels, the caller's choice. MINIMAL (the
-default) draws ONLY the connections stage 2 (:mod:`da.treebuild`) is
-deterministically right about — explicit-marker calls the golden diagrams
-have never contradicted (γάρ grounds, ὅτι-content after a verb of saying,
-conditional protases, ὡς-class comparisons, ὥστε results, οὐ … ἀλλά,
-sentence-closing relatives, διό) — and leaves everything else disconnected
-for the analyst. MAXIMAL runs the full classifier: every judgment call
-included, the whole passage proposed as one tree. Stage 1
+default) draws the connections that belong in the MINIMAL ANALYSIS as the DA
+expert re-tiered it (docs/DESIGN.md §5): both the calls the GRAMMAR FORCES (an
+explicit subordinator, οὐ … ἀλλά, μέν … δέ) and the SENSIBLE DEFAULTS a
+competent analyst would start from (δέ → Series, ἵνα → purpose, causal ὅτι →
+Ground, an aorist participle before its clause → Temporal, asyndeton → Series,
+and the readings the aligned English states outright). A default that is
+usually right is worth drawing — re-labelling one bracket beats drawing the
+structure by hand — so only the GENUINELY UNDECIDABLE joins are left
+disconnected for the analyst: a bare ἀλλά, an apposition, an
+implicit-proposition prepositional phrase, an unknown subordinator, and which
+clauses of an asyndetic run belong together. MAXIMAL runs the full classifier:
+every judgment call included, the whole passage proposed as one tree. Stage 1
 (:mod:`da.segmentation`) pre-splits into clause propositions either way.
 
 Two ways in, one result. Text that reads as a REFERENCE ("Eph 1:3-14",
@@ -32,9 +37,13 @@ from dataclasses import dataclass
 from .corpus import Alignment, align, looks_like_reference, resolve
 from .documents import SCHEMA_VERSION, validate_document
 
-# NFC (below) maps the Greek question mark U+037E to ';' and ano teleia
-# U+0387 to U+00B7, but both stay in the class as defense in depth.
-_SENTENCE_SPLIT = re.compile(r"[.;·;·]+")
+# Sentence-final punctuation for a RAW (unaligned) paste: period, Greek
+# question mark, raised dot — the same three as
+# :data:`da.corpus.loader.SENTENCE_FINAL`, which is what the aligned path uses.
+# One member each: the NFC normalization in :func:`_raw_document` runs before
+# the split and already maps the Greek question mark U+037E to ';' and the ano
+# teleia U+0387 to the middle dot U+00B7, so there is nothing else to match.
+_SENTENCE_SPLIT = re.compile(r"[.;·]+")
 
 
 @dataclass

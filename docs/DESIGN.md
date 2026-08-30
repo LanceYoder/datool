@@ -185,7 +185,7 @@ final P).
 
 First-pass vs. student on this verse: the pipeline gets the ἐάν conditional, the
 ὅτι content clause, and the 6d/6e Series right on its own. The καί before περιπατῶμεν
-is genuinely ambiguous — first pass proposes Series with a `review` flag; the student's
+is genuinely ambiguous — first pass proposes Series, its default; the student's
 interpretive override to **Adversative** ("though we walk in darkness") is exactly the
 kind of one-click re-label the editor exists for.
 
@@ -345,8 +345,10 @@ by construction):
 - Between sentences: everything is connected into **one complete tree**. Sentence-initial
   connectives classify via the table; asyndeton and bare καί default to a Series chain,
   nesting to the left, one binary bracket per join.
-- The internal `review` markers are private bookkeeping only: they never reach a
-  document, and the minimal/Full split is driven entirely by `_sure`.
+- The minimal/Full split is driven entirely by the internal `_sure` mark, which
+  is private bookkeeping: it is stripped before the document is returned. The
+  builder sets no `flag` at all — a `review` flag is the analyst's own, set in
+  the editor.
 
 **Sectioning — big–small–big** (`docs/sectioning.md`, built). The sentence
 fold does not run over the whole passage. By the expert's ruling the passage
@@ -396,8 +398,8 @@ ruling, RESURRECTED to a sure C/E by "so that"/"as a result" or to a sure
 Inference by "therefore"), **ἵνα/ὅπως** (the cue overrides the asking-verb
 list) and **ὡς** alone among the comparatives ("when" → Temporal, "that" →
 Ft/In). Cue-derived calls are `_sure`: a translator's reading is exactly the
-sensible-default tier. A contrastive "but" is detected but deliberately not
-acted on, and implicit-proposition PPs take no cue — both are open questions.
+sensible-default tier. The table carries no contrastive "but" row, and
+implicit-proposition PPs take no cue — both are open questions.
 A segment with no usable English falls back to the grammar-only rules
 unchanged. Corpus-wide the layer relabels 2.3% of the brackets Full draws;
 against the worked diagrams it gains Acts 2:37's Temporal on Ἀκούσαντες.

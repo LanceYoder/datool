@@ -4,7 +4,10 @@ Input: the ordered ``Segment`` list produced by :mod:`da.segmentation` (stage 1)
 which exactly tiles an inclusive corpus range. Output: a complete, valid
 analysis document (see docs/DESIGN.md §3, §5) — every proposition connected
 into one tree (a ``forest`` of one root), every bracket labeled with a
-taxonomy relationship.
+taxonomy relationship. Confidence labeling is not part of the product, so no
+bracket this module builds ever carries a ``flag`` (the document schema still
+accepts one — review flags an ANALYST sets in the editor are a different
+thing, and never pass through the builder).
 
 TIERING (the DA expert's ruling, 2026 re-tier). Every join carries an internal
 ``_sure`` flag, and ``_sure`` means exactly one thing: **this join belongs in
@@ -25,10 +28,8 @@ speculative groupings (which clauses of a run belong together).
 The public contract is unchanged: ``build_document(confident_only=True)`` (the
 "minimal" level, API ``maximal=false``) keeps only the maximal all-sure
 subtrees via :func:`_confident_forest` and dissolves everything else into
-disconnected roots; Full still connects everything into exactly one tree. The
-``review`` markers threaded through the helpers are private bookkeeping that
-never reaches the document: confidence labeling was removed from the product,
-so ``build_document`` strips every ``flag`` before returning.
+disconnected roots; Full still connects everything into exactly one tree.
+``_sure`` itself is private bookkeeping and is stripped before returning.
 
 THE ENGLISH-CUE LAYER (docs/english-cue-rules.md). Greek connectives and
 adverbial participles are systematically ambiguous, but the aligned BSB
@@ -50,11 +51,15 @@ Within a sentence
     (ὅτι/ἵνα-class subordinator, relative, adverbial participle or infinitive)
     pops the top packet and wraps ``[top, dependent]`` — chained trailing
     dependents therefore nest naturally.
-  * Protasis-type openers (conditional / temporal / comparative subordinators
-    at clause start before any independent clause) are HELD and attach forward:
-    the held packet becomes ``children[0]`` of the sentence's conditional-type
-    bracket once the apodosis completes at sentence end. Dependents and
-    coordinations arriving while a protasis is held build onto the held packet.
+  * ANY dependent standing before the sentence's first independent clause is
+    HELD and attaches forward — a conditional/temporal/comparative protasis, a
+    sentence-initial ὡς or ὅπου, an opening participle, a causal ὅτι — through
+    the same :func:`_dependent_call` as a trailing dependent, which is passed
+    ``precedes=True`` and narrows its reading accordingly. The held packet
+    becomes ``children[0]`` of the sentence's bracket once the apodosis / main
+    clause completes at sentence end (a hold that never gets one is returned as
+    its bare packet — expert-questions.md Open #14). Dependents and
+    coordinations arriving while a packet is held build onto it.
   * Coordinate joins (καί/οὐδέ/τε, ἤ, δέ) coordinate at the right edge of the
     target packet. Every bracket is BINARY, so a run of coordinate clauses
     nests to the LEFT — the packet built so far joins the clause that arrives
@@ -107,11 +112,13 @@ for type checking.
 
 from __future__ import annotations
 
-import unicodedata
 from collections import Counter
-from typing import TYPE_CHECKING, Iterable, Mapping, NamedTuple, Sequence
+from typing import (TYPE_CHECKING, Callable, Iterable, Mapping, NamedTuple,
+                    Sequence)
 
 from .corpus import english_for, english_order, load_words
+from .corpus.loader import TRAILING_CLOSERS
+from .corpus.normalize import nfc as _L, nfc_set as _lset
 from .corpus.structure import marks_for
 from .corpus.translation import load_translation
 from .documents import SCHEMA_VERSION, validate_document
@@ -122,15 +129,9 @@ if TYPE_CHECKING:  # pragma: no cover — written concurrently, contract-typed
 
 
 # ---------------------------------------------------------------------------
-# Lemma tables (our own compilation from standard grammar — see DESIGN.md §5)
-
-def _L(s: str) -> str:
-    return unicodedata.normalize("NFC", s)
-
-
-def _lset(*items: str) -> frozenset[str]:
-    return frozenset(_L(i) for i in items)
-
+# Lemma tables (our own compilation from standard grammar — see DESIGN.md §5).
+# ``_L``/``_lset`` are :mod:`da.corpus.normalize`'s ``nfc``/``nfc_set``, shared
+# with da.segmentation's tables.
 
 GROUND = _lset("γάρ")
 INFERENCE = _lset("οὖν", "διό", "ἄρα", "ὅθεν", "τοιγαροῦν", "τοίνυν")
@@ -179,20 +180,17 @@ ASKING_VERBS = _lset(
 LEGO = _L("λέγω")
 
 # Implicit-proposition prepositional phrases: best-guess relation by
-# preposition (all review-flagged — these are the interpretive calls).
+# preposition — these are the interpretive calls, never sure. Distinct from
+# :data:`_INF_PREP_REL`, which is not a guess: there the grammars fix the sense
+# of the preposition + article + infinitive construction outright.
 _PP_REL: dict[str, str] = (
     {_L(p): "MEd" for p in ("εἰς", "πρός")}          # purpose/goal
     | {_L(p): "Tmp" for p in ("ἕως", "ἄχρι", "μέχρι", "πρό", "μετά")}
-    | {_L(p): "Loc" for p in ("ἐν", "ἐπί", "ὑπό", "παρά", "πρὸ")}
+    | {_L(p): "Loc" for p in ("ἐν", "ἐπί", "ὑπό", "παρά")}
     | {_L(p): "Grnd" for p in ("διά", "ἐκ", "ἀπό", "χάριν", "ἕνεκα")}
 )
-
-# Protasis-type forward-attaching subordinators → their bracket relationship.
-_PROTASIS_REL: dict[str, str] = (
-    {l: "CndE" for l in CONDITIONAL}
-    | {l: "Tmp" for l in TEMPORAL}
-    | {l: "Cmp" for l in COMPARATIVE}
-)
+# (A "πρὸ" key with the GRAVE accent used to sit in the Loc row: dead, since no
+# MorphGNT lemma carries a grave — πρό with the tonos is mapped Tmp above.)
 
 # Which label index the grammatically marked (dependent) side carries, per
 # relationship: e.g. a γάρ clause is the "G" end (labels index 1), a protasis
@@ -207,6 +205,11 @@ _DISCOURSE = GROUND | INFERENCE | DE | ADVERSATIVE | ALTERNATIVE | SERIAL
 # Postpositives may sit second or third in the sentence; the serial/adversative
 # connectives only count in first position (καί later in a clause is adverbial
 # "also", ἤ later is comparative "than").
+# CROSS-REFERENCE: this is DELIBERATELY NARROWER than
+# :data:`da.segmentation.POSTPOSITIVES`, which also lists μέν/τε/μέντοι.
+# Segmentation asks "where does this connective's clause start?" and every
+# postpositive shifts that boundary; here the question is "does this word name
+# the join into the sentence?", which μέν/τε/μέντοι do not. Do not merge them.
 _POSTPOSITIVE = GROUND | DE | _lset("οὖν", "ἄρα", "τοίνυν")
 
 
@@ -220,53 +223,69 @@ _POSTPOSITIVE = GROUND | DE | _lset("οὖν", "ἄρα", "τοίνυν")
 # they read into the Greek: "if …" is a condition, "because …" a ground,
 # "although …" a concession. That is the disambiguation this layer performs.
 
-# Leading cue phrase → relationship. Matched LONGEST FIRST (the table is sorted
-# by phrase length below) and anchored both at the start of the English and at a
-# WORD BOUNDARY — which is what the design's trailing spaces encode: "for " must
-# not fire on "forgive", "as " not on "ashamed", "by " not on "byword".
-_CUE_ENTRIES: tuple[tuple[str, str], ...] = (
-    ("if", "CndE"),
-    ("unless", "CndE"),
-    ("in order to", "MEd"),
-    ("in order that", "MEd"),
-    ("with the result", "CE"),
-    ("so as to", "CE"),
-    ("as a result", "CE"),
+def _means_by(english: str) -> bool:
+    """"by" is only the Means cue in front of a gerund ("by following …"); "by
+    the word of the Lord" is an agent/instrument phrase, not a relationship."""
+    tokens = english.split()
+    return len(tokens) >= 2 and tokens[1].endswith("ing")
+
+
+# Leading cue phrase → relationship, plus an optional GUARD: a predicate on the
+# whole leading English that the phrase must also satisfy to count as a cue.
+# Most rows need none (``None``), and a row that does keeps its condition here
+# in the table rather than as a special case inside the matcher.
+#
+# Matched LONGEST FIRST (the table is sorted by phrase length below) and
+# anchored both at the start of the English and at a WORD BOUNDARY — which is
+# what the design's trailing spaces encode: "for " must not fire on "forgive",
+# "as " not on "ashamed", "by " not on "byword".
+_Guard = Callable[[str], bool]
+_CUE_ENTRIES: tuple[tuple[str, str, _Guard | None], ...] = (
+    ("if", "CndE", None),
+    ("unless", "CndE", None),
+    ("in order to", "MEd", None),
+    ("in order that", "MEd", None),
+    ("with the result", "CE", None),
+    ("so as to", "CE", None),
+    ("as a result", "CE", None),
     # "so that" is the one PER-TRIGGER phrase: C/E for ὥστε (the table's own
     # reading), M/Ed for ἵνα/ὅπως — see _PURPOSE_CUE_OVERRIDES.
-    ("so that", "CE"),
-    ("because", "Grnd"),
-    ("since", "Grnd"),
-    ("for", "Grnd"),
-    ("therefore", "Inf"),
-    ("so then", "Inf"),
-    ("although", "Adv"),
-    ("even though", "Adv"),
-    ("though", "Adv"),
-    ("despite", "Adv"),
-    ("when", "Tmp"),
-    ("as soon as", "Tmp"),   # unambiguously temporal; beats the bare "as"
-    ("whenever", "Tmp"),
-    ("while", "Tmp"),
-    ("after", "Tmp"),
-    ("before", "Tmp"),
-    ("until", "Tmp"),
-    ("where", "Loc"),
-    ("wherever", "Loc"),
-    ("by", "WEd"),          # only before a gerund — see _means_by
-    ("just as", "Cmp"),
-    ("as", "Cmp"),
-    ("that", "FtIn"),
-    ("and", "Ser"),
-    ("also", "Ser"),
-    ("now", "Ser"),
-    # Contrastive. Detected (see :func:`contrastive_cue`) but never acted on:
-    # which contrary relationship a bare "but" marks is expert-questions.md
-    # Open #1, so no join consults this entry today.
-    ("but", "_contrast"),
-    ("yet", "_contrast"),
+    ("so that", "CE", None),
+    ("because", "Grnd", None),
+    ("since", "Grnd", None),
+    ("for", "Grnd", None),
+    ("therefore", "Inf", None),
+    ("so then", "Inf", None),
+    ("although", "Adv", None),
+    ("even though", "Adv", None),
+    ("though", "Adv", None),
+    ("despite", "Adv", None),
+    ("when", "Tmp", None),
+    ("as soon as", "Tmp", None),   # unambiguously temporal; beats the bare "as"
+    ("whenever", "Tmp", None),
+    ("while", "Tmp", None),
+    ("after", "Tmp", None),
+    ("before", "Tmp", None),
+    ("until", "Tmp", None),
+    ("where", "Loc", None),
+    ("wherever", "Loc", None),
+    # The one guarded row: "by" names Means only in front of a gerund.
+    ("by", "WEd", _means_by),
+    ("just as", "Cmp", None),
+    ("as", "Cmp", None),
+    ("that", "FtIn", None),
+    ("and", "Ser", None),
+    ("also", "Ser", None),
+    ("now", "Ser", None),
+    # NO CONTRASTIVE ROWS. The BSB's "but"/"yet" would be easy to spot, but
+    # spotting it buys nothing: οὐ … ἀλλά is already a sure Neg/Pos from the
+    # grammar, and a bare "but" (bare ἀλλά, or δέ rendered "but") says there is
+    # a contrast without saying WHICH contrary relationship carries it
+    # (Neg/Pos, Alternative, Adversative). That is expert-questions.md Open #1;
+    # until it is ruled, δέ keeps its Series default and a bare ἀλλά stays out
+    # of minimal, so a "but" row would only ever be matched and discarded.
 )
-_CUE_TABLE: tuple[tuple[str, str], ...] = tuple(
+_CUE_TABLE: tuple[tuple[str, str, _Guard | None], ...] = tuple(
     sorted(_CUE_ENTRIES, key=lambda entry: -len(entry[0])))
 
 # ἵνα/ὅπως read "so that" as purpose, not result.
@@ -287,6 +306,10 @@ _HOTI_CUE_RELS = frozenset({"FtIn", "Grnd"})
 _PURPOSE_CUE_RELS = frozenset({"FtIn", "MEd"})
 _RESULT_CUE_RELS = frozenset({"CE", "Inf"})
 _HOS_CUE_RELS = frozenset({"Cmp", "Tmp", "FtIn"})
+# … minus the content sense when the ὡς clause PRECEDES its main clause: the
+# "that …" use follows the verb that governs it, so a leading ὡς is only ever
+# the comparative or the temporal one.
+_HOS_PRECEDING_CUE_RELS = _HOS_CUE_RELS - {"FtIn"}
 # The adverbial-participle senses the chart itself distinguishes; Series
 # (attendant circumstance) is deliberately absent — an "and" is not evidence
 # for it, and rule 7 already owns that call.
@@ -351,13 +374,6 @@ def opener_english(seg) -> str:
     return _clean_english(english_for(seg.opener.index) or "")
 
 
-def _means_by(english: str) -> bool:
-    """"by" is only the Means cue in front of a gerund ("by following …"); "by
-    the word of the Lord" is an agent/instrument phrase, not a relationship."""
-    tokens = english.split()
-    return len(tokens) >= 2 and tokens[1].endswith("ing")
-
-
 def leading_cue(english: str,
                 overrides: Mapping[str, str] | None = None) -> str | None:
     """The relationship the LEADING English phrase names, or None.
@@ -369,10 +385,10 @@ def leading_cue(english: str,
     if not english:
         return None
     haystack = english + " "
-    for phrase, rel in _CUE_TABLE:
+    for phrase, rel, guard in _CUE_TABLE:
         if not haystack.startswith(phrase + " "):
             continue
-        if phrase == "by" and not _means_by(haystack):
+        if guard is not None and not guard(haystack):
             continue
         if overrides is not None and phrase in overrides:
             return overrides[phrase]
@@ -392,21 +408,6 @@ def _cue_call(seg, words, allowed: frozenset[str],
     return None
 
 
-def contrastive_cue(seg, words=None) -> bool:
-    """Does the BSB open this segment with a contrastive "but"/"yet"?
-
-    DETECTED BUT NOT ACTED ON. οὐ … ἀλλά is already a sure Neg/Pos from the
-    grammar; a bare "but" (bare ἀλλά, or δέ rendered "but") tells us there is a
-    contrast without telling us WHICH contrary relationship carries it
-    (Neg/Pos, Alternative, Adversative). That is expert-questions.md Open #1,
-    so δέ keeps its Series default and a bare ἀλλά stays out of minimal until
-    the expert rules."""
-    for english in (segment_english(seg, words), opener_english(seg)):
-        if leading_cue(english) == "_contrast":
-            return True
-    return False
-
-
 # ---------------------------------------------------------------------------
 # Node construction
 
@@ -415,7 +416,7 @@ def _prop_node(global_index: int) -> dict:
 
 
 def _sub(rel: str, first: dict, second: dict, dep_child: int,
-         review: bool = False, sure: bool = False) -> dict:
+         sure: bool = False) -> dict:
     """Subordinate bracket over [first, second]; ``dep_child`` says which child
     is the grammatically marked (dependent) side. ``reversed`` and
     ``prominent`` are derived so labels land on the right children. ``sure``
@@ -432,59 +433,63 @@ def _sub(rel: str, first: dict, second: dict, dep_child: int,
     }
     if rev:
         node["reversed"] = True
-    if review:
-        node["flag"] = "review"
     if sure:
         node["_sure"] = True
     return node
 
 
-def _coord(rel: str, first: dict, second: dict, review: bool = False,
-           sure: bool = False) -> dict:
+def _coord(rel: str, first: dict, second: dict, sure: bool = False) -> dict:
     """Coordinate bracket over exactly [first, second]. Brackets are binary —
     a longer series is a left-nested chain of these (see _chain)."""
     node: dict = {"kind": "bracket", "rel": rel, "prominent": None,
                   "children": [first, second]}
-    if review:
-        node["flag"] = "review"
     if sure:
         node["_sure"] = True
     return node
 
 
-def _chain(rel: str, nodes: Sequence[dict], review: bool = False) -> dict:
+def _chain(rel: str, nodes: Sequence[dict],
+           sures: Sequence[bool] | None = None) -> dict:
     """A run of coordinate members as a LEFT-nested chain of binary brackets:
-    [a, b, c] → rel[ rel[a, b], c ]. One member is itself. Chains are always
-    judgment calls (which members belong together is the guess), so they are
-    never sure."""
+    [a, b, c] → rel[ rel[a, b], c ]. One member is itself.
+
+    Each bracket carries the sureness of the JOIN that added its right-hand
+    member — ``sures[k]`` for ``nodes[k]``, the first entry unused — so a mixed
+    run keeps its confident brackets. With no ``sures`` nothing is sure, which
+    is what the within-sentence asyndetic chains want: which members of a run
+    belong together is the speculative call."""
     packet = nodes[0]
-    for node in nodes[1:]:
-        packet = _coord(rel, packet, node, review=review)
+    for k, node in enumerate(nodes[1:], start=1):
+        packet = _coord(rel, packet, node,
+                        sure=bool(sures[k]) if sures is not None else False)
     return packet
 
 
-def _edge_coord(node: dict, new: dict, rel: str, review: bool,
-                sure: bool = False) -> dict:
-    """Coordinate ``new`` at the right edge of ``node``: descend through
-    subordinate brackets to their last child, else bracket the two. A further
+def _dep_bracket(rel: str, first: dict, second: dict, sure: bool,
+                 dep_child: int = 1) -> dict:
+    """Bracket a dependent against its host. Coordinate relationships (the
+    attendant-circumstance participle's Series, a καί/δέ join) bracket from the
+    centre; everything else subordinates the dependent side, which is
+    ``dep_child`` — child 1 for a dependent that ARRIVES (attaching backward or
+    at an edge), child 0 for a held one closing against its main clause. This
+    one COORDINATE_CODES test is the single place the sub/coord choice is
+    made."""
+    if rel in COORDINATE_CODES:
+        return _coord(rel, first, second, sure=sure)
+    return _sub(rel, first, second, dep_child=dep_child, sure=sure)
+
+
+def _edge_join(node: dict, new: dict, rel: str, sure: bool = False) -> dict:
+    """Join ``new`` at the right edge of ``node``: descend through subordinate
+    brackets to their last child, then bracket the two — coordinately when
+    ``rel`` is a coordinate relationship, else subordinating ``new`` (which is
+    what οὐ … ἀλλά wants: it contrasts with the negated clause). A further
     coordinate clause brackets THAT packet with the next one, so a run comes
     out left-nested and every bracket stays binary."""
     if node["kind"] == "bracket" and node["prominent"] is not None:
-        node["children"][-1] = _edge_coord(node["children"][-1], new, rel,
-                                           review, sure)
+        node["children"][-1] = _edge_join(node["children"][-1], new, rel, sure)
         return node
-    return _coord(rel, node, new, review=review, sure=sure)
-
-
-def _edge_sub(node: dict, new: dict, rel: str, review: bool,
-              sure: bool = False) -> dict:
-    """Subordinate-wrap ``new`` against the right-edge clause of ``node``
-    (used for οὐ … ἀλλά, which contrasts with the negated clause)."""
-    if node["kind"] == "bracket" and node["prominent"] is not None:
-        node["children"][-1] = _edge_sub(node["children"][-1], new, rel,
-                                         review, sure)
-        return node
-    return _sub(rel, node, new, dep_child=1, review=review, sure=sure)
+    return _dep_bracket(rel, node, new, sure)
 
 
 # ---------------------------------------------------------------------------
@@ -504,13 +509,15 @@ def _opener_lemma(seg) -> str | None:
 
 # Prepositions whose article-infinitive sense the grammars fix outright:
 # εἰς τό / πρὸς τό purpose, ἐν τῷ / μετὰ τό / πρὸ τοῦ time, διὰ τό cause.
-_INF_PREP_REL: dict[str, tuple[str, bool]] = {
-    _L("εἰς"): ("MEd", True),
-    _L("πρός"): ("MEd", True),
-    _L("ἐν"): ("Tmp", True),
-    _L("μετά"): ("Tmp", True),
-    _L("πρό"): ("Tmp", True),
-    _L("διά"): ("Grnd", True),
+# Every entry is grammar-forced, hence sure — unlike :data:`_PP_REL`, whose
+# entries are best guesses about an IMPLIED proposition and never sure.
+_INF_PREP_REL: dict[str, str] = {
+    _L("εἰς"): "MEd",
+    _L("πρός"): "MEd",
+    _L("ἐν"): "Tmp",
+    _L("μετά"): "Tmp",
+    _L("πρό"): "Tmp",
+    _L("διά"): "Grnd",
 }
 
 
@@ -563,11 +570,18 @@ def _main_verb(seg, segs: Sequence, precedes: bool, words):
     return None
 
 
+def _closes_on_raised_dot(word) -> bool:
+    """Does this word carry the raised dot (·) that opens a quotation? The
+    apparatus sigla that can trail the punctuation are stripped first — the
+    same closers :attr:`Word.ends_sentence` strips."""
+    return word.text.rstrip().rstrip(TRAILING_CLOSERS).endswith("·")
+
+
 def _introduces_speech(seg, j: int, segs: Sequence, words) -> bool:
     """The clause this participle rides with opens direct or indirect speech:
     it closes on the raised dot that starts a quotation, or the next segment
     is its ὅτι-content."""
-    if words[seg.end].text.rstrip().rstrip("⸃⸅⸊⟧)]»›—–").endswith("·"):
+    if _closes_on_raised_dot(words[seg.end]):
         return True
     nxt = segs[j + 1] if j + 1 < len(segs) else None
     return (nxt is not None and nxt.opener is not None
@@ -575,8 +589,8 @@ def _introduces_speech(seg, j: int, segs: Sequence, words) -> bool:
 
 
 def _participle_call(seg, j: int, segs: Sequence, words,
-                     precedes: bool) -> tuple[str, bool, bool]:
-    """(relationship, review, sure) for an adverbial participle segment.
+                     precedes: bool) -> tuple[str, bool]:
+    """(relationship, sure) for an adverbial participle segment.
 
     This is docs/participle-rules.md — the Wallace/Keating chart reduced to
     testable conditions — in precedence order. Every tier joins the minimal
@@ -586,21 +600,22 @@ def _participle_call(seg, j: int, segs: Sequence, words,
     attaches to in the shift-reduce pass (held/forward-attaching = precedes;
     attaching backward to the stack top = follows)."""
     ptcp = _segment_participle(seg, words)
-    if ptcp is None:                      # not actually a participle segment
-        return "Tmp", True, False
+    # A ``ptcp`` segment always has one: the opener word itself, or the first
+    # participle in the segment (:func:`_segment_participle`).
+    assert ptcp is not None, "ptcp segment with no participle"
     tense = ptcp.tense
     lemmas = {_L(w.lemma) for w in _seg_words(seg, words)}
 
     # 1. καίπερ / καίτοιγε — the particle makes the concession explicit.
     if lemmas & CONCESSIVE_PARTICLES:
-        return "Adv", False, True
+        return "Adv", True
     # 2. Genitive absolute: "always adverbial and usually translated as
     #    temporal" — the expert put the usual reading in the default tier.
     if precedes and _genitive_absolute(seg, words, ptcp):
-        return "Tmp", False, True
+        return "Tmp", True
     # 3. "Future adverbial participles always belong here" (purpose).
     if tense == "F":
-        return "MEd", False, True
+        return "MEd", True
     # 4. The redundant participle of saying (λέγων / λέγοντες) introducing
     #    speech. It rides with its dicendi clause as the WAY the saying
     #    happened (W on the participle, star on the clause); the Ft/In over
@@ -609,47 +624,48 @@ def _participle_call(seg, j: int, segs: Sequence, words,
     #    dicendi + '·' rule across one) — so this branch deliberately does not
     #    bracket the speech a second time.
     if _L(ptcp.lemma) == LEGO and tense == "P" and _introduces_speech(seg, j, segs, words):
-        return "WEd", False, True
+        return "WEd", True
     # 4b. THE ENGLISH CUE. Rules 1–4 above are grammar-forced and outrank it;
     #     rules 5–11 below are tense/position DEFAULTS, and a translator who
     #     wrote "although …" or "because …" has read this participle's sense in
     #     context — better evidence than its tense. Sure, like every other tier.
     cue = _cue_call(seg, words, _PTCP_CUE_RELS, _PTCP_CUE_OVERRIDES)
     if cue is not None:
-        return cue, False, True
+        return cue, True
     # 5. "Adverbial perfect participles almost always belong here" (cause).
     if tense == "X":
-        return "Grnd", False, True
+        return "Grnd", True
     # 6. "The causal participle will often use οὐ when negated."
     if (lemmas & OU_NEGATIVES) and not (lemmas & MH_NEGATIVES):
-        return "Grnd", False, True
-    main = _main_verb(seg, segs, precedes, words)
+        return "Grnd", True
     # 7. Attendant circumstance — the chart's five-feature test, "90% of the
     #    time": aorist participle before an aorist imperative/indicative main
-    #    verb. Coordinate, so the two actions stand side by side.
-    if (precedes and tense == "A" and main is not None
-            and main.tense == "A" and main.mood in "ID"):
-        return "Ser", False, True
+    #    verb. Coordinate, so the two actions stand side by side. (The main
+    #    verb is looked up only here, inside the guard: no other rule reads it.)
+    if precedes and tense == "A":
+        main = _main_verb(seg, segs, precedes, words)
+        if main is not None and main.tense == "A" and main.mood in "ID":
+            return "Ser", True
     # 8. Aorist participle before its clause: antecedent time, "after …".
     if tense == "A" and precedes:
-        return "Tmp", False, True
+        return "Tmp", True
     # 9. Present participle after its clause: means/manner.
     if tense == "P" and not precedes:
-        return "WEd", False, True
+        return "WEd", True
     # 10. Present participle before its clause: contemporaneous, "while …".
     if tense == "P" and precedes:
-        return "Tmp", False, True
+        return "Tmp", True
     # 11. Residual — "almost all participles are temporal in a secondary
     #     sense". IMPLEMENTATION ASSUMPTION awaiting expert review: the chart
     #     gives no tier for the residual bucket (an aorist participle FOLLOWING
     #     its clause is its largest member), and we join it to minimal like
     #     every other default rather than leaving it loose.
-    return "Tmp", False, True
+    return "Tmp", True
 
 
 def _dependent_call(seg, j: int, segs: Sequence, words,
-                    precedes: bool) -> tuple[str, bool, bool] | None:
-    """(relationship, review, sure) for a backward/forward-attaching dependent
+                    precedes: bool) -> tuple[str, bool] | None:
+    """(relationship, sure) for a backward/forward-attaching dependent
     segment, or None if the segment is not a dependent unit. ``sure`` marks
     the calls that JOIN THE MINIMAL ANALYSIS — grammar-forced calls and
     sensible defaults alike (see the module docstring); each entry's warrant
@@ -666,12 +682,12 @@ def _dependent_call(seg, j: int, segs: Sequence, words,
         # sentence against a single bare clause) is gone — attaching a
         # relative to the NEAREST clause is an accepted sensible default, so
         # the relationship's sureness no longer depends on its scope.
-        return "FtIn", False, True
+        return "FtIn", True
     if op.kind == "appos":
         # Apposition / attributive-article phrase restates: Ft → In*.
         # NOT sure: the expert has not ruled on apposition, so it stays a
         # Full-only best guess until they do.
-        return "FtIn", True, False
+        return "FtIn", False
     if op.kind == "pp":
         # Implicit-proposition prepositional phrase: guess by preposition.
         # NOT sure: also unruled — which proposition a bare PP implies is the
@@ -680,7 +696,7 @@ def _dependent_call(seg, j: int, segs: Sequence, words,
         # redemption …" → Tmp for Eph 1:14's εἰς ἀπολύτρωσιν), but the open
         # question is whether the implied PROPOSITION is drawable at all, not
         # which relation it takes — expert-questions.md Open #3.
-        return _PP_REL.get(lemma, "WEd"), True, False
+        return _PP_REL.get(lemma, "WEd"), False
     if op.kind == "ptcp":
         return _participle_call(seg, j, segs, words, precedes)
     if op.kind == "inf":
@@ -689,11 +705,8 @@ def _dependent_call(seg, j: int, segs: Sequence, words,
         # now a sure default (the overwhelmingly common reading).
         ws = _seg_words(seg, words)
         if len(ws) >= 2 and ws[1].pos == "RA":
-            mapped = _INF_PREP_REL.get(_L(ws[0].lemma))
-            if mapped is not None:
-                rel, sure = mapped
-                return rel, not sure, sure
-        return "MEd", False, True
+            return _INF_PREP_REL.get(_L(ws[0].lemma), "MEd"), True
+        return "MEd", True
     if op.kind == "sub_conj":
         if lemma in PURPOSE:
             # ἵνα / ὅπως. RULING (the ἵνα conditional rule): after a verb of
@@ -710,11 +723,11 @@ def _dependent_call(seg, j: int, segs: Sequence, words,
             cue = _cue_call(seg, words, _PURPOSE_CUE_RELS,
                             _PURPOSE_CUE_OVERRIDES)
             if cue is not None:
-                return cue, False, True
+                return cue, True
             prev = segs[j - 1] if j > 0 else None
             if prev is not None and _has_lemma(prev, words, ASKING_VERBS):
-                return "FtIn", False, True
-            return "MEd", False, True
+                return "FtIn", True
+            return "MEd", True
         if lemma in RESULT:
             # ὥστε + INFINITIVE is the textbook result clause: 2/2 exact
             # (1 Thess 1:7, 1:8) and grammatically unambiguous — sure.
@@ -728,25 +741,29 @@ def _dependent_call(seg, j: int, segs: Sequence, words,
             if not _result_infinitive(seg, words):
                 cue = _cue_call(seg, words, _RESULT_CUE_RELS)
                 if cue is not None:
-                    return cue, False, True
-                return "CE", False, False
-            return "CE", False, True
+                    return cue, True
+                return "CE", False
+            return "CE", True
         if lemma in CONDITIONAL:
-            return "CndE", False, True    # ἐάν/εἰ: 2/2 exact (1 John)
+            return "CndE", True           # ἐάν/εἰ: 2/2 exact (1 John)
         if lemma in TEMPORAL:
-            return "Tmp", False, True     # explicit temporal subordinator
+            return "Tmp", True            # explicit temporal subordinator
         if lemma in LOCATIVE:
-            return "Loc", False, True     # explicit locative subordinator
+            return "Loc", True            # explicit locative subordinator
         if lemma in COMPARATIVE:
             # ὡς is the one comparative that is not really a comparative: it
             # also carries temporal ("when …") and content ("that …") senses,
             # so the ENGLISH CUE picks between them. καθώς/ὥσπερ/καθάπερ/ὡσεί
             # are unambiguous and keep their grammar-forced Comparison.
+            # POSITION NARROWS IT: a ὡς clause that PRECEDES its main clause is
+            # never the content ("that …") use, which follows the verb that
+            # governs it — so the content sense is off the table there.
             if lemma == HOS:
-                cue = _cue_call(seg, words, _HOS_CUE_RELS)
+                allowed = _HOS_PRECEDING_CUE_RELS if precedes else _HOS_CUE_RELS
+                cue = _cue_call(seg, words, allowed)
                 if cue is not None:
-                    return cue, False, True
-            return "Cmp", False, True     # ὡς/ὥσπερ: 2/2 exact (1 Jn, Heb)
+                    return cue, True
+            return "Cmp", True            # ὡς/ὥσπερ: 2/2 exact (1 Jn, Heb)
         if lemma in HOTI:
             # ὅτι is the ambiguity the cue layer was designed for, so here the
             # cue is the PRIMARY test (RULING, expert-questions.md): the BSB's
@@ -757,42 +774,31 @@ def _dependent_call(seg, j: int, segs: Sequence, words,
             # a bare quotation. Both routes are sure.
             cue = _cue_call(seg, words, _HOTI_CUE_RELS)
             if cue is not None:
-                return cue, False, True
+                return cue, True
             prev = segs[j - 1] if j > 0 else None
             if prev is not None and _has_lemma(prev, words, VERBA_DICENDI):
                 # Content of saying/knowing: 2/2 exact (1 John 5c-5d, 6a-6b).
-                return "FtIn", False, True
+                return "FtIn", True
             # Causal ὅτι — no verb of saying in front of it. RULING: the rule
             # and its detection are confirmed, so the Ground is sure.
-            return "Grnd", False, True
-        return None  # unknown subordinator → treated as a serial join, review
+            return "Grnd", True
+        return None  # unknown subordinator → a serial join, out of minimal
     return None
-
-
-def _protasis_rel(seg, words, lemma: str) -> str:
-    """The relationship of a sentence-initial forward-attaching subordinate
-    clause. ἐάν/εἰ/ὅταν/ὅτε/… are grammar-forced; ὡς is the ambiguous one, and
-    the cue chooses between its comparative and temporal senses. Only those
-    two: a sentence-INITIAL ὡς is never the content ("that …") use, which
-    follows its governing verb."""
-    rel = _PROTASIS_REL[lemma]
-    if lemma == HOS:
-        cue = _cue_call(seg, words, frozenset({"Cmp", "Tmp"}))
-        if cue is not None:
-            return cue
-    return rel
 
 
 def _result_infinitive(seg, words) -> bool:
     """Is this ὥστε clause the infinitive construction? Its predicate is an
     infinitive (mood 'N' in the MorphGNT parsing) and it has no finite verb of
     its own."""
-    infinitive = False
-    for w in _seg_words(seg, words):
-        if w.is_finite_verb:
-            return False
-        infinitive = infinitive or w.is_infinitive
-    return infinitive
+    ws = _seg_words(seg, words)
+    return any(w.is_infinitive for w in ws) and not any(
+        w.is_finite_verb for w in ws)
+
+
+def _men_before(segs: Sequence, words) -> bool:
+    """Does a μέν stand anywhere in these preceding segments? μέν … δέ is the
+    Alternative; a δέ with no μέν in front of it is the default Series."""
+    return any(_has_lemma(s, words, MEN) for s in segs)
 
 
 # ---------------------------------------------------------------------------
@@ -802,41 +808,32 @@ class _Held:
     """A forward-attaching packet (protasis or sentence-initial dependent),
     waiting to become children[0] of its bracket at sentence end."""
 
-    __slots__ = ("packet", "rel", "review", "sure")
+    __slots__ = ("packet", "rel", "sure")
 
-    def __init__(self, packet: dict, rel: str, review: bool, sure: bool = False):
+    def __init__(self, packet: dict, rel: str, sure: bool = False):
         self.packet = packet
         self.rel = rel
-        self.review = review
         self.sure = sure
 
 
-def _dep_bracket(rel: str, host: dict, dependent: dict, review: bool,
-                 sure: bool) -> dict:
-    """Bracket a backward-attaching dependent onto its host. Coordinate
-    relationships (the attendant-circumstance participle's Series) bracket
-    from the centre; everything else subordinates the dependent side."""
-    if rel in COORDINATE_CODES:
-        return _coord(rel, host, dependent, review=review, sure=sure)
-    return _sub(rel, host, dependent, dep_child=1, review=review, sure=sure)
-
-
-def _assemble_sentence(indexed_segs: list[tuple[int, "Segment"]], words) -> dict:
-    """Reduce one sentence's segments to a single packet (tree node)."""
-    segs = [s for _, s in indexed_segs]
+def _assemble_sentence(indexed_segs: list[tuple[int, "Segment"]],
+                       segs: Sequence, words) -> dict:
+    """Reduce one sentence's segments to a single packet (tree node). ``segs``
+    is ``indexed_segs`` without the global indexes, which the caller already
+    has to hand."""
     stack: list[dict] = []
     held: _Held | None = None
 
-    def join_target_edge(new: dict, rel: str, review: bool, sub: bool,
-                         sure: bool = False) -> None:
-        """Right-edge join against the current target (stack top, else held)."""
-        edge = _edge_sub if sub else _edge_coord
+    def join_target_edge(new: dict, rel: str, sure: bool = False) -> None:
+        """Right-edge join against the current target (stack top, else held).
+        Coordinate vs. subordinate is :func:`_dep_bracket`'s call, made from
+        ``rel`` alone. Only reached when the sentence is not ``fresh``, so one
+        of the two is always there."""
         if stack:
-            stack.append(edge(stack.pop(), new, rel, review, sure))
-        elif held is not None:
-            held.packet = edge(held.packet, new, rel, review, sure)
+            stack.append(_edge_join(stack.pop(), new, rel, sure))
         else:
-            stack.append(new)
+            assert held is not None
+            held.packet = _edge_join(held.packet, new, rel, sure)
 
     for j, (gi, seg) in enumerate(indexed_segs):
         leaf = _prop_node(gi)
@@ -845,36 +842,30 @@ def _assemble_sentence(indexed_segs: list[tuple[int, "Segment"]], words) -> dict
         lemma = _opener_lemma(seg)
         fresh = not stack and held is None  # no clause yet in this sentence
 
-        if kind == "sub_conj" and fresh and lemma in _PROTASIS_REL:
-            # Sentence-initial conditional/temporal/comparative clause:
-            # hold it, it attaches forward to the coming apodosis. The
-            # relationship is the subordinator's own — sure — except for ὡς,
-            # whose sense the ENGLISH CUE picks (see _protasis_rel): the
-            # narrative "Ὡς δὲ ὀψία ἐγένετο" is "When evening came", not a
-            # comparison, and it reaches the assembler HERE rather than through
-            # _dependent_call because it opens its sentence.
-            held = _Held(leaf, _protasis_rel(seg, words, lemma), False,
-                         sure=True)
-            continue
-
         # ``fresh`` is also the participle rules' precedes/follows test: with
         # no clause yet in the sentence the dependent is HELD and attaches
         # forward (it PRECEDES its clause); otherwise it attaches backward.
+        # EVERY forward-attaching dependent comes through here — a conditional
+        # or temporal protasis, a sentence-initial ὡς or ὅπου/οὗ, an initial
+        # participle — the held branch below being the one path that holds
+        # them. (A ``coord`` opener never yields a call, so the old
+        # ``and kind != "coord"`` guard was dead.)
         call = _dependent_call(seg, j, segs, words, precedes=fresh)
-        if call is not None and not (kind == "coord"):
-            rel, review, sure = call
+        if call is not None:
+            rel, sure = call
             if stack:
                 top = stack.pop()
-                stack.append(_dep_bracket(rel, top, leaf, review, sure))
+                stack.append(_dep_bracket(rel, top, leaf, sure))
             elif held is not None:
-                held.packet = _dep_bracket(rel, held.packet, leaf, review, sure)
+                held.packet = _dep_bracket(rel, held.packet, leaf, sure)
             else:
-                # Sentence opens with a dependent unit (initial participle,
-                # causal ὅτι, …): hold it forward like a protasis. A
-                # sentence-INITIAL ὥστε is the inferential construction (the
-                # 1 Thess 4:18 diagram draws Ὥστε παρακαλεῖτε as ∴), not the
-                # result clause the CE call is sure about — never sure here.
-                held = _Held(leaf, rel, review, sure and rel != "CE")
+                # Sentence opens with a dependent unit (protasis, initial
+                # participle, causal ὅτι, …): hold it, it attaches forward to
+                # the coming apodosis/main clause. A sentence-INITIAL ὥστε is
+                # the inferential construction (the 1 Thess 4:18 diagram draws
+                # Ὥστε παρακαλεῖτε as ∴), not the result clause the CE call is
+                # sure about — never sure here.
+                held = _Held(leaf, rel, sure and rel != "CE")
             continue
 
         if kind == "coord" and not fresh:
@@ -886,54 +877,50 @@ def _assemble_sentence(indexed_segs: list[tuple[int, "Segment"]], words) -> dict
                 # expert's ruling, is the whole INFERENCE class — the old
                 # exception for the Acts μὲν οὖν diagram is overruled.
                 rel = "Grnd" if lemma in GROUND else "Inf"
-                sure = True
                 if stack:
                     if len(stack) > 1:
-                        stack[:] = [_chain("Ser", stack, review=True)]
+                        stack[:] = [_chain("Ser", stack)]
                     stack.append(_sub(rel, stack.pop(), leaf, dep_child=1,
-                                      sure=sure))
+                                      sure=True))
                 else:
                     assert held is not None
                     held.packet = _sub(rel, held.packet, leaf, dep_child=1,
-                                       sure=sure)
+                                       sure=True)
             elif lemma in ADVERSATIVE:
                 # οὐ … ἀλλά is the textbook -/+ (1/1 exact, 1 Thess). A bare
                 # ἀλλά stays NEVER SURE by the expert's ruling: which of the
-                # many contrastive readings it carries is undecidable.
-                # NO ENGLISH CUE: :func:`contrastive_cue` sees the BSB's "but"
-                # here, but "but" only confirms the contrast we already know
-                # about — expert-questions.md Open #1 is which relationship
-                # carries it, so this join is unchanged.
-                prev = segs[j - 1]
-                confident = _has_lemma(prev, words, NEGATIVES)
-                join_target_edge(leaf, "NegPos", not confident, sub=True,
-                                 sure=confident)
+                # many contrastive readings it carries is undecidable. NO
+                # ENGLISH CUE: the BSB's "but" here only confirms the contrast
+                # we already know about — expert-questions.md Open #1 is which
+                # relationship carries it, so this join is unchanged.
+                # NegPos is subordinate, so the edge join wraps the negated
+                # clause it contrasts with.
+                confident = _has_lemma(segs[j - 1], words, NEGATIVES)
+                join_target_edge(leaf, "NegPos", sure=confident)
             elif lemma in ALTERNATIVE:
-                join_target_edge(leaf, "Alt", False, sub=False, sure=True)
+                join_target_edge(leaf, "Alt", sure=True)
             elif lemma in DE:
                 # μέν … δέ is the Alternative; a δέ with no μέν in front of it
                 # is the default Series (RULING: sure). NO ENGLISH CUE: a δέ
-                # the BSB renders "but" (:func:`contrastive_cue`) is contrastive
-                # rather than serial, but which contrary relationship it marks
-                # is expert-questions.md Open #1 — so δέ keeps Series until the
-                # expert rules.
-                men_before = any(_has_lemma(s, words, MEN) for s in segs[:j])
-                rel = "Alt" if men_before else "Ser"
-                join_target_edge(leaf, rel, False, sub=False, sure=True)
+                # the BSB renders "but" is contrastive rather than serial, but
+                # which contrary relationship it marks is expert-questions.md
+                # Open #1 — so δέ keeps Series until the expert rules.
+                rel = "Alt" if _men_before(segs[:j], words) else "Ser"
+                join_target_edge(leaf, rel, sure=True)
             elif lemma in SERIAL:
                 # καί / οὐδέ / τε: Series — RULING, sure. (The 1 John student
                 # hears one of these καί as ∴; a Series default the analyst
                 # re-labels is still worth drawing.)
-                join_target_edge(leaf, "Ser", False, sub=False, sure=True)
+                join_target_edge(leaf, "Ser", sure=True)
             else:
                 # Anything unrecognized (πλήν, μέντοι …): keep the structure,
-                # flag the call, stay out of minimal.
-                join_target_edge(leaf, "Ser", True, sub=False)
+                # stay out of minimal.
+                join_target_edge(leaf, "Ser")
             continue
 
         if call is None and kind == "sub_conj" and not fresh:
-            # Unknown subordinator: keep the structure, flag the call.
-            join_target_edge(leaf, "Ser", True, sub=False)
+            # Unknown subordinator: keep the structure, stay out of minimal.
+            join_target_edge(leaf, "Ser")
             continue
 
         # Independent clause: sentence-initial (any opener) or asyndeton.
@@ -943,15 +930,13 @@ def _assemble_sentence(indexed_segs: list[tuple[int, "Segment"]], words) -> dict
     if stack:
         # Leftover asyndetic clauses. NOT sure: which members of a run belong
         # together is the speculative part (the relationship is only Series).
-        main = _chain("Ser", stack, review=True)
+        main = _chain("Ser", stack)
     if held is not None and main is not None:
-        if held.rel in COORDINATE_CODES:
-            # An attendant-circumstance participle coordinates with the clause
-            # it precedes rather than subordinating to it.
-            return _coord(held.rel, held.packet, main, review=held.review,
-                          sure=held.sure)
-        return _sub(held.rel, held.packet, main, dep_child=0,
-                    review=held.review, sure=held.sure)
+        # The held packet is the DEPENDENT side and stands first, so the
+        # dispatch runs with dep_child=0 — an attendant-circumstance
+        # participle's Series still coordinates rather than subordinating.
+        return _dep_bracket(held.rel, held.packet, main, held.sure,
+                            dep_child=0)
     if held is not None:
         return held.packet
     assert main is not None, "sentence produced no packet"
@@ -961,8 +946,8 @@ def _assemble_sentence(indexed_segs: list[tuple[int, "Segment"]], words) -> dict
 # ---------------------------------------------------------------------------
 # Inter-sentence assembly
 
-def _sentence_join(prev_segs: list, cur_segs: list, words) -> tuple[str, bool, bool]:
-    """(relationship, review, sure) joining the accumulated packet to the new
+def _sentence_join(prev_segs: list, cur_segs: list, words) -> tuple[str, bool]:
+    """(relationship, sure) joining the accumulated packet to the new
     sentence. Ser is the default when nothing marks the join — and by the
     expert's ruling it is a SURE default: sentences laid side by side each
     make their own contribution until the analyst says otherwise."""
@@ -983,33 +968,32 @@ def _sentence_join(prev_segs: list, cur_segs: list, words) -> tuple[str, bool, b
     if conn is not None:
         if conn in GROUND:
             # γάρ grounds what precedes: 4/4 exact (1 Thess ×2, Hebrews ×2).
-            return "Grnd", False, True  # star on the supported (previous) side
+            return "Grnd", True  # star on the supported (previous) side
         if conn in INFERENCE:
             # RULING: the whole INFERENCE class is always sure, inter-sentence
             # as well as mid-sentence. (This overrules the old exception for
             # the Acts 2:41 μὲν οὖν, which that diagram draws as C/E.)
-            return "Inf", False, True
+            return "Inf", True
         if conn in DE:
-            prev_has_men = any(_has_lemma(s, words, MEN) for s in prev_segs)
             # μέν … δέ → Alternative; a δέ with no μέν → Series. Both sure.
             # A "but" cue is not consulted here either — Open #1, as within a
             # sentence.
-            return ("Alt", False, True) if prev_has_men else ("Ser", False, True)
+            return ("Alt", True) if _men_before(prev_segs, words) else ("Ser", True)
         if conn in ADVERSATIVE:
             # Bare ἀλλά: NEVER sure (expert — undecidable; Open #1).
-            return "NegPos", True, False
+            return "NegPos", False
         if conn in ALTERNATIVE:
-            return "Alt", False, True
-        return "Ser", False, True   # bare καί / τε chain: sure default
+            return "Alt", True
+        return "Ser", True   # bare καί / τε chain: sure default
 
     # Speech content: previous sentence ends with a verbum dicendi + '·'.
     # RULING: sure. The Acts diagram frames some speeches as S/R instead, but
     # Ft/In is the right starting point and re-marking it is one click.
     last_word = words[prev_segs[-1].end]
-    if last_word.text.rstrip().endswith("·") and _L(last_word.lemma) in VERBA_DICENDI:
-        return "FtIn", False, True
+    if _closes_on_raised_dot(last_word) and _L(last_word.lemma) in VERBA_DICENDI:
+        return "FtIn", True
     # Asyndeton between sentences: Series, the sensible default (RULING: sure).
-    return "Ser", False, True
+    return "Ser", True
 
 
 class _Packet(NamedTuple):
@@ -1039,26 +1023,22 @@ def _fold_sentences(packets: Sequence[_Packet], words) -> dict:
     over the sentences of one section, and the BIG fold over the section
     packets — same joins, same table, only the packets differ."""
 
-    def close(group: list[tuple[dict, bool, bool]]) -> dict:
-        packet = group[0][0]
-        for node, review, sure in group[1:]:
-            packet = _coord("Ser", packet, node, review=review, sure=sure)
-        return packet
+    def close(group: list[tuple[dict, bool]]) -> dict:
+        """The Ser run, left-folded — the same left fold as :func:`_chain`."""
+        return _chain("Ser", [node for node, _ in group],
+                      sures=[sure for _, sure in group])
 
-    # (packet, review, sure) — the flags describe the join that ADDED the
-    # packet, so the first entry's are unused.
-    group: list[tuple[dict, bool, bool]] = [(packets[0].node, False, False)]
+    # (packet, sure) — ``sure`` describes the join that ADDED the packet, so
+    # the first entry's is unused.
+    group: list[tuple[dict, bool]] = [(packets[0].node, False)]
     previous = packets[0]
     for current in packets[1:]:
-        rel, review, sure = _sentence_join(previous.closing, current.opening, words)
+        rel, sure = _sentence_join(previous.closing, current.opening, words)
         if rel == "Ser":
-            group.append((current.node, review, sure))
-        elif rel == "Alt":
-            group = [(_coord("Alt", close(group), current.node, sure=sure),
-                      False, False)]
+            group.append((current.node, sure))
         else:
-            group = [(_sub(rel, close(group), current.node, dep_child=1,
-                           review=review, sure=sure), False, False)]
+            group = [(_dep_bracket(rel, close(group), current.node, sure),
+                      False)]
         previous = current
     return close(group)
 
@@ -1139,8 +1119,7 @@ def _dicendi_sentence(segs: Sequence, words) -> bool:
     "εἶπεν αὐτοῖς·" and Matt 3:3's "λέγοντος·" both count). λέγων/λέγοντες
     need no branch of their own: λέγω is a verbum dicendi, so a λέγων segment
     closing on '·' is already a hit."""
-    last = words[segs[-1].end]
-    if not last.text.rstrip().rstrip("⸃⸅⸊⟧)]»›—–").endswith("·"):
+    if not _closes_on_raised_dot(words[segs[-1].end]):
         return False
     return _has_lemma(segs[-1], words, VERBA_DICENDI)
 
@@ -1258,6 +1237,12 @@ def _promoted(bounds: Sequence[tuple[int, int]], packets: Sequence[_Packet],
     the run the fold would hang off it — and it qualifies when that run's own
     packet holds a coordinate or a Fact–Interpretation.
 
+    "That run develops" needs no fold to answer: a run of MORE THAN ONE
+    sentence always does, because the Ser joining them is itself coordinate, so
+    only the single-sentence case has to look inside — ``end > i or
+    _develops(packets[i].node)``. (Folding a throwaway probe per candidate made
+    this quadratic in the run length for no extra information.)
+
     One level is enough: the promoted sections are not re-examined."""
     out: list[tuple[int, int]] = []
     for lo, hi in bounds:
@@ -1272,7 +1257,7 @@ def _promoted(bounds: Sequence[tuple[int, int]], packets: Sequence[_Packet],
             end = i
             while end + 1 <= hi and rels[end + 1] == "Ser":
                 end += 1
-            if not _develops(_fold_sentences(packets[i:end + 1], words)):
+            if not (end > i or _develops(packets[i].node)):
                 continue
             cuts.add(i)                     # the because-block opens here
             if end + 1 <= hi:
@@ -1337,10 +1322,10 @@ def _propositions(segments: Sequence, words) -> list[dict]:
 
 
 def _strip_private(node: dict) -> None:
-    """Remove builder bookkeeping documents never carry: the classifier's
-    internal ``review`` flags (confidence labeling is not part of the
-    product) and the ``_sure`` marks the confident mode prunes by."""
-    node.pop("flag", None)
+    """Remove the builder's one piece of bookkeeping: the ``_sure`` marks the
+    confident mode prunes by. (No ``flag`` to strip — this module never sets
+    one; a review flag is the analyst's own, set in the editor on a document
+    that never passes back through here.)"""
     node.pop("_sure", None)
     for child in node.get("children", ()):
         _strip_private(child)
@@ -1354,24 +1339,26 @@ def _confident_forest(tree: dict) -> list[dict]:
 
     A bracket survives only if its own call is sure AND every bracket under
     it survives: a sure relationship over an uncertain sub-grouping is an
-    uncertain bracket (the children it pairs are themselves a guess)."""
-    def keepable(node: dict) -> bool:
+    uncertain bracket (the children it pairs are themselves a guess).
+
+    ONE POST-ORDER PASS. Each node is visited exactly once: it reports whether
+    its subtree is entirely sure AND the roots that subtree contributes. A node
+    that is kept contributes itself; one that is not hands its children's roots
+    upward. (Deciding keepability and then walking separately re-tested most
+    nodes once per ancestor.)"""
+    def visit(node: dict) -> tuple[bool, list[dict]]:
+        """(is this whole subtree sure?, the maximal all-sure roots in it)"""
         if node["kind"] == "prop":
-            return True
-        return bool(node.get("_sure")) and all(
-            keepable(child) for child in node["children"])
+            return True, [node]
+        keepable = bool(node.get("_sure"))
+        kept: list[dict] = []
+        for child in node["children"]:
+            child_sure, child_roots = visit(child)
+            keepable = keepable and child_sure
+            kept.extend(child_roots)
+        return (True, [node]) if keepable else (False, kept)
 
-    out: list[dict] = []
-
-    def walk(node: dict) -> None:
-        if keepable(node):
-            out.append(node)
-        else:
-            for child in node["children"]:
-                walk(child)
-
-    walk(tree)
-    return out
+    return visit(tree)[1]
 
 
 def _sentences(segments: Sequence) -> list[list[tuple[int, "Segment"]]]:
@@ -1405,10 +1392,12 @@ def build_document(segments: list["Segment"], *,
     words = load_words()
 
     sentences = _sentences(segments)
-    sentence_packets = [
-        _Packet(_assemble_sentence(group, words), segs, segs)
-        for group, segs in ((g, [s for _, s in g]) for g in sentences)
-    ]
+    sentence_packets: list[_Packet] = []
+    for group in sentences:
+        segs = [s for _, s in group]
+        # One sentence, so both ends of the packet are that same segment list.
+        sentence_packets.append(
+            _Packet(_assemble_sentence(group, segs, words), segs, segs))
 
     bounds = _sections(sentence_packets, words)
     section_packets = [

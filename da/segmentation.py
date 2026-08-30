@@ -24,9 +24,9 @@ Contract:
 """
 
 from dataclasses import dataclass
-from unicodedata import normalize as _unicode_normalize
 
 from .corpus import load_words
+from .corpus.normalize import nfc_set as _nfc
 
 __all__ = ["Opener", "Segment", "segment"]
 
@@ -46,55 +46,51 @@ class Segment:
     opener: Opener | None
 
 
-def _nfc(items: tuple[str, ...]) -> frozenset[str]:
-    return frozenset(_unicode_normalize("NFC", item) for item in items)
-
-
 # Subordinating conjunctions / conjunctive adverbs that open a dependent
 # clause. Compared against Word.lemma (MorphGNT lemmas are NFC already; the
 # sets are normalized anyway). Gated on pos C-/D-: e.g. ἐάν tagged X- is the
 # ἄν-substitute particle (ὃς ἐάν), not a conditional opener.
-SUB_CONJ_LEMMAS = _nfc((
+SUB_CONJ_LEMMAS = _nfc(
     "ὅτι", "ἵνα", "ἐάν", "εἰ", "ὅταν", "ὅτε", "ὡς", "ὥστε", "ἐπεί", "ἐπειδή",
     "ἐπειδήπερ", "ἐπάν", "καθώς", "καθώσπερ", "ὥσπερ", "καθάπερ", "καθό",
     "καθότι", "ὅπως", "ὅπου", "οὗ", "ἄχρι", "ἕως", "πρίν", "διότι", "ἡνίκα",
     "ὁπότε", "ὁσάκις", "εἴπερ", "ἐάνπερ", "μήποτε", "μήπως", "ὡσεί",
-))
+)
 _SUB_POS = ("C-", "D-")
 
 # Coordinating conjunctions that join clauses. Gated on pos == 'C-': adverbial
 # καί ("also", tagged D-) and prepositional πλήν/ἄχρι never split.
-COORD_LEMMAS = _nfc((
+COORD_LEMMAS = _nfc(
     "καί", "δέ", "ἀλλά", "ἤ", "οὐδέ", "μηδέ", "τε", "τέ", "πλήν", "μέντοι",
     "γάρ", "οὖν", "διό", "ἄρα", "ὅθεν", "τοιγαροῦν", "τοίνυν",
-))
+)
 
 # Connectives that stand second (or third) in their clause: the segment break
 # belongs at the start of their clause, not at the connective itself.
-POSTPOSITIVES = _nfc(("γάρ", "δέ", "οὖν", "ἄρα", "μέν", "τε", "τέ", "μέντοι", "τοίνυν"))
+POSTPOSITIVES = _nfc("γάρ", "δέ", "οὖν", "ἄρα", "μέν", "τε", "τέ", "μέντοι", "τοίνυν")
 
 # Interjections that never open a segment.
-INTERJECTIONS = _nfc(("ἰδού", "ἴδε"))
+INTERJECTIONS = _nfc("ἰδού", "ἴδε")
 
 # Interrogative lemmas that introduce (indirect) questions. MorphGNT tags the
 # indefinite τις with pos RI as well — the lemma separates them (indefinite
 # τις is unaccented, interrogative τίς accented).
-INTERROGATIVES = _nfc(("τίς", "ὁποῖος", "ποῖος", "πόσος", "ὁπόσος", "πηλίκος", "ποταπός"))
+INTERROGATIVES = _nfc("τίς", "ὁποῖος", "ποῖος", "πόσος", "ὁπόσος", "πηλίκος", "ποταπός")
 
 # Prepositions that form adverbial infinitive constructions with an article
 # (εἰς τό, διὰ τό, μετὰ τό, πρὸς τό, ἐν τῷ, πρὸ τοῦ, ἕως τοῦ, ἀντὶ τοῦ).
-INF_PREPS = _nfc(("εἰς", "διά", "μετά", "πρός", "ἐν", "πρό", "ἕως", "ἀντί"))
+INF_PREPS = _nfc("εἰς", "διά", "μετά", "πρός", "ἐν", "πρό", "ἕως", "ἀντί")
 
 # Verbs whose infinitive complement stays inline (complementary infinitives).
 # δεῖ is lemmatized δέω and ἔξεστιν as "ἔξεστι(ν)" in MorphGNT.
-COMPLEMENT_GOVERNORS = _nfc((
+COMPLEMENT_GOVERNORS = _nfc(
     "δύναμαι", "μέλλω", "θέλω", "ἄρχω", "ζητέω", "ὀφείλω", "δέω", "δεῖ",
     "ἔξεστι(ν)", "ἔξεστιν", "δοκέω", "βούλομαι", "ἐπιθυμέω", "ἀφίημι",
     "δίδωμι", "ἔχω", "πειράζω", "σπουδάζω",
-))
+)
 
 # Negations that belong to the infinitive they stand in front of.
-NEGATIVES_INF = _nfc(("μή", "οὐ"))
+NEGATIVES_INF = _nfc("μή", "οὐ")
 
 # Word classes allowed between an article and the infinitive it governs
 # (negations, particles, accusative-subject pronouns): a noun, adjective,
@@ -247,29 +243,59 @@ def segment(start: int, end: int) -> list[Segment]:
         ptcp_absorbed = new_opener is not None and new_opener.kind == "ptcp"
         any_verb = False
 
-    def split(b: int, new_opener: Opener | None, moved_upto: int) -> None:
+    def absorb(j: int) -> None:
+        """Fold word ``j`` into the current segment's state. These three
+        contributions are the ones every word makes wherever it is read — at
+        the loop tail as the word arrives, and again in :func:`split`'s replay
+        of the words it moves into the new segment."""
+        nonlocal last_comma, has_content, any_verb
+        wj = words[j]
+        if wj.is_verb:
+            any_verb = True
+        if "," in wj.text:
+            last_comma = j
+        if not _absorbable(wj):
+            has_content = True
+
+    def claim_opener(kind: str, lemma: str, index: int) -> None:
+        """Name the segment's opener when nothing has claimed it, or only a
+        coordinator has: a dependent-unit marker outranks the καί it follows
+        (καὶ ὅτι …, καὶ προσελθόντες …), but a dependent opener already in
+        place keeps the segment."""
+        nonlocal opener
+        if opener is None or opener.kind == "coord":
+            opener = Opener(kind, lemma, index)
+
+    def split(b: int, new_opener: Opener | None) -> None:
         """Close the current segment at b-1, open a new one at b. Words
-        [b, moved_upto] (possibly none) already belong to the new segment;
-        replay their state contributions."""
-        nonlocal host_finite, last_finite, last_comma, has_content, any_verb
+        [b, i-1] (possibly none) — everything back to the split point that the
+        main loop has already passed — belong to the new segment, so their
+        state contributions are replayed. ``i`` is the enclosing loop's current
+        word, which is what every call site splits at.
+
+        The replay does one thing the loop tail does not: a finite verb among
+        the moved words is the NEW segment's own predicate, so it sets
+        host_finite/last_finite (the tail leaves those to the finite-verb
+        branch of the main chain)."""
+        nonlocal host_finite, last_finite
         emit(b - 1)
         clear(b, new_opener)
-        for j in range(b, moved_upto + 1):
-            wj = words[j]
-            if wj.is_finite_verb:
+        for j in range(b, i):
+            if words[j].is_finite_verb:
                 host_finite = True
                 last_finite = j
-            if wj.is_verb:
-                any_verb = True
-            if "," in wj.text:
-                last_comma = j
-            if not _absorbable(wj):
-                has_content = True
+            absorb(j)
 
     for i in range(start, end + 1):
         w = words[i]
         lemma = w.lemma
         at_seg_start = i == seg_start
+        # Is there a unit in front of this word for an implicit proposition to
+        # split away from — the clause's own verb, or a preceding implicit
+        # unit? Read once: the two branches below that ask are in the same
+        # elif chain, so neither can have changed it.
+        unit_before = any_verb or (opener is not None
+                                   and opener.kind in ("pp", "appos"))
 
         if w.pos in _SUB_POS and lemma in SUB_CONJ_LEMMAS:
             # Subordinating conjunction.
@@ -278,10 +304,9 @@ def segment(start: int, end: int) -> list[Segment]:
                     opener = Opener("sub_conj", lemma, i)
             elif not has_content:
                 # Only connectives before it (e.g. καὶ ὅτι): absorb.
-                if opener is None or opener.kind == "coord":
-                    opener = Opener("sub_conj", lemma, i)
+                claim_opener("sub_conj", lemma, i)
             else:
-                split(i, Opener("sub_conj", lemma, i), i - 1)
+                split(i, Opener("sub_conj", lemma, i))
 
         elif w.pos == "RR" or (w.pos == "RI" and lemma in INTERROGATIVES):
             # Relative pronoun — or an interrogative introducing an indirect
@@ -295,8 +320,7 @@ def segment(start: int, end: int) -> list[Segment]:
                     opener = Opener("rel", lemma, i)
             elif all(_absorbable(words[j]) for j in range(seg_start, b)):
                 # Only connectives before the clause start: absorb.
-                if opener is None or opener.kind == "coord":
-                    opener = Opener("rel", lemma, i)
+                claim_opener("rel", lemma, i)
             elif not host_finite and not any_verb and b == i:
                 # Interrupting relative clause: host material precedes but no
                 # verb of any kind has arrived, so the relative stays inline
@@ -306,7 +330,7 @@ def segment(start: int, end: int) -> list[Segment]:
                 # relative and splits.
                 embedded = True
             else:
-                split(b, Opener("rel", lemma, i), i - 1)
+                split(b, Opener("rel", lemma, i))
 
         elif w.pos == "C-" and lemma in COORD_LEMMAS:
             # Coordinating conjunction — splits only when it joins clauses.
@@ -332,7 +356,7 @@ def segment(start: int, end: int) -> list[Segment]:
                 # ἵνα … ἔτι μᾶλλον καὶ μᾶλλον περισσεύῃ).
                 pass
             elif _predicate_follows(words, b, i, end):
-                split(b, Opener("coord", lemma, i), i - 1)
+                split(b, Opener("coord", lemma, i))
 
         elif w.is_participle:
             if not _articular(words, i):
@@ -345,8 +369,7 @@ def segment(start: int, end: int) -> list[Segment]:
                     pass  # participle inside an embedded relative clause
                 elif not has_content:
                     # e.g. καὶ προσελθόντες: fold the connective in.
-                    if opener is None or opener.kind == "coord":
-                        opener = Opener("ptcp", lemma, i)
+                    claim_opener("ptcp", lemma, i)
                     ptcp_absorbed = True
                 elif (opener is not None and opener.kind in ("rel", "sub_conj")
                         and not host_finite):
@@ -355,7 +378,7 @@ def segment(start: int, end: int) -> list[Segment]:
                     # a finite verb follows, the resumption rule below splits.
                     ptcp_absorbed = True
                 else:
-                    split(i, Opener("ptcp", lemma, i), i - 1)
+                    split(i, Opener("ptcp", lemma, i))
 
         elif w.is_infinitive:
             if not _governed_complement(words, i, start):
@@ -372,34 +395,32 @@ def segment(start: int, end: int) -> list[Segment]:
                     while b - 1 > seg_start and words[b - 1].lemma in NEGATIVES_INF:
                         b -= 1
                 if b is not None:
-                    if b <= seg_start:
-                        if opener is None or opener.kind == "coord":
-                            opener = Opener("inf", lemma, i)
-                    elif all(_absorbable(words[j]) for j in range(seg_start, b)):
-                        if opener is None or opener.kind == "coord":
-                            opener = Opener("inf", lemma, i)
+                    # Nothing but connectives before the construction starts —
+                    # which includes b at or before the segment start, where
+                    # the range is empty and all() is vacuously true: absorb.
+                    if all(_absorbable(words[j]) for j in range(seg_start, b)):
+                        claim_opener("inf", lemma, i)
                     else:
-                        split(b, Opener("inf", lemma, i), i - 1)
+                        split(b, Opener("inf", lemma, i))
 
         elif (w.pos == "P-" and i > seg_start and last_comma == i - 1
                 and not embedded
                 and not (i + 1 <= end and words[i + 1].pos == "RR")
-                and (any_verb or (opener is not None and opener.kind in ("pp", "appos")))):
+                and unit_before):
             # Implicit proposition: trailing prepositional phrase directly
             # after a comma, once the clause (or a preceding implicit unit)
             # is complete — εἰς ἀπολύτρωσιν…, εἰς ἔπαινον… (Eph 1:14).
             # (Preposition + relative — ἐν ᾧ — belongs to the relative clause,
             # handled by the RR branch at the next word.)
-            split(i, Opener("pp", lemma, i), i - 1)
+            split(i, Opener("pp", lemma, i))
 
-        elif (w.pos == "RA" and i > seg_start and not embedded
-                and (any_verb or (opener is not None and opener.kind in ("pp", "appos")))
+        elif (w.pos == "RA" and i > seg_start and not embedded and unit_before
                 and (last_comma == i - 1
                      or (i + 1 <= end and words[i + 1].pos == "P-"))):
             # Implicit proposition: comma-preceded article apposition
             # (τὸ εὐαγγέλιον…, Eph 1:13) or attributive article + preposition
             # (τὸν διὰ Ἰησοῦ Χριστοῦ, Phil 1:11).
-            split(i, Opener("appos", lemma, i), i - 1)
+            split(i, Opener("appos", lemma, i))
 
         elif w.is_finite_verb:
             if embedded:
@@ -420,7 +441,7 @@ def segment(start: int, end: int) -> list[Segment]:
                 marker = opener.index if opener is not None else seg_start
                 b = last_comma + 1 if last_comma >= marker else i
                 if b > seg_start:
-                    split(b, None, i - 1)
+                    split(b, None)
                 host_finite = True
                 last_finite = i
             elif not host_finite:
@@ -432,17 +453,12 @@ def segment(start: int, end: int) -> list[Segment]:
                 # comma when it follows the previous verb, else at the verb.
                 b = last_comma + 1 if last_comma >= last_finite else i
                 if b > seg_start:
-                    split(b, None, i - 1)
+                    split(b, None)
                 host_finite = True
                 last_finite = i
 
         # State contributions of the word itself.
-        if w.is_verb:
-            any_verb = True
-        if "," in w.text:
-            last_comma = i
-        if not _absorbable(w):
-            has_content = True
+        absorb(i)
 
         if w.ends_sentence:
             emit(i)

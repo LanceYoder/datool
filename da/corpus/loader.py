@@ -35,8 +35,9 @@ SENTENCE_FINAL = (".", ";", "·")
 
 # Closing apparatus sigla / brackets / dashes that can trail the final
 # punctuation in the text column (e.g. "λαλῆσαι.⸃", "ἀμήν.⟧", "Κυρηνίου·)",
-# "ἀνθρώπων;—") — stripped before the sentence-end check.
-_TRAILING_CLOSERS = "⸃⸅⸊⟧)]»›—–"
+# "ἀνθρώπων;—") — stripped before any end-of-sentence check, here and in
+# da.treebuild's raised-dot tests.
+TRAILING_CLOSERS = "⸃⸅⸊⟧)]»›—–"
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,7 +89,7 @@ class Word:
 
     @property
     def ends_sentence(self) -> bool:
-        return self.text.rstrip().rstrip(_TRAILING_CLOSERS).endswith(SENTENCE_FINAL)
+        return self.text.rstrip().rstrip(TRAILING_CLOSERS).endswith(SENTENCE_FINAL)
 
     @property
     def book_name(self) -> str:

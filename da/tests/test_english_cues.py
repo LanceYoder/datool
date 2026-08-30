@@ -12,8 +12,8 @@ interpretive work. These tests pin the layer at three levels:
     invented;
   * the boundaries: what the cue is NOT allowed to override (the grammar-forced
     participle rules, the non-ὡς comparatives, implicit-proposition PPs) and
-    the joins where a cue is detected but deliberately not acted on (the
-    contrastive "but" of expert-questions.md Open #1).
+    the joins the cue table deliberately stays out of (the contrastive "but"
+    of expert-questions.md Open #1, which has no row at all).
 
 Cue-derived calls are ``sure``: a translator's reading is exactly the
 "sensible-default" tier the re-tier put in the minimal analysis.
@@ -32,7 +32,6 @@ from da.treebuild import (
     ASKING_VERBS,
     VERBA_DICENDI,
     build_document,
-    contrastive_cue,
     leading_cue,
     opener_english,
     segment_english,
@@ -176,7 +175,7 @@ def test_hoti_rendered_because_is_ground_over_the_dicendi_rule():
     assert segment_english(segs[i]).startswith("because")
     assert _has_lemma(segs[i - 1], load_words(), VERBA_DICENDI), \
         "the fallback would have read this ὅτι as content"
-    assert call_for(segs, i, precedes=False) == ("Grnd", False, True)
+    assert call_for(segs, i, precedes=False) == ("Grnd", True)
 
 
 def test_hoti_rendered_that_is_content_over_the_causal_default():
@@ -189,7 +188,7 @@ def test_hoti_rendered_that_is_content_over_the_causal_default():
     assert segment_english(segs[i]).startswith("that")
     assert not _has_lemma(segs[i - 1], load_words(), VERBA_DICENDI), \
         "the fallback would have read this ὅτι as causal"
-    assert call_for(segs, i, precedes=False) == ("FtIn", False, True)
+    assert call_for(segs, i, precedes=False) == ("FtIn", True)
     # And it reaches the minimal document as the content of the understanding.
     doc = build_document(segs, confident_only=True)
     p = [{"kind": "prop", "ref": f"p{i}"} for i in (1, 2, 3)]
@@ -203,7 +202,7 @@ def test_both_hoti_of_matthew_13_16_are_causal():
     single verse; both come out Ground."""
     segs, _ = passage("Matthew 13:16")
     assert [call_for(segs, i, precedes=False) for i in (1, 2)] == \
-        [("Grnd", False, True), ("Grnd", False, True)]
+        [("Grnd", True), ("Grnd", True)]
     doc = build_document(segs, confident_only=True)
     p = [{"kind": "prop", "ref": f"p{i}"} for i in (1, 2, 3)]
     assert doc["forest"] == [SUB("Grnd", 0, SUB("Grnd", 0, p[0], p[1]), p[2])]
@@ -217,7 +216,7 @@ def test_hoti_with_no_english_falls_back_to_the_dicendi_rule():
     segs, _ = passage("Matthew 9:18")
     i = opened_by(segs, "ὅτι")
     assert _cue_call(segs[i], load_words(), _HOTI_CUE_RELS) is None
-    assert call_for(segs, i, precedes=False) == ("FtIn", False, True)
+    assert call_for(segs, i, precedes=False) == ("FtIn", True)
 
 
 # ---------------------------------------------------------------------------
@@ -232,7 +231,7 @@ def test_hoste_finite_with_a_result_cue_joins_minimal():
     segs, _ = passage("Galatians 2:13")
     i = opened_by(segs, "ὥστε")
     assert segment_english(segs[i]).startswith("so that")
-    assert call_for(segs, i, precedes=False) == ("CE", False, True)
+    assert call_for(segs, i, precedes=False) == ("CE", True)
     doc = build_document(segs, confident_only=True)
     assert doc["forest"] == [SUB("CE", 1, {"kind": "prop", "ref": "p1"},
                                  {"kind": "prop", "ref": "p2"})]
@@ -251,7 +250,7 @@ def test_hoste_finite_with_an_inference_cue_is_inference():
     segs, _ = passage("Romans 7:12")
     i = opened_by(segs, "ὥστε")
     assert segment_english(segs[i]).startswith("so then")
-    assert call_for(segs, i, precedes=True) == ("Inf", False, True)
+    assert call_for(segs, i, precedes=True) == ("Inf", True)
 
 
 def test_hoste_finite_with_no_applicable_cue_is_unchanged():
@@ -262,7 +261,7 @@ def test_hoste_finite_with_no_applicable_cue_is_unchanged():
     segs, _ = passage("John 3:16")
     i = opened_by(segs, "ὥστε")
     assert segment_english(segs[i]).startswith("that")
-    assert call_for(segs, i, precedes=False) == ("CE", False, False)
+    assert call_for(segs, i, precedes=False) == ("CE", False)
 
 
 # ---------------------------------------------------------------------------
@@ -277,7 +276,7 @@ def test_hina_cue_and_the_asking_verb_list_agree():
     i = opened_by(segs, "ἵνα")
     assert segment_english(segs[i]).startswith("that")
     assert _has_lemma(segs[i - 1], load_words(), ASKING_VERBS)
-    assert call_for(segs, i, precedes=False) == ("FtIn", False, True)
+    assert call_for(segs, i, precedes=False) == ("FtIn", True)
 
 
 def test_hina_cue_reaches_where_the_one_clause_lookback_cannot():
@@ -287,9 +286,9 @@ def test_hina_cue_reaches_where_the_one_clause_lookback_cannot():
     Open #8). The BSB writes "that" over both, and the cue gets it right
     without widening the look-back."""
     segs, _ = passage("John 17:15")
-    assert call_for(segs, 1, precedes=False) == ("FtIn", False, True)
+    assert call_for(segs, 1, precedes=False) == ("FtIn", True)
     assert segment_english(segs[2]).startswith("that")
-    assert call_for(segs, 2, precedes=False) == ("FtIn", False, True)
+    assert call_for(segs, 2, precedes=False) == ("FtIn", True)
 
 
 def test_hina_rendered_so_that_is_purpose():
@@ -299,7 +298,7 @@ def test_hina_rendered_so_that_is_purpose():
     segs, _ = passage("Hebrews 4:11")
     i = opened_by(segs, "ἵνα")
     assert segment_english(segs[i]).startswith("so that")
-    assert call_for(segs, i, precedes=False) == ("MEd", False, True)
+    assert call_for(segs, i, precedes=False) == ("MEd", True)
 
 
 def test_hina_with_an_inapplicable_cue_falls_back_to_the_verb_list():
@@ -311,7 +310,7 @@ def test_hina_with_an_inapplicable_cue_falls_back_to_the_verb_list():
     i = [k for k, s in enumerate(segs)
          if s.opener is not None and s.opener.lemma == "ἵνα"][1]
     assert segment_english(segs[i]).startswith("and")
-    assert call_for(segs, i, precedes=False) == ("MEd", False, True)
+    assert call_for(segs, i, precedes=False) == ("MEd", True)
 
 
 # ---------------------------------------------------------------------------
@@ -326,7 +325,7 @@ def test_hos_rendered_when_is_temporal():
     segs, _ = passage("John 6:16")
     i = opened_by(segs, "ὡς")
     assert segment_english(segs[i]) == "when evening came"
-    assert call_for(segs, i, precedes=True) == ("Tmp", False, True)
+    assert call_for(segs, i, precedes=True) == ("Tmp", True)
     doc = build_document(segs, confident_only=True)
     assert doc["forest"] == [SUB("Tmp", 1, {"kind": "prop", "ref": "p1"},
                                  {"kind": "prop", "ref": "p2"})]
@@ -339,7 +338,7 @@ def test_hos_rendered_as_stays_comparison():
     segs, _ = passage("1 John 1:7")
     i = opened_by(segs, "ὡς")
     assert segment_english(segs[i]) == "as he is in the light"
-    assert call_for(segs, i, precedes=False) == ("Cmp", False, True)
+    assert call_for(segs, i, precedes=False) == ("Cmp", True)
 
 
 def test_other_comparatives_keep_their_grammar_forced_comparison():
@@ -350,7 +349,7 @@ def test_other_comparatives_keep_their_grammar_forced_comparison():
     segs, _ = passage("Hebrews 4:10")
     i = opened_by(segs, "ὥσπερ")
     assert segment_english(segs[i]).startswith("just as")
-    assert call_for(segs, i, precedes=False) == ("Cmp", False, True)
+    assert call_for(segs, i, precedes=False) == ("Cmp", True)
 
 
 # ---------------------------------------------------------------------------
@@ -367,7 +366,7 @@ def test_participle_rendered_although_is_adversative():
     i = opened_by(segs, "θέλω")
     assert _segment_participle(segs[i], load_words()).tense == "P"   # → rule 10
     assert segment_english(segs[i]).startswith("although")
-    assert call_for(segs, i, precedes=True) == ("Adv", False, True)
+    assert call_for(segs, i, precedes=True) == ("Adv", True)
     doc = build_document(segs, confident_only=True)
     p = [{"kind": "prop", "ref": f"p{i}"} for i in (1, 2, 3)]
     assert doc["forest"] == [SUB("Adv", 1, p[0], SUB("Grnd", 0, p[1], p[2]))]
@@ -382,7 +381,7 @@ def test_participle_rendered_by_doing_is_means():
     segs, _ = passage("Matthew 27:66")
     i = opened_by(segs, "σφραγίζω")
     assert _segment_participle(segs[i], load_words()).tense == "A"   # → rule 11
-    assert call_for(segs, i, precedes=False) == ("WEd", False, True)
+    assert call_for(segs, i, precedes=False) == ("WEd", True)
 
 
 def test_participle_rendered_when_beats_attendant_circumstance():
@@ -395,7 +394,7 @@ def test_participle_rendered_when_beats_attendant_circumstance():
     segs, _ = passage("Acts 2:37")
     i = opened_by(segs, "ἀκούω")
     assert segment_english(segs[i]).startswith("when")
-    assert call_for(segs, i, precedes=True) == ("Tmp", False, True)
+    assert call_for(segs, i, precedes=True) == ("Tmp", True)
 
 
 def test_participle_cue_does_not_outrank_the_grammar_forced_rules():
@@ -407,7 +406,7 @@ def test_participle_cue_does_not_outrank_the_grammar_forced_rules():
     i = opened_by(segs, "ἔχω")
     assert _cue_call(segs[i], load_words(), _PTCP_CUE_RELS,
                      _PTCP_CUE_OVERRIDES) == "Grnd"
-    assert call_for(segs, i, precedes=True) == ("Tmp", False, True)
+    assert call_for(segs, i, precedes=True) == ("Tmp", True)
 
 
 def test_participle_as_is_temporal_not_comparative():
@@ -419,21 +418,24 @@ def test_participle_as_is_temporal_not_comparative():
     segs, _ = passage("Matthew 4:18")
     i = opened_by(segs, "περιπατέω")
     assert segment_english(segs[i]).startswith("as jesus was walking")
-    assert call_for(segs, i, precedes=True) == ("Tmp", False, True)
+    assert call_for(segs, i, precedes=True) == ("Tmp", True)
 
 
 # ---------------------------------------------------------------------------
 # Where the cue is deliberately NOT applied
 
-def test_contrastive_cue_is_detected_but_never_acted_on():
+def test_a_contrastive_de_is_never_acted_on():
     """Mark 4:11 … | ἐκείνοις δὲ τοῖς ἔξω … — "But to those on the outside".
-    The δέ is contrastive and the layer can see it, but WHICH contrary
-    relationship it marks (Neg/Pos, Alternative, Adversative) is
-    expert-questions.md Open #1. Until the expert rules, δέ keeps its Series
-    default and the document is unchanged."""
+    The δέ is contrastive, but WHICH contrary relationship it marks (Neg/Pos,
+    Alternative, Adversative) is expert-questions.md Open #1. Until the expert
+    rules the table carries no "but" row at all: the cue is not merely unused,
+    it is not matched — δέ keeps its Series default and the document is
+    unchanged."""
     segs, _ = passage("Mark 4:11")
     de = [s for s in segs if s.opener is not None and s.opener.lemma == "δέ"]
-    assert len(de) == 1 and contrastive_cue(de[0], load_words())
+    assert len(de) == 1
+    assert segment_english(de[0], load_words()).startswith("but ")
+    assert leading_cue(segment_english(de[0], load_words())) is None
     doc = build_document(segs, confident_only=True)
     p = [{"kind": "prop", "ref": f"p{i}"} for i in (1, 2, 3)]
     assert doc["forest"] == [SER(SER(p[0], p[1]), p[2])]
@@ -442,12 +444,13 @@ def test_contrastive_cue_is_detected_but_never_acted_on():
 def test_bare_alla_with_a_but_cue_stays_out_of_minimal():
     """John 7:44 ἤθελον δέ τινες ἐξ αὐτῶν πιάσαι αὐτόν, | ἀλλ' οὐδεὶς ἐπέβαλεν
     … — "but no one laid a hand on Him". No negation in the preceding clause,
-    so this is the BARE ἀλλά the ruling leaves undecidable, and the "but" cue
-    only confirms the contrast we already knew about. Open #1 again: detected,
-    not acted on — Full draws the Neg/Pos, minimal still does not."""
+    so this is the BARE ἀλλά the ruling leaves undecidable, and a "but" would
+    only confirm the contrast we already knew about. Open #1 again: no cue row
+    matches it — Full draws the Neg/Pos, minimal still does not."""
     segs, _ = passage("John 7:44")
     alla = [s for s in segs if s.opener is not None and s.opener.lemma == "ἀλλά"]
-    assert len(alla) == 1 and contrastive_cue(alla[0], load_words())
+    assert len(alla) == 1
+    assert leading_cue(segment_english(alla[0], load_words())) is None
     p1, p2 = ({"kind": "prop", "ref": "p1"}, {"kind": "prop", "ref": "p2"})
     assert build_document(segs)["forest"] == [SUB("NegPos", 1, p1, p2)]
     assert build_document(segs, confident_only=True)["forest"] == [p1, p2]
@@ -464,4 +467,4 @@ def test_implicit_proposition_pps_take_no_cue():
          if s.opener is not None and s.opener.kind == "pp"][0]
     assert segment_english(segs[i]).startswith("until")
     assert _dependent_call(segs[i], i, segs, load_words(), precedes=False) == \
-        ("MEd", True, False)
+        ("MEd", False)

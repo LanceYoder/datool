@@ -111,6 +111,35 @@ DESIGN.md §5 (the first pass).
     weighted 0, so it never tips a boundary. What weight — if any — should
     it carry, and does it need a companion indicator to combine with?
 
+13. **(2026-08-29) Sectioning vs the worked examples' color sections.** The
+    four example spreadsheets mark sections with color fills (usually three
+    per passage). Comparison with the auto-sectioner:
+    Eph 1:13–14 matches (one section); 1 Thess 1:6–10 half-matches (we seam
+    at 9a but not 8a — see the #10 evidence below); 1 John 1:5–7 misses both
+    student seams (6a, 7a — the parallel ἐάν sentences; candidate indicator
+    for #8: sentence-initial conditional openers, especially in a parallel
+    run); Phil 1:9–11 is UNREACHABLE by design — the student's three
+    sections divide a single Greek sentence, and our sections are whole-
+    sentence runs. Question: on short passages, are the course's "sections"
+    a finer, sub-sentence grain (clause-groups) that the tool should draw by
+    a different mechanism — e.g. from the tree's own top-level brackets —
+    while seam-based sectioning serves longer passages?
+    Evidence for #10: the 1 Thess 8a γάρ block develops via Neg/Pos (οὐκ
+    μόνον … ἀλλά) and C/E (ὥστε) — if Neg/Pos counted as "development", the
+    passage would match the student 2-for-2. Should the development test
+    include Neg/Pos (and C/E)?
+
+14. **(2026-08-29) Sentences that never get their apodosis lose their
+    relationship.** A sentence-initial dependent (ὥστε, εἰ/ἐάν, causal ὅτι,
+    ὡς…) is held forward; when its own sentence never produces an
+    independent clause, the held relationship is discarded and the sentence
+    joins its NEIGHBOR with the Series default — 858 sentences corpus-wide
+    (8.2%), e.g. Rom 7:12's inferential Ὥστε computes Inference and then
+    joins as Series. Proposed fix: let the sentence fold consult a packet's
+    pending forward relationship before falling to the default. This would
+    change 858 joins, so it needs a ruling: should a dangling sentence-
+    initial subordinator's relationship carry FORWARD to the next sentence?
+
 ## Decided
 
 - **Minimal's meaning** — minimal = everything grammar-forced PLUS sensible

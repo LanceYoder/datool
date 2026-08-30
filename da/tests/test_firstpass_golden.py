@@ -494,7 +494,7 @@ def test_verse6_alone_matches_design_worked_example():
 # The re-tiering rulings, pinned against real corpus passages.
 #
 # Each test locates a genuine NT example through the corpus loader, segments
-# it, and asks the classifier for its (relationship, review, sure) call —
+# it, and asks the classifier for its (relationship, sure) call —
 # ``sure`` being exactly "this join belongs in the minimal analysis".
 
 def passage(ref: str):
@@ -512,7 +512,7 @@ def opened_by(segments, lemma: str) -> int:
 
 
 def call_for(segments, index: int, precedes: bool):
-    """The classifier's (rel, review, sure) call for one dependent segment.
+    """The classifier's (rel, sure) call for one dependent segment.
     ``precedes`` is the shift-reduce position the assembler would pass: True
     when the segment is held and attaches forward, False when it attaches
     backward to the packet already built."""
@@ -527,7 +527,7 @@ def test_hina_after_an_asking_verb_is_content_ftin():
     asking verb, so the ἵνα clause states the CONTENT of the request."""
     segs, _ = passage("John 17:15")
     assert call_for(segs, opened_by(segs, "ἵνα"), precedes=False) == \
-        ("FtIn", False, True)
+        ("FtIn", True)
     # The verse's SECOND ἵνα (ἀλλ’ ἵνα τηρήσῃς) also depends on ἐρωτῶ, but its
     # immediately preceding clause is the first ἵνα clause, so the one-clause
     # lookback cannot see that far (expert-questions.md Open #8). RECOMPUTED
@@ -535,7 +535,7 @@ def test_hina_after_an_asking_verb_is_content_ftin():
     # evil one", and the "that" cue outranks the verb list — so the content
     # reading now comes out right without widening the lookback. See
     # da/tests/test_english_cues.py.
-    assert call_for(segs, 2, precedes=False) == ("FtIn", False, True)
+    assert call_for(segs, 2, precedes=False) == ("FtIn", True)
 
 
 def test_hina_without_an_asking_verb_is_purpose_med():
@@ -544,7 +544,7 @@ def test_hina_without_an_asking_verb_is_purpose_med():
     with it (for ἵνα that phrase reads as purpose, not result)."""
     heb, _ = passage("Hebrews 4:11")
     assert call_for(heb, opened_by(heb, "ἵνα"), precedes=False) == \
-        ("MEd", False, True)
+        ("MEd", True)
 
 
 def test_hina_english_that_overrides_the_purpose_default():
@@ -563,7 +563,7 @@ def test_hina_english_that_overrides_the_purpose_default():
     anywhere in the sentence) before it outranks the purpose default."""
     segs, _ = passage("John 3:16")
     i = opened_by(segs, "ἵνα")
-    assert call_for(segs, i, precedes=False) == ("FtIn", False, True)
+    assert call_for(segs, i, precedes=False) == ("FtIn", True)
 
 
 # --- ὥστε: sure only with an infinitive ------------------------------------
@@ -573,7 +573,7 @@ def test_hoste_with_an_infinitive_is_a_sure_cause_effect():
     infinitive γενέσθαι (mood 'N'), the textbook result construction."""
     segs, _ = passage("1 Thessalonians 1:6-7")
     assert call_for(segs, opened_by(segs, "ὥστε"), precedes=False) == \
-        ("CE", False, True)
+        ("CE", True)
 
 
 def test_hoste_with_a_finite_verb_is_a_best_guess_only():
@@ -581,7 +581,7 @@ def test_hoste_with_a_finite_verb_is_a_best_guess_only():
     actual-result use. Still C/E in Full, but never in minimal."""
     segs, _ = passage("John 3:16")
     assert call_for(segs, opened_by(segs, "ὥστε"), precedes=False) == \
-        ("CE", False, False)
+        ("CE", False)
 
 
 # --- ὅτι: causal is now sure -----------------------------------------------
@@ -591,7 +591,7 @@ def test_causal_hoti_is_a_sure_ground():
     — no verbum dicendi in front of it, so the ὅτι is causal."""
     segs, _ = passage("Matthew 5:3")
     assert call_for(segs, opened_by(segs, "ὅτι"), precedes=False) == \
-        ("Grnd", False, True)
+        ("Grnd", True)
     # It reaches the document: the whole verse is one sure Ground bracket.
     doc = build_document(segs, confident_only=True)
     assert doc["forest"] == [
@@ -604,7 +604,7 @@ def test_hoti_after_a_verbum_dicendi_stays_content():
     """Matt 9:18 … λέγων | ὅτι Ἡ θυγάτηρ μου ἄρτι ἐτελεύτησεν."""
     segs, _ = passage("Matthew 9:18")
     assert call_for(segs, opened_by(segs, "ὅτι"), precedes=False) == \
-        ("FtIn", False, True)
+        ("FtIn", True)
 
 
 # --- καί / δέ: the Series defaults reach minimal ----------------------------
@@ -636,7 +636,7 @@ def test_participle_rule_1_kaiper_is_adversative():
     explicit, so the reading is not a guess at all."""
     segs, _ = passage("Hebrews 5:8")
     i = opened_by(segs, "εἰμί")
-    assert call_for(segs, i, precedes=True) == ("Adv", False, True)
+    assert call_for(segs, i, precedes=True) == ("Adv", True)
     tree = build_document(segs, confident_only=True)["forest"]
     # Adv labels the concessive child; the star stays on the main clause.
     assert len(tree) == 1 and tree[0]["rel"] == "Adv"
@@ -654,7 +654,7 @@ def test_participle_rule_2_genitive_absolute_is_temporal():
     attendant-circumstance rule (7) would coordinate it as Series."""
     segs, _ = passage("Matthew 8:5")
     i = opened_by(segs, "εἰσέρχομαι")
-    assert call_for(segs, i, precedes=True) == ("Tmp", False, True)
+    assert call_for(segs, i, precedes=True) == ("Tmp", True)
     tree = build_document(segs, confident_only=True)["forest"]
     assert len(tree) == 1 and tree[0]["rel"] == "Tmp"
     assert tree[0]["prominent"] == 1      # star on the main clause
@@ -667,7 +667,7 @@ def test_participle_rule_3_future_participle_is_purpose():
     segs, _ = passage("Acts 8:27")
     i = opened_by(segs, "προσκυνέω")
     assert load_words()[segs[i].opener.index].tense == "F"
-    assert call_for(segs, i, precedes=False) == ("MEd", False, True)
+    assert call_for(segs, i, precedes=False) == ("MEd", True)
 
 
 def test_participle_rule_4_legon_rides_with_its_dicendi_clause():
@@ -677,7 +677,7 @@ def test_participle_rule_4_legon_rides_with_its_dicendi_clause():
     bracket around the participle."""
     segs, _ = passage("Matthew 9:18")
     i = opened_by(segs, "λέγω")
-    assert call_for(segs, i, precedes=False) == ("WEd", False, True)
+    assert call_for(segs, i, precedes=False) == ("WEd", True)
 
 
 def test_participle_rule_7_attendant_circumstance_coordinates():
@@ -686,15 +686,15 @@ def test_participle_rule_7_attendant_circumstance_coordinates():
     Coordinate, so the bracket has no star."""
     segs = segment(561, 566)
     i = opened_by(segs, "πορεύομαι")
-    assert call_for(segs, i, precedes=True) == ("Ser", False, True)
+    assert call_for(segs, i, precedes=True) == ("Ser", True)
     doc = build_document(segs, confident_only=True)
     assert doc["forest"] == [SER({"kind": "prop", "ref": "p1"},
                                 {"kind": "prop", "ref": "p2"})]
 
 
 def test_no_document_ever_carries_flags():
-    """Confidence labeling was removed: the classifier's internal review
-    bookkeeping must never reach a document."""
+    """Confidence labeling is not part of the product: the builder sets no
+    ``flag`` anywhere, so no document it produces can carry one."""
     doc = build_document(J_HAND_SEGMENTS)
     for bracket in brackets(the_root(doc)):
         assert "flag" not in bracket

@@ -17,6 +17,18 @@ _SIGLA = re.compile(r"[⸀⸁⸂⸃⸄⸅⸆⸇⸈⸉⸊⸋°†‡*\[\]()⟦⟧
 _GREEK_LETTER = re.compile(r"[Ͱ-Ͽἀ-῿]")
 
 
+def nfc(text: str) -> str:
+    """NFC-normalize one string. MorphGNT lemmas are NFC already, so this is
+    what makes a literal lemma written in this source comparable to them
+    whatever form the editor saved it in."""
+    return unicodedata.normalize("NFC", text)
+
+
+def nfc_set(*items: str) -> frozenset[str]:
+    """A frozenset of NFC-normalized lemmas — the lemma tables' constructor."""
+    return frozenset(nfc(item) for item in items)
+
+
 def strip_diacritics(text: str) -> str:
     decomposed = unicodedata.normalize("NFD", text)
     return "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
