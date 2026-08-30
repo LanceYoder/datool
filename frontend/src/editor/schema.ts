@@ -170,10 +170,38 @@ export const EditorBracket = Node.create({
 });
 
 /**
+ * A hole: units an edit left unattached, holding their place in the document's
+ * order until they are connected again. No relationship, no star — the drawing
+ * gives each of its units a loose dot and leaves the bracket above it hanging.
+ * The commands collapse a hole holding one unit back into the slot it came
+ * from, which is how a tree becomes whole again.
+ */
+export const EditorHole = Node.create({
+  name: 'hole',
+  group: 'unit',
+  content: 'unit+',
+  defining: true,
+
+  parseHTML() {
+    return [{ tag: 'div[data-hole]' }];
+  },
+
+  renderHTML() {
+    return ['div', { class: 'hole-node', 'data-hole': 'true' }, 0];
+  },
+});
+
+/**
  * Schema nodes in registration order. EditorProposition MUST precede
  * EditorBracket: when ProseMirror synthesizes a default 'unit' (createAndFill
  * for an empty editor) it picks the first matching type in schema order, and
  * the atom terminates that search — a bracket would recursively require more
  * units.
  */
-export const editorNodes = [EditorDoc, EditorText, EditorProposition, EditorBracket];
+export const editorNodes = [
+  EditorDoc,
+  EditorText,
+  EditorProposition,
+  EditorBracket,
+  EditorHole,
+];

@@ -16,7 +16,10 @@ const COLUMNS: { what: string; how: string }[][] = [
       what: 'Label the connection',
       how: 'Click the bracket’s letters. You may type a key as a shortcut',
     },
-    { what: 'Remove a connection', how: 'Right-click its dot, or select it and press Delete' },
+    {
+      what: 'Remove a connection',
+      how: 'Right-click its dot — only that one goes, and what it held hangs loose',
+    },
     { what: 'Move the star', how: 'Click the star' },
   ],
   [

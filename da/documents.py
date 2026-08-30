@@ -216,6 +216,15 @@ def validate_document(doc, corpus_size: int | None = None) -> None:
         raise DocumentError(problems)
 
 
+def _has_hole(node) -> bool:
+    """Whether anything under ``node`` is still unattached."""
+    if not isinstance(node, dict):
+        return False
+    if node.get("kind") == "hole":
+        return True
+    return any(_has_hole(child) for child in node.get("children", ()))
+
+
 def _walk_tree(node, where: str, leaves: list[str], problems: list[str]) -> None:
     if not isinstance(node, dict):
         problems.append(f"{where} must be an object")
@@ -250,8 +259,17 @@ def _walk_tree(node, where: str, leaves: list[str], problems: list[str]) -> None
             problems.append(f"{where}.flag must be 'review' or absent")
         for i, child in enumerate(children):
             _walk_tree(child, f"{where}.children[{i}]", leaves, problems)
+    elif kind == "hole":
+        # Units left unattached by an edit: no relationship, no star — only a
+        # place in the order until they are connected again.
+        children = node.get("children")
+        if not isinstance(children, list) or not children:
+            problems.append(f"{where}.children must be a list of >= 1 node")
+            children = children if isinstance(children, list) else []
+        for i, child in enumerate(children):
+            _walk_tree(child, f"{where}.children[{i}]", leaves, problems)
     else:
-        problems.append(f"{where}.kind must be 'prop' or 'bracket'")
+        problems.append(f"{where}.kind must be 'prop', 'bracket' or 'hole'")
 
 
 MAX_INDENT = 8  # deeper than any clause a student nests by hand
@@ -333,9 +351,13 @@ def main_point(doc) -> list[str]:
     which paints these rows red.
 
     A forest with more than one root is a partly connected analysis — nothing
-    supports everything else yet, so there is no main point: return []."""
+    supports everything else yet, so there is no main point: return []. Nor is
+    there one while a HOLE is open: an edit is half-made, and what the tree
+    supports is not yet decided."""
     forest = normalize_document(doc).get("forest")
     if not isinstance(forest, list) or len(forest) != 1:
+        return []
+    if _has_hole(forest[0]):
         return []
     out: list[str] = []
 

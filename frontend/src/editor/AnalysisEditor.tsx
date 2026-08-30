@@ -59,7 +59,7 @@ import {
   addSectionBreak,
   clearConnections,
   connectUnits,
-  disconnectRoot,
+  deleteRelationship,
   findBrackets,
   findPropositionPos,
   flipStar,
@@ -69,7 +69,6 @@ import {
   sectionBreaks,
   setRelationship,
   splitProposition,
-  unzipToRoot,
 } from './commands';
 import {
   COL_W,
@@ -117,30 +116,36 @@ const STRIP_LANE = 26;
  *
  *  1. the TEXT — never, so its right edge stays left of the text column;
  *  2. the TREE — if the whole tree fits to the right of the menu, it stands
- *     clear of the outermost spine;
- *  3. failing that, at least the BRACKET being labeled — the menu slides
- *     above or below that bracket's own span rather than sitting on it.
- *
- * A tree deep enough to fill the margin leaves nowhere to stand: then the
- * menu keeps rule 1 and takes whichever vertical berth is roomier.
+ *     clear of the outermost spine and covers nothing at all;
+ *  3. failing that, as much of the tree as it can: it goes as far LEFT as the
+ *     shell allows, where the outermost columns are the sparsest, rather than
+ *     landing wherever the click did;
+ *  4. and always the BRACKET being labeled — if the far-left berth would sit
+ *     on it, the menu moves above or below that bracket's own span; if
+ *     neither has room, it stands just right of the bracket's spine instead.
  */
 function menuPlacement(desired: Point, geom: PositionedBracket, overlay: Overlay): Point {
-  const rightOfText = overlay.margin - MENU_SIZE.width - TEXT_GAP;
   const treeLeft = overlay.brackets.reduce((left, b) => Math.min(left, b.x), overlay.margin);
   const leftOfTree = treeLeft - MENU_SIZE.width - TEXT_GAP;
-  const x = leftOfTree >= TEXT_GAP ? leftOfTree : Math.min(desired.x, rightOfText);
+  if (leftOfTree >= TEXT_GAP) return { x: leftOfTree, y: desired.y };
 
-  // Standing left of the whole tree covers nothing; otherwise the menu must
-  // still clear the bracket it belongs to.
-  if (x <= leftOfTree) return { x, y: desired.y };
-  const coversBracket = geom.x >= x && geom.x <= x + MENU_SIZE.width;
-  if (!coversBracket) return { x, y: desired.y };
+  // No berth outside the tree: hug the left edge, and keep the bracket being
+  // worked on out from under the menu.
+  const x = Math.min(TEXT_GAP, overlay.margin - MENU_SIZE.width - TEXT_GAP);
+  if (geom.x < x || geom.x > x + MENU_SIZE.width) return { x, y: desired.y };
 
   const above = geom.top - MENU_SIZE.height - TEXT_GAP;
   const below = geom.bottom + TEXT_GAP;
   if (above >= TEXT_GAP) return { x, y: above };
   if (below + MENU_SIZE.height <= overlay.height) return { x, y: below };
-  return { x, y: geom.top > overlay.height - geom.bottom ? above : below };
+
+  // Nowhere above or below either: stand to the RIGHT of this bracket's
+  // spine, still clear of the text.
+  const rightOfBracket = Math.min(
+    geom.x + TEXT_GAP,
+    overlay.margin - MENU_SIZE.width - TEXT_GAP,
+  );
+  return { x: Math.max(TEXT_GAP, rightOfBracket), y: desired.y };
 }
 
 /** Clear space kept between the relationship menu and the text column. */
@@ -996,11 +1001,18 @@ function EditorInner({ baseDoc, words, taxonomy, onChange, onTreeMargin }: Inner
     const ref = parseDotId(dotId);
     if (ref === null) return;
     if (ref.kind === 'bracket') {
+      // Only THIS relationship: what it held is left hanging, and everything
+      // above it stands.
       const pos = bracketPosAt(ref.index);
-      if (pos !== null) disconnectRoot(editor, pos);
+      if (pos !== null) deleteRelationship(editor, pos);
       return;
     }
-    unzipToRoot(editor, ref.pid);
+    // A proposition: the one relationship it hangs from, and no more.
+    const pos = findPropositionPos(editor.state.doc, ref.pid);
+    if (pos === null) return;
+    const parent = editor.state.doc.resolve(pos).depth;
+    if (parent === 0) return; // already loose
+    deleteRelationship(editor, editor.state.doc.resolve(pos).before(parent));
   };
   deleteDotRef.current = onDotDelete;
 

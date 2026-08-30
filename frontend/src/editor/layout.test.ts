@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { BracketNode, TreeNode } from '../types';
 import {
   COL_W,
+  HANG_W,
   STUB_W,
   computeColumns,
   connectY,
@@ -368,5 +369,49 @@ describe('layoutDots', () => {
     const loose = layoutDots([p('p1'), p('p2'), p('p3')], rows, X0);
     expect(loose).toHaveLength(3);
     expect(loose.every((d) => d.root && d.stubX1 === X0 - STUB_W)).toBe(true);
+  });
+});
+
+describe('holes: units an edit left unattached', () => {
+  const p = (ref: string): TreeNode => ({ kind: 'prop', ref });
+  const rows = new Map([
+    ['a', 10],
+    ['b', 30],
+    ['c', 50],
+  ]);
+  // Grnd[ hole[a, b], c ] — the relationship that held a and b is gone.
+  const hole: TreeNode = { kind: 'hole', children: [p('a'), p('b')] };
+  const grnd: BracketNode = {
+    kind: 'bracket',
+    rel: 'Grnd',
+    prominent: 0,
+    children: [hole, p('c')],
+  };
+
+  it('takes no column of its own: what survives stands where it stood', () => {
+    const { columns, maxColumn } = computeColumns([grnd]);
+    expect(maxColumn).toBe(1);
+    expect(columns.get(grnd)).toBe(1);
+    expect(columns.has(hole as unknown as BracketNode)).toBe(false);
+  });
+
+  it('draws no bracket, and leaves the tick that pointed at it hanging', () => {
+    const { brackets } = layoutBrackets([grnd], rows, 500);
+    expect(brackets).toHaveLength(1); // the hole draws nothing
+    const [toHole, toC] = brackets[0]!.ticks;
+    expect(toHole?.hanging).toBe(true);
+    expect(toC?.hanging).toBe(false);
+    // The hanging tick stops short instead of reaching the text column.
+    expect(toHole!.x1).toBeLessThan(500 - COL_W + HANG_W + 1);
+    expect(toC!.x1).toBe(500);
+  });
+
+  it('gives every unit it holds a loose dot, ready to be picked up', () => {
+    const dots = layoutDots([grnd], rows, 500);
+    const byId = new Map(dots.map((d) => [d.id, d]));
+    expect(byId.get('prop:a')?.root).toBe(true);
+    expect(byId.get('prop:b')?.root).toBe(true);
+    expect(byId.get('prop:c')?.root).toBe(false); // still held by Grnd
+    expect(byId.get('prop:a')?.stubX1).toBeDefined();
   });
 });

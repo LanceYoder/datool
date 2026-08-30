@@ -9,6 +9,7 @@ import {
   addSectionBreak,
   clearConnections,
   connectUnits,
+  deleteRelationship,
   disconnectRoot,
   findBrackets,
   findPropositionPos,
@@ -752,5 +753,85 @@ describe('nodeToDocument after editing', () => {
     const out = nodeToDocument(ed.state.doc, doc);
     expect((out.forest[0] as BracketNode).children).toHaveLength(3);
     expect(out.forest[0]).toMatchObject({ rel: 'MEd', prominent: 2 });
+  });
+});
+
+describe('deleteRelationship', () => {
+  it('leaves a hole where a nested relationship was, and everything above it', () => {
+    const doc = firstJohn16(); // CndE[ FtIn[p1, Adv[p2,p3]], Ser[p4,p5] ]
+    const ed = open(doc);
+    expect(deleteRelationship(ed, bracketPos(ed, 'Adv'))).toBe(true);
+    ed.state.doc.check();
+
+    // Adv is gone; p2 and p3 wait unattached in its slot, and FtIn and CndE
+    // — the structure the analyst wants to keep — are untouched.
+    expect(forestOf(ed, doc)).toEqual([
+      {
+        kind: 'bracket',
+        rel: 'CndE',
+        prominent: 1,
+        children: [
+          {
+            kind: 'bracket',
+            rel: 'FtIn',
+            prominent: 1,
+            children: [prop('p1'), { kind: 'hole', children: [prop('p2'), prop('p3')] }],
+          },
+          { kind: 'bracket', rel: 'Ser', prominent: null, flag: 'review', children: [prop('p4'), prop('p5')] },
+        ],
+      },
+    ]);
+  });
+
+  it('gives a root bracket no hole — its children are roots, already unattached', () => {
+    const doc = disconnectedDoc();
+    const ed = open(doc);
+    expect(deleteRelationship(ed, rootPos(ed, 1))).toBe(true);
+    expect(forestOf(ed, doc)).toEqual([prop('a'), prop('b'), prop('c'), prop('d'), prop('e')]);
+  });
+
+  it('re-connecting what waits in a hole makes the tree whole again', () => {
+    const doc = firstJohn16();
+    const ed = open(doc);
+    const before = ed.getJSON();
+    deleteRelationship(ed, bracketPos(ed, 'Adv'));
+    // The two loose units are adjacent inside the hole: joining them fills the
+    // slot, and the hole — now holding one unit — collapses into it.
+    expect(connectUnits(ed, propPos(ed, 'p2'), propPos(ed, 'p3'), TAXONOMY, 'Adv')).not.toBeNull();
+    ed.state.doc.check();
+    const rebuilt = forestOf(ed, doc);
+    // No hole left: the slot holds a bracket again, in the same place. The
+    // star is the taxonomy's default — a re-connection is a NEW relationship,
+    // not the old one restored (undo is what restores).
+    expect(JSON.stringify(rebuilt)).not.toContain('"hole"');
+    expect(rebuilt).toEqual([
+      {
+        kind: 'bracket',
+        rel: 'CndE',
+        prominent: 1,
+        children: [
+          {
+            kind: 'bracket',
+            rel: 'FtIn',
+            prominent: 1,
+            children: [
+              prop('p1'),
+              { kind: 'bracket', rel: 'Adv', prominent: 1, children: [prop('p2'), prop('p3')] },
+            ],
+          },
+          {
+            kind: 'bracket',
+            rel: 'Ser',
+            prominent: null,
+            flag: 'review',
+            children: [prop('p4'), prop('p5')],
+          },
+        ],
+      },
+    ]);
+
+    ed.commands.undo();
+    ed.commands.undo();
+    expect(ed.getJSON()).toEqual(before);
   });
 });

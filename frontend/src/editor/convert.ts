@@ -147,6 +147,9 @@ export function documentToNode(
         },
       };
     }
+    if (node.kind === 'hole') {
+      return { type: 'hole', content: node.children.map(build) };
+    }
     return {
       type: 'bracket',
       attrs: {
@@ -232,6 +235,14 @@ export function nodeToDocument(
       if (node.attrs.reversed === true) bracket.reversed = true;
       if (node.attrs.flag === 'review') bracket.flag = 'review';
       return bracket;
+    }
+
+    if (node.type.name === 'hole') {
+      const children: TreeNode[] = [];
+      node.forEach((child) => {
+        children.push(build(child));
+      });
+      return { kind: 'hole', children };
     }
 
     throw new Error(`unexpected node '${node.type.name}' in editor document`);

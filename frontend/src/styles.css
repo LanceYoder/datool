@@ -1337,3 +1337,19 @@ div.error-box {
 .section-control.add {
   background: var(--accent);
 }
+
+/* A tick with nothing on its far end: the relationship is still there, what
+   it held is not. Dashed and fading out, so an unfinished edit is visible
+   without shouting. */
+.tick.hanging {
+  stroke-dasharray: 3 3;
+  opacity: 0.65;
+}
+
+/* A tick with nothing on its far end: the relation is still drawn, what it
+   held is loose. Dashed and a little faint — an unfinished edit should be
+   visible without shouting. */
+.bracket .hanging {
+  stroke-dasharray: 3 3;
+  opacity: 0.7;
+}

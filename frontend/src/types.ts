@@ -62,7 +62,23 @@ export interface BracketNode {
   children: TreeNode[];
 }
 
-export type TreeNode = PropRefNode | BracketNode;
+/**
+ * A hole: units that USED to hang from the bracket above them and no longer
+ * do. Deleting a relationship inside a tree leaves its units unattached
+ * without disturbing anything above, and the hole is what holds their place
+ * in the document's order while they wait to be re-connected. It carries no
+ * relationship, and a document containing one is INCOMPLETE — an editing
+ * state, not an analysis.
+ *
+ * A hole holding a single unit is not a hole at all: the commands collapse it
+ * back into the slot it came from, which is how a tree becomes whole again.
+ */
+export interface HoleNode {
+  kind: 'hole';
+  children: TreeNode[];
+}
+
+export type TreeNode = PropRefNode | BracketNode | HoleNode;
 
 /** A stored color block: the pid that begins it, and the palette color it
  * keeps for as long as it exists. */

@@ -11,7 +11,7 @@
 // in root order (so brackets come out in document pre-order, matching
 // findBrackets on the ProseMirror doc).
 
-import type { BracketNode, TreeNode } from '../types';
+import type { BracketNode, HoleNode, TreeNode } from '../types';
 
 /**
  * Horizontal distance between adjacent bracket columns, in px. Wide enough
@@ -100,6 +100,23 @@ export function isCoordinate(node: BracketNode): boolean {
   return node.prominent === null || node.prominent === undefined;
 }
 
+/** A hole: units an edit left unattached (see types.ts). Draws no bracket. */
+export function isHole(node: TreeNode): node is HoleNode {
+  return node.kind === 'hole';
+}
+
+/** A bracket — a node that draws a spine, ticks and labels. */
+export function isBracket(node: TreeNode): node is BracketNode {
+  return node.kind === 'bracket';
+}
+
+/**
+ * How far a HANGING tick reaches out from its spine before stopping: enough
+ * to read as a line that goes nowhere, never far enough to touch what used to
+ * be there.
+ */
+export const HANG_W = 22;
+
 /** Proposition refs under `node`, in order. */
 export function leafRefs(node: TreeNode, out: string[] = []): string[] {
   if (node.kind === 'prop') {
@@ -133,6 +150,9 @@ export function computeColumns(forest: readonly TreeNode[]): ColumnResult {
     for (const child of node.children) {
       deepest = Math.max(deepest, visit(child));
     }
+    // A hole draws nothing, so it takes no column of its own: what is under
+    // it stands where it would stand if the hole were not there.
+    if (isHole(node)) return deepest;
     const col = deepest + 1;
     columns.set(node, col);
     if (col > maxColumn) maxColumn = col;
@@ -156,7 +176,7 @@ export function connectY(node: TreeNode, rows: RowInput): number {
   const first = node.children[0];
   const last = node.children[node.children.length - 1];
   if (first === undefined || last === undefined) return 0; // violates invariant; be safe
-  if (!isCoordinate(node)) {
+  if (isBracket(node) && !isCoordinate(node)) {
     const idx = node.prominent;
     if (idx !== null && idx !== undefined) {
       const target = node.children[idx];
@@ -176,6 +196,11 @@ export interface Tick {
   x2: number;
   /** True on the prominent child's tick — render a '*' at this end. */
   star: boolean;
+  /**
+   * True when this tick points at a HOLE: it leaves the spine and stops,
+   * because what it used to reach is no longer attached.
+   */
+  hanging?: boolean;
 }
 
 export interface LabelAnchor {
@@ -253,10 +278,15 @@ export function layoutBrackets(
   const brackets: BracketGeom[] = [];
 
   const xOf = (node: TreeNode): number =>
-    node.kind === 'prop' ? x0 : x0 - (columns.get(node) ?? 1) * colW;
+    isBracket(node) ? x0 - (columns.get(node) ?? 1) * colW : x0;
 
   const visit = (node: TreeNode, rootIndex: number, isRoot: boolean): void => {
     if (node.kind === 'prop') return;
+    if (isHole(node)) {
+      // A hole draws nothing of its own; what it holds is drawn loose.
+      for (const child of node.children) visit(child, rootIndex, false);
+      return;
+    }
 
     const column = columns.get(node) ?? 1;
     const x = x0 - column * colW;
@@ -271,12 +301,15 @@ export function layoutBrackets(
         ? prom
         : null;
 
+    // A tick that points at a hole HANGS: it leaves the spine and stops,
+    // reaching for units that are no longer attached.
     const ticks: Tick[] = node.children.map((child, i) => ({
       childIndex: i,
       y: childYs[i] ?? 0,
-      x1: xOf(child),
+      x1: isHole(child) ? x + HANG_W : xOf(child),
       x2: x,
       star: i === starChildIndex,
+      hanging: isHole(child),
     }));
 
     const rawLabels = getLabels?.(node.rel) ?? [node.rel];
@@ -378,7 +411,10 @@ export function layoutDots(
   const dots: DotGeom[] = [];
   let bracketIndex = 0;
 
-  const visit = (node: TreeNode, parent: BracketNode | null): void => {
+  // `loose` is true for a unit hanging from nothing: a forest root, or one
+  // an edit left in a hole. Both draw the same stub, and both are ready to be
+  // picked up and connected.
+  const visit = (node: TreeNode, loose: boolean): void => {
     if (node.kind === 'prop') {
       const y = rowY(rows, node.ref);
       const dot: DotGeom = {
@@ -386,13 +422,18 @@ export function layoutDots(
         kind: 'prop',
         x: x0 - STUB_W,
         y,
-        root: parent === null,
+        root: loose,
       };
-      if (parent === null) {
+      if (loose) {
         dot.stubX1 = x0 - STUB_W;
         dot.stubX2 = x0;
       }
       dots.push(dot);
+      return;
+    }
+
+    if (isHole(node)) {
+      for (const child of node.children) visit(child, true);
       return;
     }
 
@@ -413,12 +454,14 @@ export function layoutDots(
       kind: 'bracket',
       x,
       y: starred ?? (top + bottom) / 2,
-      root: parent === null,
+      root: loose,
     });
 
-    for (const child of node.children) visit(child, node);
+    // A bracket's children hang from IT, so they are not loose — except what
+    // sits in a hole, which the branch above has already handled.
+    for (const child of node.children) visit(child, false);
   };
 
-  for (const root of forest) visit(root, null);
+  for (const root of forest) visit(root, true);
   return dots;
 }

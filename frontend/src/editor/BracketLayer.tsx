@@ -322,6 +322,7 @@ function Stroke({
   width,
   color,
   hand,
+  hanging = false,
 }: {
   x1: number;
   y1: number;
@@ -330,15 +331,29 @@ function Stroke({
   width: number;
   color: string;
   hand: Hand;
+  /** Nothing on the far end: draw it as a line that stops. */
+  hanging?: boolean;
 }) {
+  const loose = hanging ? { className: 'hanging' } : {};
   if (hand === 'ruled') {
-    return <line x1={x1} y1={y1} x2={x2} y2={y2} style={{ stroke: color }} strokeWidth={width} />;
+    return (
+      <line
+        {...loose}
+        x1={x1}
+        y1={y1}
+        x2={x2}
+        y2={y2}
+        style={{ stroke: color }}
+        strokeWidth={width}
+      />
+    );
   }
   // A quill is a steadier instrument than a ballpoint: it bends its line half
   // as far, and does not overrun the corner it was aiming for.
   const pen = hand === 'pen';
   return (
     <path
+      {...loose}
       d={pen ? handLine(x1, y1, x2, y2) : handLine(x1, y1, x2, y2, 0.008, 1.3, 0.4)}
       fill="none"
       style={{ stroke: color }}
@@ -435,6 +450,8 @@ export default function BracketLayer({
               </>
             )}
             {b.ticks.map((t) => (
+              // A HANGING tick leaves the spine and stops: the relationship is
+              // still here, what it held is not.
               <Stroke
                 key={t.childIndex}
                 x1={t.x1}
@@ -444,6 +461,7 @@ export default function BracketLayer({
                 width={1.5}
                 color={ink(view, b.rel, LINE)}
                 hand={hand}
+                hanging={t.hanging === true}
               />
             ))}
           </g>

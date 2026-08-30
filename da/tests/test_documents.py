@@ -688,3 +688,70 @@ class TestTextFlow:
             "textFlow.lines[1].embedded[0].style must be 'paren' or 'bracket'",
             "textFlow.lines[2].start must continue the previous line",
         ]
+
+
+class TestHoles:
+    """A hole holds units an edit left unattached, so the structure above them
+    survives. A document with one is an editing state — sound, unfinished."""
+
+    def hole_doc(self) -> dict:
+        doc = partial_doc()
+        doc["forest"] = [
+            {"kind": "prop", "ref": "p1"},
+            {"kind": "prop", "ref": "p2"},
+            {
+                "kind": "bracket", "rel": "Grnd", "prominent": 0,
+                "children": [
+                    {"kind": "hole", "children": [{"kind": "prop", "ref": "p3"}]},
+                    {"kind": "prop", "ref": "p4"},
+                ],
+            },
+        ]
+        return doc
+
+    def test_a_hole_validates_and_still_tiles_the_propositions(self):
+        validate_document(self.hole_doc())
+
+    def test_a_hole_needs_something_in_it(self):
+        doc = self.hole_doc()
+        doc["forest"][2]["children"][0]["children"] = []
+        assert problems_of(doc) == [
+            "forest[2].children[0].children must be a list of >= 1 node",
+            "propositions not in the forest: ['p3']",
+        ]
+
+    def test_an_unfinished_tree_has_no_main_point(self):
+        doc = self.hole_doc()
+        doc["forest"] = [{
+            "kind": "bracket", "rel": "Grnd", "prominent": 1,
+            "children": [
+                {"kind": "hole", "children": [
+                    {"kind": "prop", "ref": "p1"}, {"kind": "prop", "ref": "p2"},
+                ]},
+                {"kind": "bracket", "rel": "Ser", "prominent": None, "children": [
+                    {"kind": "prop", "ref": "p3"}, {"kind": "prop", "ref": "p4"},
+                ]},
+            ],
+        }]
+        validate_document(doc)
+        assert main_point(doc) == []   # an edit is half-made
+
+    def test_the_same_tree_without_the_hole_does_have_one(self):
+        doc = self.hole_doc()
+        doc["forest"] = [{
+            "kind": "bracket", "rel": "Grnd", "prominent": 1,
+            "children": [
+                {"kind": "bracket", "rel": "Ser", "prominent": None, "children": [
+                    {"kind": "prop", "ref": "p1"}, {"kind": "prop", "ref": "p2"},
+                ]},
+                {"kind": "bracket", "rel": "Ser", "prominent": None, "children": [
+                    {"kind": "prop", "ref": "p3"}, {"kind": "prop", "ref": "p4"},
+                ]},
+            ],
+        }]
+        assert main_point(doc) == ["p3", "p4"]
+
+    def test_an_unknown_kind_still_names_the_three_that_are_known(self):
+        doc = self.hole_doc()
+        doc["forest"][0] = {"kind": "blob"}
+        assert "forest[0].kind must be 'prop', 'bracket' or 'hole'" in problems_of(doc)

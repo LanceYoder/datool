@@ -133,13 +133,18 @@ export function parseDotId(id: string): DotRef | null {
 export function mainPointRefs(forest: readonly TreeNode[]): string[] {
   const root = forest.length === 1 ? forest[0] : undefined;
   if (root === undefined || root.kind !== 'bracket') return [];
+  // An open hole means an edit is half-made: what the tree supports is not
+  // decided yet, so nothing is the main point (the server agrees).
+  const hasHole = (node: TreeNode): boolean =>
+    node.kind === 'hole' || (node.kind !== 'prop' && node.children.some(hasHole));
+  if (hasHole(root)) return [];
   const out: string[] = [];
   const walk = (node: TreeNode): void => {
     if (node.kind === 'prop') {
       out.push(node.ref);
       return;
     }
-    const prom = node.prominent;
+    const prom = node.kind === 'bracket' ? node.prominent : null;
     const target =
       prom !== null && prom !== undefined ? node.children[prom] : undefined;
     if (target !== undefined) {

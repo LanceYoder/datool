@@ -27,6 +27,7 @@
 import type { Editor } from '@tiptap/core';
 import { closeHistory } from '@tiptap/pm/history';
 import type { Node as PMNode } from '@tiptap/pm/model';
+import type { ResolvedPos } from '@tiptap/pm/model';
 import type { Transaction } from '@tiptap/pm/state';
 import type { CorpusWord, SectionBreak, TaxonomyEntry } from '../types';
 import { displayWordText } from './convert';
@@ -205,15 +206,6 @@ export function flipStar(
 // ---------------------------------------------------------------------------
 // Forest structure: connect / disconnect roots
 
-/** Index of the doc child at `pos`, or null when `pos` is not a root unit. */
-function rootIndexAt(doc: PMNode, pos: number): number | null {
-  if (pos < 0 || pos >= doc.content.size) return null;
-  const node = doc.nodeAt(pos);
-  if (node === null) return null;
-  const $pos = doc.resolve(pos);
-  if ($pos.depth !== 0) return null;
-  return $pos.index(0);
-}
 
 /**
  * A stable way to re-find a unit while a transaction reshapes the document.
@@ -226,37 +218,13 @@ type UnitHandle =
   | { kind: 'prop'; pid: string }
   | { kind: 'bracket'; leafPid: string; up: number };
 
-/** The node at `pos` if it is a unit (proposition or bracket), else null. */
+/** The unit (proposition, bracket or hole) at `pos`, or null. */
 function unitNodeAt(doc: PMNode, pos: number): PMNode | null {
-  if (pos < 0 || pos >= doc.content.size) return null;
+  if (pos < 0 || pos > doc.content.size) return null;
   const node = doc.nodeAt(pos);
   if (node === null) return null;
-  return node.type.name === 'proposition' || node.type.name === 'bracket' ? node : null;
-}
-
-function unitHandleAt(doc: PMNode, pos: number): UnitHandle | null {
-  const node = unitNodeAt(doc, pos);
-  if (node === null) return null;
-  if (node.type.name === 'proposition') {
-    return { kind: 'prop', pid: String(node.attrs.pid) };
-  }
-  let leafPid: string | null = null;
-  node.descendants((n) => {
-    if (leafPid !== null) return false;
-    if (n.type.name === 'proposition') {
-      leafPid = String(n.attrs.pid);
-      return false;
-    }
-    return true;
-  });
-  if (leafPid === null) return null;
-  const leafPos = findPropositionPos(doc, leafPid);
-  if (leafPos === null) return null;
-  return {
-    kind: 'bracket',
-    leafPid,
-    up: doc.resolve(leafPos).depth - doc.resolve(pos).depth,
-  };
+  const name = node.type.name;
+  return name === 'proposition' || name === 'bracket' || name === 'hole' ? node : null;
 }
 
 /** Current position of the unit a handle names, or null when it is gone. */
@@ -328,45 +296,99 @@ export function connectUnits(
   if (posA < posB + nodeB.nodeSize && posB < posA + nodeA.nodeSize) return null;
 
   const bracketType = state.schema.nodes.bracket;
-  if (bracketType === undefined) return null;
+  const holeType = state.schema.nodes.hole;
+  if (bracketType === undefined || holeType === undefined) return null;
 
-  const handleA = unitHandleAt(doc, posA);
-  const handleB = unitHandleAt(doc, posB);
-  if (handleA === null || handleB === null) return null;
+  const $a = doc.resolve(posA);
+  const $b = doc.resolve(posB);
+  const shared = $a.sharedDepth(posB);
+  const container = $a.node(shared);
 
-  const tr = state.tr;
-  if (unzipUnitInTransaction(tr, handleA) === null) return null;
-  if (unzipUnitInTransaction(tr, handleB) === null) return null;
-  // B's unzip may have shifted A (never dissolved it — A is a root by now and
-  // roots sit inside nothing), so re-locate both before judging adjacency.
-  const finalA = locateUnit(tr.doc, handleA);
-  const finalB = locateUnit(tr.doc, handleB);
-  if (finalA === null || finalB === null) return null;
-  const indexA = rootIndexAt(tr.doc, finalA);
-  const indexB = rootIndexAt(tr.doc, finalB);
-  if (indexA === null || indexB === null) return null;
-  if (Math.abs(indexA - indexB) !== 1) return null; // not adjacent: dispatch nothing
+  // Rebuild the common ancestor's children with the path to each unit
+  // DISSOLVED — every bracket between a unit and the ancestor goes, and
+  // nothing above the ancestor is touched.
+  const items: PMNode[] = [];
+  let dissolved = false;
+  container.forEach((child, _offset, index) => {
+    const $unit = index === $a.index(shared) ? $a : index === $b.index(shared) ? $b : null;
+    if ($unit === null || shared === $unit.depth) {
+      items.push(child);   // a bystander, or the unit itself
+      return;
+    }
+    dissolved = true;
+    items.push(...loosen(child, shared + 1, $unit));
+  });
 
-  const from = Math.min(finalA, finalB);
-  const to = Math.max(finalA, finalB);
-  const first = tr.doc.nodeAt(from);
-  const second = tr.doc.nodeAt(to);
-  if (first === null || second === null) return null;
+  const indexA = items.indexOf(nodeA);
+  const indexB = items.indexOf(nodeB);
+  if (indexA === -1 || indexB === -1) return null;
+  if (Math.abs(indexA - indexB) !== 1) return null; // not adjacent: nothing to do
 
+  const low = Math.min(indexA, indexB);
   const prominent = defaultProminent(entry, 2);
   const bracket = bracketType.create(
-    {
-      rel,
-      prominent,
-      reversed: derivedReversed(entry, 2, prominent),
-      flag: null,
-    },
-    [first, second],
+    { rel, prominent, reversed: derivedReversed(entry, 2, prominent), flag: null },
+    [items[low]!, items[low + 1]!],
   );
+  const merged = [...items.slice(0, low), bracket, ...items.slice(low + 2)];
 
-  tr.replaceWith(from, to + second.nodeSize, bracket);
+  const tr = state.tr;
+  if (shared === 0) {
+    // The forest itself: the roots simply take their new arrangement.
+    tr.replaceWith(0, doc.content.size, merged);
+  } else if (!dissolved && merged.length > 1) {
+    // Both units were already this bracket's own children: it keeps them.
+    tr.replaceWith($a.start(shared), $a.end(shared), merged);
+  } else if (shared === 1) {
+    // What held them was a forest root: the pieces need no hole to wait in,
+    // because a root IS unattached. They take their places in the forest.
+    tr.replaceWith($a.before(shared), $a.after(shared), merged);
+  } else {
+    // Whatever held them is gone, and its slot is inside a bracket that
+    // survives: the pieces wait there, in a hole — unless the new bracket is
+    // all that is left, and takes the slot itself.
+    const replacement =
+      merged.length === 1 ? merged[0]! : holeType.create(null, merged);
+    tr.replaceWith($a.before(shared), $a.after(shared), replacement);
+  }
+  // Read the position off the transaction's own document: dispatching applies
+  // exactly this transaction, so what holds there holds after.
+  const at = findBracketPos(tr.doc, bracket);
   dispatch(editor, tr);
-  return from;
+  return at;
+}
+
+/**
+ * The children of `node` with the branch leading to `$unit` dissolved: every
+ * bracket between the two disappears, its children taking its place, and the
+ * unit comes out loose among them.
+ */
+function loosen(node: PMNode, depth: number, $unit: ResolvedPos): PMNode[] {
+  const out: PMNode[] = [];
+  if (depth === $unit.depth) {
+    // This node is the unit's own parent: dissolving it frees every child.
+    node.forEach((child) => out.push(child));
+    return out;
+  }
+  node.forEach((child, _offset, index) => {
+    if (index === $unit.index(depth)) out.push(...loosen(child, depth + 1, $unit));
+    else out.push(child);
+  });
+  return out;
+}
+
+/** Where a freshly built node ended up, by identity. */
+function findBracketPos(doc: PMNode, target: PMNode): number | null {
+  let found: number | null = null;
+  doc.descendants((node, pos) => {
+    if (found !== null) return false;
+    if (node === target) {
+      found = pos;
+      return false;
+    }
+    return true;
+  });
+  return found;
 }
 
 /**
@@ -375,6 +397,42 @@ export function connectUnits(
  * Returns false for a nested bracket (disconnect its root ancestors first —
  * see unzipToRoot) and for a non-bracket position.
  */
+/**
+ * Remove ONE relationship, wherever it sits, and leave everything above it
+ * standing. The bracket's units are left unattached in a HOLE in its slot —
+ * the tick above them hangs — until they are connected again; a root bracket
+ * needs no hole, since its children become roots, which are unattached
+ * already.
+ *
+ * This is what lets an analyst re-work three clauses without losing the shape
+ * of the whole: the tree is briefly incomplete, and only the relation asked
+ * for is gone.
+ */
+export function deleteRelationship(editor: Editor, pos: number): boolean {
+  const { state } = editor;
+  const node = bracketAt(editor, pos);
+  if (node === null) return false;
+  const holeType = state.schema.nodes.hole;
+  if (holeType === undefined) return false;
+
+  const $pos = state.doc.resolve(pos);
+  const children: PMNode[] = [];
+  node.forEach((child) => {
+    // A hole inside a hole is one hole: what waits, waits together.
+    if (child.type.name === 'hole') child.forEach((inner) => children.push(inner));
+    else children.push(child);
+  });
+
+  const tr = state.tr;
+  if ($pos.depth === 0) {
+    tr.replaceWith(pos, pos + node.nodeSize, children);
+  } else {
+    tr.replaceWith(pos, pos + node.nodeSize, holeType.create(null, children));
+  }
+  dispatch(editor, tr);
+  return true;
+}
+
 export function disconnectRoot(editor: Editor, pos: number): boolean {
   const node = bracketAt(editor, pos);
   if (node === null) return false;

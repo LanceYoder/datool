@@ -38,8 +38,16 @@ const NoTextInput = Extension.create({
 export function editorExtensions(
   propositionNode: AnyExtension = editorNodes[2] as AnyExtension,
 ): AnyExtension[] {
-  const [doc, text, , bracket] = editorNodes;
-  return [doc, text, propositionNode, bracket, UndoRedo, NoTextInput] as AnyExtension[];
+  const [doc, text, , bracket, hole] = editorNodes;
+  return [
+    doc,
+    text,
+    propositionNode,
+    bracket,
+    hole,
+    UndoRedo,
+    NoTextInput,
+  ] as AnyExtension[];
 }
 
 /**
