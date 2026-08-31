@@ -268,6 +268,11 @@ export interface BracketLayerProps {
    * or the pointer has not moved yet.
    */
   pointer: Point | null;
+  /**
+   * A bracket this layout proposes but the document does not have yet: drawn
+   * provisionally, so what is being offered is legible as an offer.
+   */
+  provisionalPos?: number | null;
   /** Reader's display options — here, the per-relationship bracket colors. */
   view: ViewSettings;
 }
@@ -377,6 +382,7 @@ export default function BracketLayer({
   onStarClick,
   onDotDelete,
   pointer,
+  provisionalPos = null,
   view,
 }: BracketLayerProps) {
   const selectedDot = dots.find((d) => d.id === selectedDotId);
@@ -429,7 +435,11 @@ export default function BracketLayer({
 
       <g className="spine-layer" pointerEvents="none">
         {brackets.map((b) => (
-          <g key={b.pos} className="bracket" data-rel={b.rel}>
+          <g
+            key={b.pos}
+            className={b.pos === provisionalPos ? 'bracket provisional' : 'bracket'}
+            data-rel={b.rel}
+          >
             <Stroke
               x1={b.x}
               y1={b.top}

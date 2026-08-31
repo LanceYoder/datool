@@ -1359,3 +1359,9 @@ div.error-box {
 .dot-group.loose-end .dot {
   stroke-dasharray: 2.5 2;
 }
+
+/* A bracket the reader is offering, not one they have made: drawn faintly
+   until the click that commits it. */
+.bracket.provisional {
+  opacity: 0.55;
+}

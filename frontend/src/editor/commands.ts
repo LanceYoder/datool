@@ -356,6 +356,28 @@ function rejoinUnits(
   return { tr, at: findNode(tr.doc, joined) };
 }
 
+/** The transaction a connection would be, unspent. */
+function buildConnection(
+  editor: Editor,
+  posA: number,
+  posB: number,
+  taxonomy: readonly TaxonomyEntry[],
+  rel: string,
+): { tr: Transaction; at: number | null } | null {
+  const entry = taxonomyEntry(taxonomy, rel);
+  if (entry === undefined) return null;
+  const bracketType = editor.state.schema.nodes.bracket;
+  if (bracketType === undefined) return null;
+
+  const prominent = defaultProminent(entry, 2);
+  return rejoinUnits(editor, posA, posB, (first, second) =>
+    bracketType.create(
+      { rel, prominent, reversed: derivedReversed(entry, 2, prominent), flag: null },
+      [first, second],
+    ),
+  );
+}
+
 export function connectUnits(
   editor: Editor,
   posA: number,
@@ -363,21 +385,26 @@ export function connectUnits(
   taxonomy: readonly TaxonomyEntry[],
   rel = 'Ser',
 ): number | null {
-  const entry = taxonomyEntry(taxonomy, rel);
-  if (entry === undefined) return null;
-  const bracketType = editor.state.schema.nodes.bracket;
-  if (bracketType === undefined) return null;
-
-  const prominent = defaultProminent(entry, 2);
-  const outcome = rejoinUnits(editor, posA, posB, (first, second) =>
-    bracketType.create(
-      { rel, prominent, reversed: derivedReversed(entry, 2, prominent), flag: null },
-      [first, second],
-    ),
-  );
+  const outcome = buildConnection(editor, posA, posB, taxonomy, rel);
   if (outcome === null) return null;
   dispatch(editor, outcome.tr);
   return outcome.at;
+}
+
+/**
+ * The document a connection WOULD make, without making it — so the tree can
+ * be drawn where it is going while the reader is still deciding, and connect
+ * without anything jumping. Null when the two cannot be connected.
+ */
+export function previewConnection(
+  editor: Editor,
+  posA: number,
+  posB: number,
+  taxonomy: readonly TaxonomyEntry[],
+  rel = 'Ser',
+): { doc: PMNode; at: number | null } | null {
+  const outcome = buildConnection(editor, posA, posB, taxonomy, rel);
+  return outcome === null ? null : { doc: outcome.tr.doc, at: outcome.at };
 }
 
 /**
