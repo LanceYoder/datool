@@ -388,10 +388,13 @@ describe('holes: units an edit left unattached', () => {
     children: [hole, p('c')],
   };
 
-  it('takes no column of its own: what survives stands where it stood', () => {
+  it('holds the column its relationship held, so nothing else moves', () => {
+    // Grnd[ hole[a,b], c ] came from Grnd[ Ser[a,b], c ]: the hole stands in
+    // Ser's column, so deleting Ser moved nothing on the page.
     const { columns, maxColumn } = computeColumns([grnd]);
-    expect(maxColumn).toBe(1);
-    expect(columns.get(grnd)).toBe(1);
+    expect(maxColumn).toBe(2);
+    expect(columns.get(grnd)).toBe(2);
+    // It draws nothing, so it is not in the map the drawing reads.
     expect(columns.has(hole as unknown as BracketNode)).toBe(false);
   });
 

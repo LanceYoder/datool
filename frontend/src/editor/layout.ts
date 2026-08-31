@@ -100,6 +100,22 @@ export function isCoordinate(node: BracketNode): boolean {
   return node.prominent === null || node.prominent === undefined;
 }
 
+/**
+ * Every hole in the forest, numbered in document order — the id its dot
+ * carries ('hole:<n>') and the number its hanging tick names, so the drawing
+ * can tell which loose end is being carried.
+ */
+export function holeNumbers(forest: readonly TreeNode[]): Map<TreeNode, number> {
+  const numbers = new Map<TreeNode, number>();
+  const visit = (node: TreeNode): void => {
+    if (node.kind === 'prop') return;
+    if (isHole(node)) numbers.set(node, numbers.size);
+    for (const child of node.children) visit(child);
+  };
+  for (const root of forest) visit(root);
+  return numbers;
+}
+
 /** A hole: units an edit left unattached (see types.ts). Draws no bracket. */
 export function isHole(node: TreeNode): node is HoleNode {
   return node.kind === 'hole';
@@ -150,11 +166,12 @@ export function computeColumns(forest: readonly TreeNode[]): ColumnResult {
     for (const child of node.children) {
       deepest = Math.max(deepest, visit(child));
     }
-    // A hole draws nothing, so it takes no column of its own: what is under
-    // it stands where it would stand if the hole were not there.
-    if (isHole(node)) return deepest;
+    // A hole stands in the column its relationship stood in. It draws no
+    // spine, but it holds the place: deleting a relationship must move
+    // nothing else on the page, so that what changed is only what was asked
+    // for. The tree re-flows when the hole is filled again.
     const col = deepest + 1;
-    columns.set(node, col);
+    if (!isHole(node)) columns.set(node, col);
     if (col > maxColumn) maxColumn = col;
     return col;
   };
@@ -201,6 +218,8 @@ export interface Tick {
    * because what it used to reach is no longer attached.
    */
   hanging?: boolean;
+  /** Which hole it points at, when it hangs (see holeNumbers). */
+  holeIndex?: number;
 }
 
 export interface LabelAnchor {
@@ -275,6 +294,7 @@ export function layoutBrackets(
   colW: number = COL_W,
 ): BracketLayout {
   const { columns, maxColumn } = computeColumns(forest);
+  const holes = holeNumbers(forest);
   const brackets: BracketGeom[] = [];
 
   const xOf = (node: TreeNode): number =>
@@ -310,6 +330,7 @@ export function layoutBrackets(
       x2: x,
       star: i === starChildIndex,
       hanging: isHole(child),
+      holeIndex: isHole(child) ? holes.get(child) : undefined,
     }));
 
     const rawLabels = getLabels?.(node.rel) ?? [node.rel];
@@ -411,9 +432,9 @@ export function layoutDots(
   colW: number = COL_W,
 ): DotGeom[] {
   const { columns } = computeColumns(forest);
+  const holes = holeNumbers(forest);
   const dots: DotGeom[] = [];
   let bracketIndex = 0;
-  let holeIndex = 0;
 
   // `loose` is true for a unit hanging from nothing: a forest root, or one
   // an edit left in a hole. Both draw the same stub, and both are ready to be
@@ -442,8 +463,7 @@ export function layoutDots(
       // The loose end of the tick that points here is a handle: the hole can
       // be picked up and connected like any other unit, which is how what
       // fell out gets back into the tree.
-      const index = holeIndex;
-      holeIndex += 1;
+      const index = holes.get(node) ?? 0;
       if (hangX !== null) {
         dots.push({
           id: `hole:${index}`,

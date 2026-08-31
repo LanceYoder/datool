@@ -9,7 +9,7 @@
 //   3. labels, then stars LAST, so where a star hugs its letters the star
 //      wins the click (a mis-hit there used to open the relationship menu).
 
-import { COL_W, HANG_W, STUB_W } from './layout';
+import { COL_W, STUB_W } from './layout';
 import type { BracketGeom, DotGeom } from './layout';
 import type { Point } from './interaction';
 import type { ViewSettings } from './viewSettings';
@@ -273,25 +273,14 @@ export interface BracketLayerProps {
 }
 
 /**
- * The connection in progress.
+ * The connection in progress, drawn as the BRACKET it would become: out from
+ * the pointer to a spine one column left of whichever end is further left —
+ * where the bracket itself will stand — down that spine, and out to the dot.
  *
- * From a HANGING END, the line is picked up: it stays the tick it already is,
- * running from its own spine to wherever the pointer has taken it. Nothing new
- * is drawn, because nothing new is being made — an end that hangs is being
- * carried to what it should hold.
- *
- * From any other dot, it is the BRACKET that would be made: out from the
- * pointer to a spine one column left of whichever end is further left — where
- * the bracket itself will stand — down that spine, and out to the dot.
+ * A carried HANGING END is not this: nothing new is being made there, so its
+ * own tick follows the pointer instead (see carriedHole).
  */
 function rubberBandPath(dot: DotGeom, pointer: Point): string {
-  if (dot.kind === 'hole') {
-    // The tick's own origin: its spine, HANG_W back from where it stopped.
-    return (
-      `M${(dot.x - HANG_W).toFixed(1)},${dot.y.toFixed(1)} ` +
-      `L${pointer.x.toFixed(1)},${pointer.y.toFixed(1)}`
-    );
-  }
   const spineX = Math.min(dot.x, pointer.x) - (COL_W - STUB_W);
   return (
     `M${pointer.x.toFixed(1)},${pointer.y.toFixed(1)} ` +
@@ -391,6 +380,12 @@ export default function BracketLayer({
   view,
 }: BracketLayerProps) {
   const selectedDot = dots.find((d) => d.id === selectedDotId);
+  // A hanging end being carried: THIS tick follows the pointer — the line the
+  // reader picked up is the line that moves, not a second one drawn beside it.
+  const carriedHole =
+    selectedDot !== undefined && selectedDot.kind === 'hole' && pointer !== null
+      ? Number(selectedDot.id.slice('hole:'.length))
+      : null;
   // Which instrument the tree is drawn with. The notebook is a ballpoint —
   // bowed lines, a struck star, a scribbled-in dot. The book is a quill:
   // steadier, flourished at the ends of its rules, and it brings the margin's
@@ -462,21 +457,25 @@ export default function BracketLayer({
                 />
               </>
             )}
-            {b.ticks.map((t) => (
+            {b.ticks.map((t) => {
               // A HANGING tick leaves the spine and stops: the relationship is
-              // still here, what it held is not.
-              <Stroke
-                key={t.childIndex}
-                x1={t.x1}
-                y1={t.y}
-                x2={t.x2}
-                y2={t.y}
-                width={1.5}
-                color={ink(view, b.rel, LINE)}
-                hand={hand}
-                hanging={t.hanging === true}
-              />
-            ))}
+              // still here, what it held is not. While its end is carried, the
+              // tick reaches all the way to the pointer instead.
+              const carried = carriedHole !== null && t.holeIndex === carriedHole;
+              return (
+                <Stroke
+                  key={t.childIndex}
+                  x1={carried ? pointer!.x : t.x1}
+                  y1={carried ? pointer!.y : t.y}
+                  x2={t.x2}
+                  y2={t.y}
+                  width={1.5}
+                  color={ink(view, b.rel, LINE)}
+                  hand={hand}
+                  hanging={t.hanging === true}
+                />
+              );
+            })}
           </g>
         ))}
       </g>
@@ -511,7 +510,7 @@ export default function BracketLayer({
       {/* The connection in progress, drawn as the BRACKET it would become:
           a spine where the new bracket's spine will stand, with a tick out to
           the selected dot and another out to the pointer. Inert. */}
-      {selectedDot !== undefined && pointer !== null && (
+      {selectedDot !== undefined && pointer !== null && carriedHole === null && (
         <path
           className="rubber-band"
           d={rubberBandPath(selectedDot, pointer)}
@@ -521,6 +520,10 @@ export default function BracketLayer({
 
       <g className="dot-layer">
         {dots.map((d) => {
+          // The carried end's dot travels with its line.
+          if (carriedHole !== null && d.kind === 'hole' && d.id === selectedDotId) {
+            d = { ...d, x: pointer!.x, y: pointer!.y };
+          }
           const selected = d.id === selectedDotId;
           const shaking = shake !== null && shake.dotId === d.id;
           // Every dot renders (and behaves) identically; 'root' only marks
