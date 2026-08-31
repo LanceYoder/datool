@@ -58,6 +58,18 @@ export function fitsWidth(forest: readonly TreeNode[], availableWidth: number): 
   return bracketWidth(forest) <= availableWidth - MIN_TEXT_W;
 }
 
+/**
+ * A loose end being carried: the hole (by its number — see holeNumbers) and
+ * where the pointer has taken it. The layout draws that end AT the pointer,
+ * and everything hanging on it follows: the bracket stretches, its own
+ * connection point moves, and the tree flexes up from there.
+ */
+export interface Carry {
+  hole: number;
+  x: number;
+  y: number;
+}
+
 /** A measured proposition row: its center y plus its top and bottom edges. */
 export interface RowBox {
   /** Row center y — the connection point for ticks and dots. */
@@ -186,7 +198,15 @@ export function computeColumns(forest: readonly TreeNode[]): ColumnResult {
  *  - coordinate bracket: midpoint of first/last child connection points;
  *  - subordinate bracket: the prominent child's connection point.
  */
-export function connectY(node: TreeNode, rows: RowInput): number {
+export function connectY(
+  node: TreeNode,
+  rows: RowInput,
+  carried?: ReadonlyMap<TreeNode, number>,
+): number {
+  // A carried end is wherever the pointer has taken it, and everything above
+  // it measures from there.
+  const held = carried?.get(node);
+  if (held !== undefined) return held;
   if (node.kind === 'prop') {
     return rowY(rows, node.ref);
   }
@@ -197,10 +217,22 @@ export function connectY(node: TreeNode, rows: RowInput): number {
     const idx = node.prominent;
     if (idx !== null && idx !== undefined) {
       const target = node.children[idx];
-      if (target !== undefined) return connectY(target, rows);
+      if (target !== undefined) return connectY(target, rows, carried);
     }
   }
-  return (connectY(first, rows) + connectY(last, rows)) / 2;
+  return (connectY(first, rows, carried) + connectY(last, rows, carried)) / 2;
+}
+
+/** The carried end as a node → y map, for connectY. */
+function carriedNodes(
+  forest: readonly TreeNode[],
+  carry: Carry | undefined,
+): ReadonlyMap<TreeNode, number> | undefined {
+  if (carry === undefined) return undefined;
+  for (const [node, index] of holeNumbers(forest)) {
+    if (index === carry.hole) return new Map([[node, carry.y]]);
+  }
+  return undefined;
 }
 
 /** One horizontal tick from a child's connection point to the bracket's line. */
@@ -292,9 +324,11 @@ export function layoutBrackets(
   x0: number,
   getLabels?: (rel: string) => string[] | undefined,
   colW: number = COL_W,
+  carry?: Carry,
 ): BracketLayout {
   const { columns, maxColumn } = computeColumns(forest);
   const holes = holeNumbers(forest);
+  const carried = carriedNodes(forest, carry);
   const brackets: BracketGeom[] = [];
 
   const xOf = (node: TreeNode): number =>
@@ -311,7 +345,7 @@ export function layoutBrackets(
     const column = columns.get(node) ?? 1;
     const x = x0 - column * colW;
     const coordinate = isCoordinate(node);
-    const childYs = node.children.map((child) => connectY(child, rows));
+    const childYs = node.children.map((child) => connectY(child, rows, carried));
     const top = childYs[0] ?? 0;
     const bottom = childYs[childYs.length - 1] ?? 0;
 
@@ -326,7 +360,13 @@ export function layoutBrackets(
     const ticks: Tick[] = node.children.map((child, i) => ({
       childIndex: i,
       y: childYs[i] ?? 0,
-      x1: isHole(child) ? x + HANG_W : xOf(child),
+      // A carried end reaches all the way to the pointer; a resting one
+      // stops just off its spine.
+      x1: isHole(child)
+        ? carry !== undefined && holes.get(child) === carry.hole
+          ? carry.x
+          : x + HANG_W
+        : xOf(child),
       x2: x,
       star: i === starChildIndex,
       hanging: isHole(child),
@@ -367,7 +407,7 @@ export function layoutBrackets(
       x,
       top,
       bottom,
-      connectY: connectY(node, rows),
+      connectY: connectY(node, rows, carried),
       ticks,
       labels,
       starChildIndex,
@@ -430,9 +470,11 @@ export function layoutDots(
   rows: RowInput,
   x0: number,
   colW: number = COL_W,
+  carry?: Carry,
 ): DotGeom[] {
   const { columns } = computeColumns(forest);
   const holes = holeNumbers(forest);
+  const carried = carriedNodes(forest, carry);
   const dots: DotGeom[] = [];
   let bracketIndex = 0;
 
@@ -464,12 +506,13 @@ export function layoutDots(
       // be picked up and connected like any other unit, which is how what
       // fell out gets back into the tree.
       const index = holes.get(node) ?? 0;
-      if (hangX !== null) {
+      const carrying = carry !== undefined && index === carry.hole;
+      if (hangX !== null || carrying) {
         dots.push({
           id: `hole:${index}`,
           kind: 'hole',
-          x: hangX,
-          y: connectY(node, rows),
+          x: carrying ? carry.x : (hangX ?? x0 - STUB_W),
+          y: connectY(node, rows, carried),
           root: true,
         });
       }
@@ -480,7 +523,7 @@ export function layoutDots(
     const index = bracketIndex;
     bracketIndex += 1;
     const x = x0 - (columns.get(node) ?? 1) * colW;
-    const childYs = node.children.map((child) => connectY(child, rows));
+    const childYs = node.children.map((child) => connectY(child, rows, carried));
     const top = childYs[0] ?? 0;
     const bottom = childYs[childYs.length - 1] ?? 0;
     const prom = node.prominent;

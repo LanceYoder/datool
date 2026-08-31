@@ -954,28 +954,17 @@ div.error-box {
   margin-bottom: 0;
 }
 
-/* ---- Below the analysis: notes on the left, text flow on the right ----
-   The two panels stand under the halves they belong to — the notes under the
-   tree, the text flow under the Greek — and stack when there is no room for
-   two columns. */
+/* ---- Below the analysis ----
+   The text flow runs the whole width — it is the passage re-read, and reads
+   like one — with the notes beneath it. */
 
 .analysis-lower {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
   margin-top: 2rem;
 }
 
-@media (max-width: 900px) {
-  .analysis-lower {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* In the grid the panel IS the column: no centring, no width of its own. */
 .analysis-lower > .notes-panel {
   max-width: none;
-  margin: 0;
+  margin: 1.5rem 0 0;
 }
 
 /* ---- Text flow ---- */
@@ -991,6 +980,11 @@ div.error-box {
 
 .textflow-body {
   position: relative;
+  /* One indent step. Full-width now, so the steps are generous — and each
+     level is drawn as a faint rail (see .textflow-line::before), so the eye
+     can count depths without measuring space. */
+  --textflow-step: 2.5rem;
+  --textflow-rail: var(--border);
   padding: 0.5rem 0.6rem;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -1004,11 +998,32 @@ div.error-box {
 }
 
 .textflow-line {
+  position: relative;
   display: flex;
   align-items: baseline;
   gap: 0.25rem;
+  padding-left: calc(var(--textflow-step) * var(--tf-indent, 0));
   border-radius: 4px;
   outline: none;
+}
+
+/* The rails: one faint vertical line per indent level, drawn only across the
+   line's own gutter, so a clause's depth can be read at a glance. */
+.textflow-line::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: -0.15rem;
+  bottom: -0.15rem;
+  width: calc(var(--textflow-step) * var(--tf-indent, 0));
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to right,
+    transparent,
+    transparent calc(var(--textflow-step) - 1px),
+    var(--textflow-rail) calc(var(--textflow-step) - 1px),
+    var(--textflow-rail) var(--textflow-step)
+  );
 }
 
 .textflow-line:focus-visible {

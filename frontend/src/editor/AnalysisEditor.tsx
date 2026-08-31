@@ -37,7 +37,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, MutableRefObject, ReactNode } from 'react';
 import {
   EditorContent,
   NodeViewWrapper,
@@ -49,6 +49,7 @@ import type {
   CorpusWord,
   Document as AnalysisDocument,
   TaxonomyEntry,
+  TreeNode,
   VerseText,
 } from '../types';
 import { errorMessages, getCorpusVerses, getCorpusWords, getTaxonomy } from '../api';
@@ -59,7 +60,6 @@ import {
   addSectionBreak,
   clearConnections,
   connectUnits,
-  previewConnection,
   deleteRelationship,
   findBrackets,
   findHoles,
@@ -149,16 +149,6 @@ function menuPlacement(desired: Point, geom: PositionedBracket, overlay: Overlay
   );
   return { x: Math.max(TEXT_GAP, rightOfBracket), y: desired.y };
 }
-
-/**
- * How near the pointer must come to a dot to be aiming at it. Generous: the
- * reader is carrying something, and a connection they can see coming should
- * not need precision.
- */
-const AIM_R = 30;
-
-/** How far the pointer may wander before an aim already taken is given up. */
-const AIM_HOLD_R = 70;
 
 /** Clear space kept between the relationship menu and the text column. */
 const TEXT_GAP = 12;
@@ -375,6 +365,17 @@ const PropositionWithView = EditorProposition.extend({
 
 // ---------------------------------------------------------------------------
 
+/**
+ * The two divisions another view may ask for, each naming a word by its
+ * CORPUS INDEX: split the proposition after that word, or merge the one
+ * holding it with the next. They run the editor's own commands, so a division
+ * made in the text flow is one step of the same undo history.
+ */
+export interface EditorActions {
+  splitAfter(index: number): void;
+  mergeAt(index: number): void;
+}
+
 export interface AnalysisEditorProps {
   /** The loaded document (v1 or v2); the editor always emits v2. */
   document: AnalysisDocument;
@@ -388,12 +389,15 @@ export interface AnalysisEditorProps {
    * variable set here can reach.
    */
   onTreeMargin?: (margin: number) => void;
+  /** Filled in with the divisions above, for a view that has no editor. */
+  actionsRef?: MutableRefObject<EditorActions | null>;
 }
 
 export default function AnalysisEditor({
   document: baseDoc,
   onChange,
   onTreeMargin,
+  actionsRef,
 }: AnalysisEditorProps) {
   const [words, setWords] = useState<Map<number, CorpusWord> | null>(null);
   const [taxonomy, setTaxonomy] = useState<TaxonomyEntry[] | null>(null);
@@ -448,6 +452,7 @@ export default function AnalysisEditor({
       taxonomy={taxonomy}
       onChange={onChange}
       onTreeMargin={onTreeMargin}
+      actionsRef={actionsRef}
     />
   );
 }
@@ -458,6 +463,7 @@ interface InnerProps {
   taxonomy: TaxonomyEntry[];
   onChange: (doc: AnalysisDocument) => void;
   onTreeMargin?: (margin: number) => void;
+  actionsRef?: MutableRefObject<EditorActions | null>;
 }
 
 /** The one floating thing on screen, if any. */
@@ -486,12 +492,12 @@ interface Overlay {
    * the color-block bands so they cover what the block background paints. */
   rowBoxes: ReadonlyMap<string, RowBox>;
   /** Rows as the TREE measures them (anchored to the Greek's first line):
-   * what the preview lays a proposed connection out against. */
+   * what a carried end is laid out against. */
   layoutRows: ReadonlyMap<string, RowBox>;
+  /** The forest this layout drew, for re-laying it out while carrying. */
+  forest: TreeNode[];
   /** False when the tree needs more width than the shell can give it. */
   fits: boolean;
-  /** A bracket this layout proposes but the document does not have yet. */
-  provisionalPos?: number | null;
 }
 
 /** ESV API license: this notice must accompany displayed ESV text. */
@@ -551,7 +557,14 @@ function VersePanel({
   );
 }
 
-function EditorInner({ baseDoc, words, taxonomy, onChange, onTreeMargin }: InnerProps) {
+function EditorInner({
+  baseDoc,
+  words,
+  taxonomy,
+  onChange,
+  onTreeMargin,
+  actionsRef,
+}: InnerProps) {
   const [selectedDotId, setSelectedDotId] = useState<string | null>(null);
   // Where the pointer is while a dot is selected: the loose end of the
   // connection being made, drawn from the dot so the reader can see where the
@@ -591,9 +604,6 @@ function EditorInner({ baseDoc, words, taxonomy, onChange, onTreeMargin }: Inner
   const onSplitRef = useRef<(pid: string, ordinal: number) => void>(() => {});
   // dotPos likewise: the preview memo runs before it is defined.
   const dotPosRef = useRef<(id: string) => number | null>(() => null);
-  // The target currently aimed at, and where the pointer was when it was
-  // taken (see the hover memo).
-  const aim = useRef<{ id: string; x: number; y: number } | null>(null);
   // The width check runs once per loaded document (see the effect below).
   const widthChecked = useRef(false);
   // onDotDelete is defined further down (it needs the editor); the key handler
@@ -902,6 +912,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange, onTreeMargin }: Inner
       height: shellRect.height,
       rowBoxes: blockBoxes,
       layoutRows: rows,
+      forest: current.forest,
       fits,
     };
     return lastOverlay.current;
@@ -936,84 +947,43 @@ function EditorInner({ baseDoc, words, taxonomy, onChange, onTreeMargin }: Inner
     }, TOO_WIDE_MS);
   }, [editor, overlay]);
 
-  /**
-   * The dot the pointer has reached, while something is being carried: near
-   * enough to be what the reader is aiming at. This is what the tree is drawn
-   * FOR — the layout goes where the connection would put it, so making it
-   * moves nothing.
-   */
-  const hoveredDotId = useMemo(() => {
-    if (selectedDotId === null || pointer === null || overlay === null) {
-      aim.current = null;
-      return null;
-    }
-    // An aim already taken STICKS while the pointer stays near where it was
-    // taken. Without this the tree would shift to the proposed layout, move
-    // the dot out from under the pointer, and shift back — for ever.
-    const held = aim.current;
-    if (held !== null) {
-      const dx = held.x - pointer.x;
-      const dy = held.y - pointer.y;
-      if (dx * dx + dy * dy <= AIM_HOLD_R * AIM_HOLD_R) return held.id;
-    }
-    let nearest: string | null = null;
-    let best = AIM_R * AIM_R;
-    for (const dot of overlay.dots) {
-      if (dot.id === selectedDotId) continue;
-      const dx = dot.x - pointer.x;
-      const dy = dot.y - pointer.y;
-      const distance = dx * dx + dy * dy;
-      if (distance <= best) {
-        best = distance;
-        nearest = dot.id;
-      }
-    }
-    aim.current = nearest === null ? null : { id: nearest, x: pointer.x, y: pointer.y };
-    return nearest;
-  }, [selectedDotId, pointer, overlay]);
 
   /**
-   * The tree as it WOULD be, while a connection is being aimed: laid out from
-   * the document the connection would make. The reader sees the result before
-   * committing to it, and committing moves nothing.
+   * The tree while a loose end is being CARRIED: laid out with that end at the
+   * pointer. The bracket it belongs to stretches to reach it, its own
+   * connection point moves with it, and everything above flexes in turn — so
+   * the shape the tree would take is the shape on screen.
+   *
+   * Only the geometry moves: the document is untouched, and the columns stay
+   * where they are, so the text never shifts under the reader's hand.
    */
-  const preview = useMemo<Overlay | null>(() => {
-    if (editor === null || overlay === null || hoveredDotId === null) return null;
-    if (selectedDotId === null) return null;
-    const from = dotPosRef.current(selectedDotId);
-    const to = dotPosRef.current(hoveredDotId);
-    if (from === null || to === null) return null;
-    const trial = previewConnection(editor, from, to, taxonomy);
-    if (trial === null) return null;
-
-    const proposed = nodeToDocument(trial.doc, baseDoc);
-    const { maxColumn } = computeColumns(proposed.forest);
-    const need = Math.max(maxColumn * COL_W, STUB_W) + LABEL_GUTTER;
-    const centered = Math.round((shellRef.current?.clientWidth ?? 0) / 2 - VERSE_LABEL_W / 2);
-    const margin = Math.max(need, centered);
+  const flexed = useMemo<Overlay | null>(() => {
+    if (overlay === null || pointer === null || selectedDotId === null) return null;
+    if (!selectedDotId.startsWith('hole:')) return null;
+    const carry = {
+      hole: Number(selectedDotId.slice('hole:'.length)),
+      x: pointer.x,
+      y: pointer.y,
+    };
+    if (!Number.isInteger(carry.hole)) return null;
     const rows = overlay.layoutRows;
     const layout = layoutBrackets(
-      proposed.forest,
+      overlay.forest,
       rows,
-      margin,
+      overlay.margin,
       (rel) => taxonomyByCode.get(rel)?.labels,
+      COL_W,
+      carry,
     );
-    const pmBrackets = findBrackets(trial.doc);
     return {
-      brackets: layout.brackets.map((geom) => ({
+      ...overlay,
+      brackets: layout.brackets.map((geom, i) => ({
         ...geom,
-        pos: pmBrackets[geom.preorderIndex]?.pos ?? -1,
+        pos: overlay.brackets[i]?.pos ?? -1,
       })),
-      dots: layoutDots(proposed.forest, rows, margin),
-      margin,
-      height: overlay.height,
-      rowBoxes: overlay.rowBoxes,
-      layoutRows: rows,
-      fits: true,
-      provisionalPos: trial.at,
+      dots: layoutDots(overlay.forest, rows, overlay.margin, COL_W, carry),
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor, overlay, selectedDotId, hoveredDotId, baseDoc, taxonomy, taxonomyByCode]);
+  }, [overlay, pointer, selectedDotId, taxonomyByCode]);
 
   const rowCtx = useMemo<RowContextValue>(
     () => ({
@@ -1156,28 +1126,6 @@ function EditorInner({ baseDoc, words, taxonomy, onChange, onTreeMargin }: Inner
     // connects the two (dissolving any old connections above either unit —
     // connectUnits' job). No modifier keys.
     //
-    // While the tree is drawn as the connection WOULD be, the dots on screen
-    // belong to that proposed layout: the click means the connection being
-    // shown, not whatever the clicked dot resolves to in the document as it
-    // stands.
-    if (preview !== null && selectedDotId !== null && hoveredDotId !== null) {
-      const from = dotPos(selectedDotId);
-      const to = dotPos(hoveredDotId);
-      setPopover(null);
-      aim.current = null;
-      if (from === null || to === null) {
-        rejectConnection(dot.id, 'That unit is no longer there.');
-        return;
-      }
-      const newPos = connectUnits(editor, from, to, taxonomy);
-      if (newPos === null) {
-        rejectConnection(dot.id, 'Only two adjacent units can be connected.');
-        return;
-      }
-      setSelectedDotId(null);
-      setPopover({ kind: 'menu', pos: newPos, at: null });
-      return;
-    }
     setPopover(null);
     if (selectedDotId === null) {
       setSelectedDotId(dot.id);
@@ -1226,6 +1174,38 @@ function EditorInner({ baseDoc, words, taxonomy, onChange, onTreeMargin }: Inner
   };
   onSplitRef.current = onSplit;
 
+  /** The proposition whose corpus range holds this word, if any. */
+  const propositionAt = (index: number): { pid: string; srcStart: number } | null => {
+    let hit: { pid: string; srcStart: number } | null = null;
+    editor.state.doc.descendants((node) => {
+      if (hit !== null) return false;
+      if (node.type.name !== 'proposition') return true;
+      const { pid, srcStart, srcEnd } = node.attrs;
+      if (typeof srcStart === 'number' && typeof srcEnd === 'number') {
+        if (index >= srcStart && index <= srcEnd) hit = { pid: String(pid), srcStart };
+      }
+      return false;
+    });
+    return hit;
+  };
+
+  // The text flow divides the same propositions from the other side; it names
+  // words by corpus index, and its two gestures are these two commands.
+  if (actionsRef !== undefined) {
+    actionsRef.current = {
+      splitAfter: (index) => {
+        const at = propositionAt(index);
+        if (at !== null) onSplit(at.pid, index - at.srcStart);
+      },
+      mergeAt: (index) => {
+        const at = propositionAt(index);
+        if (at === null) return;
+        setPopover(null);
+        mergeBelow(editor, at.pid, words);
+      },
+    };
+  }
+
   /** The strip's + : begin a new color block at this proposition. */
   const onAddBreak = (pid: string) => {
     addSectionBreak(editor, pid);
@@ -1253,9 +1233,9 @@ function EditorInner({ baseDoc, words, taxonomy, onChange, onTreeMargin }: Inner
     setRelationship(editor, pos, rel, taxonomy);
   };
 
-  // What the reader sees: the tree it will be while a connection is aimed,
-  // the tree it is otherwise.
-  const shown = preview ?? overlay;
+  // What the reader sees: the tree flexed around what they are carrying, or
+  // the tree as it stands.
+  const shown = flexed ?? overlay;
 
   // ---- Popovers -----------------------------------------------------------
 
@@ -1430,7 +1410,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange, onTreeMargin }: Inner
         className="editor-shell"
         style={
           {
-            paddingLeft: (preview ?? overlay)?.margin ?? `calc(50% - ${VERSE_LABEL_W / 2}px)`,
+            paddingLeft: overlay?.margin ?? `calc(50% - ${VERSE_LABEL_W / 2}px)`,
             // The strip stands in the shell's right padding, so no line of Greek
             // ever runs under it.
             paddingRight: view.blocks ? STRIP_LANE : undefined,
@@ -1457,8 +1437,7 @@ function EditorInner({ baseDoc, words, taxonomy, onChange, onTreeMargin }: Inner
             onLabelClick={onLabelClick}
             onStarClick={onStarClick}
             onDotDelete={(dot) => onDotDelete(dot.id)}
-            pointer={preview === null ? pointer : null}
-            provisionalPos={shown.provisionalPos ?? null}
+            pointer={flexed === null ? pointer : null}
             view={view}
           />
         )}

@@ -455,3 +455,57 @@ describe('a hanging end is a handle', () => {
     expect(dots.map((d) => d.id)).toEqual(['prop:a', 'prop:b']);
   });
 });
+
+describe('a carried end flexes the tree', () => {
+  const p = (ref: string): TreeNode => ({ kind: 'prop', ref });
+  const rows = new Map([
+    ['a', 10],
+    ['b', 30],
+    ['c', 50],
+  ]);
+  // Grnd[ hole[a, b], c ] — the hole is what an edit left loose.
+  const hole: TreeNode = { kind: 'hole', children: [p('a'), p('b')] };
+  const grnd: BracketNode = {
+    kind: 'bracket',
+    rel: 'Grnd',
+    prominent: 0,
+    children: [hole, p('c')],
+  };
+
+  it('stretches the bracket to wherever the end is carried', () => {
+    const resting = layoutBrackets([grnd], rows, 500).brackets[0]!;
+    expect(resting.top).toBe(20); // the hole's own middle: (10 + 30) / 2
+    expect(resting.bottom).toBe(50);
+
+    const carried = layoutBrackets([grnd], rows, 500, undefined, COL_W, {
+      hole: 0,
+      x: 120,
+      y: 300,
+    }).brackets[0]!;
+    expect(carried.top).toBe(300); // the spine now reaches the pointer
+    expect(carried.bottom).toBe(50);
+    // Its tick reaches all the way out to the pointer, not to its resting stop.
+    const tick = carried.ticks.find((t) => t.hanging === true)!;
+    expect(tick.x1).toBe(120);
+    expect(tick.y).toBe(300);
+  });
+
+  it('moves the connection point above it, so the tree flexes in turn', () => {
+    // Grnd stars its FIRST child — the hole — so where the hole goes, Grnd's
+    // own connection point goes, and whatever holds Grnd follows.
+    const resting = layoutBrackets([grnd], rows, 500).brackets[0]!;
+    const carried = layoutBrackets([grnd], rows, 500, undefined, COL_W, {
+      hole: 0,
+      x: 120,
+      y: 300,
+    }).brackets[0]!;
+    expect(resting.connectY).toBe(20);
+    expect(carried.connectY).toBe(300);
+  });
+
+  it('carries the loose end’s dot with it', () => {
+    const dots = layoutDots([grnd], rows, 500, COL_W, { hole: 0, x: 120, y: 300 });
+    const end = dots.find((d) => d.kind === 'hole')!;
+    expect([end.x, end.y]).toEqual([120, 300]);
+  });
+});
