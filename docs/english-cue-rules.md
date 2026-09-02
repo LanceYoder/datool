@@ -8,14 +8,14 @@ rendered "because" it is Ground. If a participle is rendered "if …" the
 relation is Conditional; "in order to …" Means–End; "with the result …"
 Cause–Effect; "because …" Ground; "although …" Adversative.
 
-> **Status: built.** `segment_english` / `leading_cue` / `opener_english`
-> live in `da/treebuild.py`; the per-trigger wiring is in `_dependent_call`
-> and `_participle_call`. (There is no `contrastive_cue` and no "but"/"yet"
-> row in the cue table — see the δέ / bare-ἀλλά entry below — and no separate
+> **Status: built**, and amended by the rulings of 2026-08-29 (Q1, Q3, Q9).
+> `segment_english` / `leading_cue` / `opener_english` live in
+> `da/treebuild.py`; the per-trigger wiring is in `_dependent_call`,
+> `_purpose_call` and `_participle_call`. (There is no separate
 > `_protasis_rel`: forward-attaching clauses go through `_dependent_call` like
-> everything else.) The suite is
-> `da/tests/test_english_cues.py` (33 tests, every expectation read off real
-> corpus verses). Deviations from the draft below are listed at the end.
+> everything else.) The suite is `da/tests/test_english_cues.py` (37 tests,
+> every expectation read off real corpus verses). Deviations from the draft
+> below are listed at the end.
 
 ## Data source
 
@@ -53,9 +53,15 @@ comparable within one verse; the groups are then concatenated in corpus order.
 | "where", "wherever" | Loc |
 | "by " + gerund (means) | WEd |
 | "just as", "as " | Cmp — but **Tmp for a participle** (per-trigger override) |
-| "that" | FtIn |
+| "that" | FtIn — for ἵνα/ὅπως only with corroboration (RULING Q9, below) |
 | "and", "also", "now" | Ser |
-| _(no "but"/"yet" row)_ | contrastive: NOT A CUE — see Open #1 |
+| "but", "yet" | Alt — **δέ only** (RULING Q1) |
+| "because of", "on account of", "for the sake of" | Grnd — the PP phrases (RULING Q3) |
+
+Every trigger declares the senses it will ACCEPT, and a cue outside that set
+is simply no cue. That is what fences the contrastive rows to δέ: `Alt` is in
+no other trigger's set, so a leading "but" in front of a participle or a ὅτι
+is matched and discarded exactly as it was before the rows existed.
 
 Matching is leading-anchored, longest-phrase-first, and word-boundary anchored
 — which is exactly what the draft's trailing spaces ("for ", "as ", "by ")
@@ -71,28 +77,50 @@ encoded: "for" fires, "forgive" does not.
   tense/position defaults) and is outranked by rules 1–4 (καίπερ, genitive
   absolute, future → purpose, λέγων). Senses accepted: CndE, MEd, CE, Grnd,
   Adv, Tmp, WEd, Cmp — Series is deliberately absent, since an "and" is no
-  evidence for attendant circumstance and rule 7 owns that call. 516 of the
-  corpus's 3,889 participle segments draw a cue.
+  evidence for attendant circumstance and rule 7 owns that call (and RULING
+  Q5 has narrowed rule 7 to the aorist-imperative shape). 517 of the corpus's
+  3,889 participle segments draw a cue.
 - **ὥστε + finite verb**: out of minimal by the ruling, and the cue
   RESURRECTS it — "so that"/"with the result"/"so as to"/"as a result" → sure
   C/E; "therefore"/"so then" → sure Inference; no cue → unchanged (C/E, out of
   minimal). ὥστε + infinitive is grammar-forced and untouched.
-- **ἵνα/ὅπως**: the cue overrides the asking-verb list in both directions —
-  "that" → Ft/In, "so that"/"in order that"/"in order to" → M/Ed; no
-  applicable cue → the verb-list rule as before.
+- **ἵνα/ὅπως** (`_purpose_call`): the cue overrides the asking-verb list —
+  "so that"/"in order that"/"in order to" → M/Ed outright, and "that" →
+  Ft/In **only with CORROBORATION** (RULING Q9): a communication or volition
+  verb in the preceding clause, `COMMUNICATION_VOLITION` = `VERBA_DICENDI` ∪
+  `ASKING_VERBS` ∪ {θέλω, βούλομαι, ζητέω, ἐντέλλομαι, ἐπιτάσσω,
+  διαστέλλομαι, παραγγέλλω, συμβουλεύω, ἀφίημι} (DRAFT, awaiting review like
+  `ASKING_VERBS`). English writes purpose clauses with an archaic "that" too,
+  and the phrase alone cannot tell the two apart; the governing verb can.
+  Corpus-wide the "that" cue reaches 90 ἵνα clauses, of which 23 are
+  corroborated and fire; the other 67 keep the purpose default — John 3:16
+  among them. No applicable cue → the verb-list rule as before. The RULING Q7
+  sibling rule runs BEFORE all of this: a ἵνα with a coordinator directly in
+  front of it inherits an earlier sibling ἵνα's call in the same sentence.
 - **ὡς** (and only ὡς among the comparatives): "just as"/"as" → Cmp,
   "when"/"while" → Tmp, "that" → Ft/In; no cue → Cmp. POSITION narrows the
   set: a ὡς clause that PRECEDES its main clause (the held, forward-attaching
   case) drops Ft/In, since the content use follows the verb that governs it.
   `_dependent_call` makes that call from the `precedes` flag it is already
   passed — there is no separate protasis path.
-- **δέ and bare ἀλλά**: the table carries NO contrastive row, so the BSB's
-  "but"/"yet" is not matched at all. δέ keeps its Series default; a bare ἀλλά
-  stays Neg/Pos out of minimal. See `expert-questions.md` Open #1 — which
-  contrary relationship a "but" marks is the unruled question, so detecting
-  one would buy nothing.
-- **Implicit-proposition PPs**: no cue, by decision — Open #3 is whether the
-  implied proposition is drawable at all, not which relation it would take.
+- **δέ** (RULING Q1): the contrastive rows exist for this trigger alone. A δέ
+  the BSB renders "but" or "yet" is setting one thing against another rather
+  than carrying the account onward, and the relationship the expert names for
+  that is **Alternative** — sure, like every other δέ call; anything else
+  keeps the Series default. 742 of the corpus's 1,454 δέ joins draw the cue.
+  **Bare ἀλλά takes NO cue**: it is also an Alternative now (RULING Q1, in
+  minimal), but that reading is made from the GRAMMAR — is there a negation in
+  the clause in front of it? — and the BSB's "but" only restates the contrast
+  the ἀλλά already announced. 118 of 233 ἀλλά joins are bare.
+- **Implicit-proposition PPs** (RULING Q3): the cue now applies. Accepted
+  senses are the adverbial ones a bare phrase can carry — Grnd, MEd, Tmp, Loc,
+  WEd, CndE — plus the PP phrases added to the table above; the
+  per-preposition defaults (`_PP_REL`) stand where no cue fires. The TIER is
+  unchanged: a PP is still never sure, because what keeps it out of minimal is
+  whether the implied PROPOSITION is drawable at all, which the cue does not
+  speak to. 52 of the corpus's 318 PP segments draw a cue, and 29 of those
+  change the relationship (Eph 1:14's εἰς ἀπολύτρωσιν, "until the redemption",
+  M/Ed → Tmp).
 
 ## Cautions
 
@@ -147,16 +175,15 @@ encoded: "for" fires, "forgive" does not.
 
 ## Known costs — for the expert
 
-- **ἵνα rendered with the archaic purpose-"that".** John 3:16 (`ἵνα … μὴ
-  ἀπόληται`, "that everyone who believes in Him shall not perish") is
-  purpose, but the BSB's "that" makes the cue call it content. Corpus-wide the
-  "that" cue moves 78 ἵνα clauses from purpose to content, and sampling says
-  the MAJORITY are genuine content clauses the narrow draft ASKING_VERBS list
-  misses (Matt 20:21 εἰπὲ ἵνα …, Mark 5:43 διεστείλατο ἵνα …, Mark 6:12
-  ἐκήρυξαν ἵνα …, Luke 22:32 ἐδεήθην … ἵνα …), with the archaic purpose-"that"
-  the minority. Kept as the design specifies. **Question:** should "that"
-  require corroboration — an asking/commanding verb anywhere in the sentence —
-  before it outranks the purpose default?
+- **ἵνα rendered with the archaic purpose-"that" — FIXED by RULING Q9.** John
+  3:16 (`ἵνα … μὴ ἀπόληται`, "that everyone who believes in Him shall not
+  perish") is purpose, and the BSB's "that" used to make the cue call it
+  content. The expert's answer to "should 'that' require corroboration?" is
+  YES: a communication or volition verb in the preceding clause. Measured
+  after the change — the "that" cue reaches 90 ἵνα clauses, 23 of them
+  corroborated (Mark 5:43 διεστείλατο ἵνα …, Matt 20:21 εἰπὲ ἵνα …, Luke
+  22:32 ἐδεήθην … ἵνα …, all still content) and 67 uncorroborated, which now
+  keep the purpose default. John 3:16 reads M/Ed again.
 - **A postpositive's English can lead the segment.** A participle segment that
   opens its sentence swallows the postpositive γάρ that follows it, so its
   assembled English can begin "For …" and draw a Ground cue that belongs to
@@ -169,12 +196,18 @@ encoded: "for" fires, "forgive" does not.
 
 ## Effect, measured
 
-Over all 260 NT chapters, the layer relabels 614 of the ~26,400 brackets the
-full analysis draws (2.3%) and adds 3 brackets to minimal (the resurrected
-ὥστε clauses). The largest classes: ὅτι content the one-clause dicendi
-look-back missed (166 Grnd → Ft/In), participles the BSB reads temporally
-(96 Ser → Tmp, from the attendant-circumstance rule, and 80 W/Ed → Tmp),
-ἵνα content (78 M/Ed → Ft/In), and causal ὅτι the dicendi rule over-read
-(41 Ft/In → Grnd). Against the worked diagrams it gains Acts 2:37's Temporal
-on Ἀκούσαντες — the student's reading, which chart rule 7 had been
-coordinating as attendant-circumstance Series.
+Over all 260 NT chapters the layer relabels **1,078 of the 26,417 brackets**
+the full analysis draws (4.1%), up from 614 before the 2026-08-29 rulings
+widened it to δέ (RULING Q1) and to implicit-proposition PPs (RULING Q3). The
+largest classes: the contrastive δέ (742 of 1,454 δέ joins Ser → Alt), ὅτι
+content the one-clause dicendi look-back missed (Grnd → Ft/In), participles
+the BSB reads temporally (W/Ed → Tmp), causal ὅτι the dicendi rule over-read
+(Ft/In → Grnd), and the PPs (29 of the 52 that draw a cue take a different
+relationship from their preposition's default). Minimal is 16,718 brackets
+with the layer against 16,722 without it — the layer moves labels rather than
+tiers, since a cue-derived call carries its trigger's own tier.
+
+Against the worked diagrams the layer gains Acts 2:37's Temporal on
+Ἀκούσαντες (the student's reading, which chart rule 7 had been coordinating)
+and, with RULING Q1, 1 John 1:7's Alternative between the two ἐάν sentences —
+the `alt` bracket the DA1 student drew.

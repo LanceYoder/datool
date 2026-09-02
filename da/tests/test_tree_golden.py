@@ -146,12 +146,13 @@ def _bracket_set(doc) -> set:
 # hard invariant is that minimal is a SUBSET of Full (same brackets, fewer of
 # them); the agreement numbers below are the pinned scorecard.
 MINIMAL_VS_DIAGRAM = {
-    # 6 → 8 with SECTIONING: the γάρ promotion at 4:15 (τοῦτο γὰρ ὑμῖν
-    # λέγομεν, whose because-block runs 4:15–17 and develops — a Ft/In and a
-    # Series inside it) cuts that block out as its own section, so the block's
-    # two Series joins become brackets of their own instead of links in one
-    # flat left-nested chain running from 4:13.
-    "1-thessalonians-4-13-18": (8, 3),
+    # 8 → 7 with RULING Q8/Q10: the 4:15 γάρ block no longer promotes — the
+    # surface indicators now seam at 4:16 anyway, which leaves the γάρ
+    # sentence alone in its section, and RULING Q10 requires a because-block
+    # to CROSS a sentence boundary before it counts as section-sized. Three
+    # sections (4:13–15 | 4:16–17 | the ὥστε of 4:18), and the three brackets
+    # the diagram draws are unchanged.
+    "1-thessalonians-4-13-18": (7, 3),
     # 4 → 5 with the English-cue layer: the BSB's "When the people heard this"
     # over Ἀκούσαντες (v37) turns the attendant-circumstance Series of chart
     # rule 7 into the Temporal the diagram draws.
@@ -159,13 +160,23 @@ MINIMAL_VS_DIAGRAM = {
     # of 2:40 rides back over its dicendi sentence (… παρεκάλει αὐτοὺς
     # λέγων·), so the Ft/In over the speech content now scopes to that
     # introduction alone — which is the diagram's own ftin-40 bracket.
-    "acts-2-37-41": (12, 6),
+    # 12 → 16 with RULING Q11(b) and RULING Q8/Q12. Q11(b): "Πέτρος δὲ πρὸς
+    # αὐτούς·" ("And Peter [said] to them") is an ELIDED speech verb in front
+    # of a quotation, so it counts as a speech introduction — the 2:38 seam
+    # rides back over it and its speech joins as Ft/In, exactly as a "εἶπεν
+    # αὐτοῖς·" would. Q8/Q12 adds a seam before the γάρ of 2:39 (a cohesion
+    # drop plus the English period). Five sections instead of four, and the
+    # section fold has brackets to draw where a flat Series chain used to run.
+    "acts-2-37-41": (16, 6),
     "ephesians-3-8-13": (8, 1),
-    # 4 → 5 with SECTIONING: the BSB paragraph seam at 4:11 (καὶ ἔλεγεν
-    # αὐτοῖς·, which the speech's quote seam also rides back onto) closes v10
-    # as its own section, so v11's dicendi sentence and its speech pair off
-    # instead of extending the flat sentence chain.
-    "mark-4-10-12": (5, 0),
+    # 5 → 8, and 0 → 1 exact, with RULING Q2 and RULING Q1. Q2 is what earns
+    # the exact match: 4:10's apposition (οἱ περὶ αὐτὸν σὺν τοῖς δώδεκα) is a
+    # sure Ft/In now, so the whole 4:10 sentence is sure and its Temporal
+    # bracket (ὅτε ἐγένετο κατὰ μόνας | ἠρώτων αὐτόν …) reaches minimal —
+    # which is the bracket the diagram draws there. Q1 adds the Alternative
+    # over 4:11b (ἐκείνοις δὲ τοῖς ἔξω, "But to those on the outside"), which
+    # the diagram also draws but over different rows.
+    "mark-4-10-12": (8, 1),
 }
 
 

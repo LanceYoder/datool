@@ -16,6 +16,15 @@ levels:
   * the CONSEQUENCES — the promotion pass, the section fold reusing
     ``_sentence_join``, the invariant that a within-section join never spans a
     seam, and the sections emitted as the document's colour blocks.
+
+The 2026-08-29 rulings widened the indicator table (Q8 b–h: vocatives,
+διό/διὰ τοῦτο, narrative scene-setters, mood/person shifts, epistolary
+asyndeton, rhetorical-question openers, lexical-cohesion drops), made the
+English period a SOFT vote that combines with the other softs (Q12), required
+a promoted because-block to cross a sentence boundary and let causal-ὅτι
+blocks promote too (Q10), and widened the speech machinery (Q11: the
+βοάω/κράζω class, and the elided speech verb in front of a quotation). Each
+has its own test below, and every recomputed expectation names the ruling.
 """
 
 import pytest
@@ -31,6 +40,7 @@ from da.treebuild import (
     _Packet,
     _SentenceMarks,
     _assemble_sentence,
+    _causal_hoti_sentence,
     _dicendi_sentence,
     _indicators,
     _seam_score,
@@ -47,10 +57,16 @@ from da.treebuild import (
 # Helpers
 
 def M(**overrides) -> _SentenceMarks:
-    """One sentence's marks, everything false but what is named."""
+    """One sentence's marks, everything false but what is named. The four
+    non-boolean fields (RULING Q8's mood/person shift and cohesion drop are
+    read across a PAIR of sentences) default to "nothing known", so a
+    synthetic pair fires neither."""
     base = dict(heading=False, paragraph=False, quote_begin=False,
                 quote_end=False, oun=False, dicendi=False,
-                english_period=False)
+                english_period=False, epistle=False, vocative=False,
+                dio=False, scene_setter=False, asyndeton=False,
+                question=False, first_mood=None, first_person=None,
+                imperative=False, all_third=False, content=frozenset())
     return _SentenceMarks(**(base | overrides))
 
 
@@ -67,7 +83,11 @@ class Sectioned:
             segs = [s for _, s in group]
             self.packets.append(
                 _Packet(_assemble_sentence(group, segs, self.words), segs, segs))
-        self.marks = [_sentence_marks(p.opening, self.words) for p in self.packets]
+        self.marks = [
+            _sentence_marks(p.opening, self.words,
+                            self.packets[i + 1].opening
+                            if i + 1 < len(self.packets) else None)
+            for i, p in enumerate(self.packets)]
         self.seams = _seams(self.marks)
         self.sections = _sections(self.packets, self.words)
 
@@ -93,6 +113,12 @@ def brackets(node):
             yield from brackets(child)
 
 
+def the_one(iterable):
+    found = list(iterable)
+    assert len(found) == 1, f"expected exactly one, found {len(found)}"
+    return found[0]
+
+
 def span_of(doc, node):
     sources = {p["id"]: p["source"] for p in doc["propositions"]}
 
@@ -109,18 +135,91 @@ def span_of(doc, node):
 # The seam scorer, on its own: marks in, seams out
 
 def test_indicator_weights_are_the_expert_grading():
-    """Headings and quotation bounds are HARD, paragraph breaks and οὖν
-    STRONG — each of those seams on its own — and the English period is the
-    one SOFT vote, which by the ruling is not yet a seam by itself. Adding a
-    further indicator (Open #8) is one line in SEAM_WEIGHTS plus its
-    detection, so this test names weights rather than freezing the table."""
+    """Headings and quotation bounds are HARD (2), and each of the STRONG (1)
+    indicators seams on its own; the SOFT ones are 0.5 and never do.
+
+    RULING Q8 added b–h and RULING Q12 re-weighted the English period. The
+    grading: a vocative is strong in the EPISTLES and soft elsewhere (two
+    entries, since it is the same detection graded twice), διό/διὰ τοῦτο,
+    narrative scene-setters and rhetorical-question openers are strong, and
+    the mood/person shift, epistolary asyndeton, cohesion drop and English
+    period are soft. This test names weights rather than freezing the table,
+    so adding an indicator stays a one-line affair."""
     assert SEAM_THRESHOLD == 1
     assert SEAM_WEIGHTS["heading"] == 2
     assert SEAM_WEIGHTS["quote_begin"] == 2
     assert SEAM_WEIGHTS["quote_end"] == 2
     assert SEAM_WEIGHTS["paragraph"] == 1
     assert SEAM_WEIGHTS["oun"] == 1
-    assert SEAM_WEIGHTS["english_period"] == 0
+    assert SEAM_WEIGHTS["dio"] == 1
+    assert SEAM_WEIGHTS["scene_setter"] == 1
+    assert SEAM_WEIGHTS["question"] == 1
+    assert SEAM_WEIGHTS["vocative"] == 1
+    assert SEAM_WEIGHTS["vocative_soft"] == 0.5
+    assert SEAM_WEIGHTS["mood_shift"] == 0.5
+    assert SEAM_WEIGHTS["asyndeton"] == 0.5
+    assert SEAM_WEIGHTS["cohesion"] == 0.5
+    assert SEAM_WEIGHTS["english_period"] == 0.5
+
+
+@pytest.mark.parametrize("indicator", ["dio", "scene_setter", "question"])
+def test_the_new_strong_indicators_seam_on_their_own(indicator):
+    """RULING Q8: διό/διὰ τοῦτο, a narrative scene-setter and a
+    rhetorical-question opener are each a seam by themselves, exactly like a
+    paragraph break or an οὖν. (The vocative is the genre-graded one — see
+    the test below.)"""
+    marks = [M(), M(**{indicator: True}), M()]
+    assert _indicators(marks, 1) == (indicator,)
+    assert _seams(marks) == [1]
+
+
+def test_a_vocative_is_strong_in_a_letter_and_soft_in_a_story():
+    """The one indicator RULING Q8 grades by genre. "Ἀδελφοί μου, …" opening a
+    sentence in a letter is how the writer turns to a new topic — a seam. The
+    same vocative in a Gospel is usually a character being addressed inside a
+    scene, so it is only a vote."""
+    letter = [M(), M(epistle=True, vocative=True), M()]
+    assert _indicators(letter, 1) == ("vocative",)
+    assert _seams(letter) == [1]
+    story = [M(), M(vocative=True), M()]
+    assert _indicators(story, 1) == ("vocative_soft",)
+    assert _seam_score(_indicators(story, 1)) < SEAM_THRESHOLD
+    assert _seams(story) == []
+
+
+def test_two_soft_indicators_reach_the_threshold_together():
+    """RULING Q12, and the answer to how the softs combine: a soft signal is
+    never a seam alone, but two of them are — 0.5 + 0.5 = 1. Here the English
+    period at the end of the first sentence and the lexical-cohesion drop
+    between the two (RULING Q8(h): not one content lemma in common)."""
+    marks = [M(english_period=True, content=frozenset({"λόγος"})),
+             M(content=frozenset({"μάχαιρα"}))]
+    assert _indicators(marks, 1) == ("cohesion", "english_period")
+    assert _seam_score(_indicators(marks, 1)) == 1
+    assert _seams(marks) == [1]
+    # One shared content lemma and the cohesion vote is gone, so the English
+    # period stands alone and there is no seam.
+    joined = [M(english_period=True, content=frozenset({"λόγος"})),
+              M(content=frozenset({"λόγος", "μάχαιρα"}))]
+    assert _indicators(joined, 1) == ("english_period",)
+    assert _seams(joined) == []
+
+
+def test_the_mood_and_person_shift():
+    """RULING Q8(e), both halves. An imperative opening a sentence whose
+    predecessor had none is a shift; so is a sustained third-person stretch
+    followed by a second-person verb. Neither is a seam alone."""
+    to_command = [M(content=frozenset({"a"})),
+                  M(first_mood="D", content=frozenset({"a"}))]
+    assert _indicators(to_command, 1) == ("mood_shift",)
+    assert _seams(to_command) == []
+    # …but not when the previous sentence was already commanding.
+    already = [M(imperative=True, content=frozenset({"a"})),
+               M(first_mood="D", content=frozenset({"a"}))]
+    assert _indicators(already, 1) == ()
+    to_you = [M(all_third=True, content=frozenset({"a"})),
+              M(first_person="2", content=frozenset({"a"}))]
+    assert _indicators(to_you, 1) == ("mood_shift",)
 
 
 @pytest.mark.parametrize("indicator", ["heading", "paragraph", "oun"])
@@ -145,8 +244,10 @@ def test_a_quotation_seams_at_both_ends():
 
 
 def test_the_english_period_is_a_vote_not_a_seam():
-    """The soft signal: it is detected and scored, but at weight 0 it never
-    tips a boundary on its own — the ruling for this first implementation."""
+    """The soft signal: detected and scored, but never a seam on its own.
+    RULING Q12 raised its weight from 0 to 0.5, which changes nothing here —
+    "never a seam alone" is the ruling — and everything about what it can do
+    beside another soft indicator (see the soft-pair test above)."""
     marks = [M(english_period=True), M(), M()]
     assert _indicators(marks, 1) == ("english_period",)
     assert _seam_score(_indicators(marks, 1)) < SEAM_THRESHOLD
@@ -197,7 +298,14 @@ def test_section_bounds_tile_the_sentences():
 def test_1john_headings_and_paragraphs_section_the_letter_opening():
     """Two BSB headings ("The Word of Life" at 1:1, "Walking in the Light" at
     1:5) and the paragraph the ἐάν run restarts at 1:8. The 1:1 heading opens
-    the passage, so it seams nothing; the other two are the section starts."""
+    the passage, so it seams nothing; the other two are section starts.
+
+    RECOMPUTED for RULING Q8/Q12: the letter also seams on its soft
+    indicators now — this is an epistle, so a sentence with no connective at
+    its start votes (asyndeton), and so do the English period and a
+    lexical-cohesion drop. Four further boundaries reach the threshold that
+    way, and 2:1's "Τεκνία μου" adds the epistolary VOCATIVE, which is strong
+    on its own."""
     p = Sectioned("1 John 1:1-2:2")
     assert len(p.packets) == 11
 
@@ -211,9 +319,16 @@ def test_1john_headings_and_paragraphs_section_the_letter_opening():
 
     assert _indicators(p.marks, 3)[:2] == ("heading", "paragraph")
     assert _indicators(p.marks, 6)[0] == "paragraph"
-    assert p.seams == [3, 6]
-    assert p.sections == [(0, 2), (3, 5), (6, 10)]
-    # 1:5 opens the second section and 1:8 the third.
+    # 2:1 Τεκνία μου, ταῦτα γράφω ὑμῖν — the vocative stands in the first
+    # three words of the sentence and this is a letter, so it is STRONG.
+    assert p.marks[9].vocative and p.marks[9].epistle
+    assert p.words[p.first_word(9)].chapter == 2
+    assert "vocative" in _indicators(p.marks, 9)
+
+    assert p.seams == [2, 3, 4, 6, 7, 8, 9]
+    assert p.sections == [(0, 1), (2, 2), (3, 3), (4, 5), (6, 6), (7, 7),
+                          (8, 8), (9, 10)]
+    # 1:5 still opens a section, and so does 1:8.
     assert p.words[p.first_word(3)].verse == 5
     assert p.words[p.first_word(6)].verse == 8
 
@@ -293,36 +408,162 @@ def test_matthew3_oun_is_a_transition_between_chunks_of_logic():
     assert _indicators(p.marks, 12) == ("oun",)
 
 
+def test_matthew3_narrative_scene_setters():
+    """RULING Q8(d), in a narrative book. Matt 3:1 opens "Ἐν δὲ ταῖς ἡμέραις
+    ἐκείναις …" and 3:5 "τότε ἐξεπορεύετο πρὸς αὐτὸν Ἱεροσόλυμα …" — two of
+    the formulae that move a Gospel to a new scene, and each is a STRONG
+    indicator that seams on its own (3:1 opens the passage, so only 3:5
+    actually cuts)."""
+    p = Sectioned("Matthew 3:1-12")
+    assert p.marks[0].scene_setter                 # ἐν … ταῖς ἡμέραις ἐκείναις
+    assert p.marks[6].scene_setter                 # τότε
+    assert p.words[p.first_word(6)].verse == 5
+    assert _indicators(p.marks, 6)[0] == "scene_setter"
+    assert 6 in p.seams
+    # …and nowhere else in the passage: the formulae are a closed list.
+    assert [m.scene_setter for m in p.marks].count(True) == 2
+
+
+def test_matthew3_a_crying_out_verb_introduces_its_speech():
+    """RULING Q11(a). Matt 3:3 "Φωνὴ βοῶντος ἐν τῇ ἐρήμῳ·" — a voice CRYING
+    OUT, with the Isaiah quotation after it. βοάω was not a verbum dicendi
+    before the ruling, so the seam fell between the introduction and its
+    speech; now the βοῶντος sentence is a speech introduction like any
+    "εἶπεν αὐτοῖς·" and rides with the speech it opens."""
+    p = Sectioned("Matthew 3:1-12")
+    assert p.marks[3].dicendi
+    assert _dicendi_sentence(p.packets[3].closing, p.words)
+    assert p.marks[4].quote_begin                  # Ἑτοιμάσατε τὴν ὁδὸν κυρίου
+    assert 4 not in p.seams and 3 in p.seams
+    assert (3, 4) in p.sections
+
+
+def test_acts2_an_elided_speech_verb_introduces_its_speech():
+    """RULING Q11(b). Acts 2:38 "Πέτρος δὲ πρὸς αὐτούς·" — "And Peter [said]
+    to them": the verb of saying is ELIDED, so the sentence has no finite verb
+    at all and no dicendi lemma to find. It counts as a speech introduction
+    because DIRECT SPEECH FOLLOWS (the next sentence, Μετανοήσατε, carries the
+    BSB's quotation-open mark), which is the corroboration the ruling
+    requires. The seam therefore rides back over it, and the Ft/In join over
+    the speech content applies — the same test now serves both."""
+    p = Sectioned("Acts 2:37-41")
+    words = p.words
+    intro, speech = 2, 3
+    assert p.words[p.first_word(intro)].verse == 38
+    assert not any(words[i].is_finite_verb
+                   for i in range(p.first_word(intro), p.last_word(intro) + 1))
+    assert marks_for(p.first_word(speech)).quote_opens
+    assert p.marks[intro].dicendi
+    # …and only because the speech follows: with no next sentence to check,
+    # the elided branch cannot fire.
+    assert not _dicendi_sentence(p.packets[intro].closing, words)
+    assert speech not in p.seams and intro in p.seams
+    assert (intro, speech) in p.sections
+
+    doc = build_document(p.segments)
+    ftin = [b for b in brackets(doc["forest"][0])
+            if b["rel"] == "FtIn"
+            and span_of(doc, b) == (p.first_word(intro), p.last_word(speech))]
+    assert len(ftin) == 1 and ftin[0]["prominent"] == 1
+
+
+# James 1 — the epistolary indicators: a vocative, asyndeton, διό.
+
+def test_james1_epistolary_indicators():
+    """RULING Q8(b), (c) and (f) in a letter.
+
+      1:19  Ἴστε, ἀδελφοί μου ἀγαπητοί.      — vocative (STRONG in an epistle)
+      1:17  Πᾶσα δόσις ἀγαθὴ …               — no connective at all (asyndeton)
+      1:21  διὸ ἀποθέμενοι πᾶσαν ῥυπαρίαν …  — διό (STRONG)
+    """
+    p = Sectioned("James 1:16-21")
+    assert all(m.epistle for m in p.marks)
+
+    # (b) the vocative — ἀδελφοί is a vocative NOUN (MorphGNT case 'V') and it
+    # stands in the sentence's first three words.
+    assert p.words[p.first_word(3)].verse == 19
+    assert p.marks[3].vocative
+    assert any(w.case == "V" for w in p.words[p.first_word(3):
+                                              p.first_word(3) + 3])
+    assert "vocative" in _indicators(p.marks, 3)
+    assert 3 in p.seams
+
+    # (f) epistolary asyndeton — the connective scan finds nothing at 1:17.
+    assert p.words[p.first_word(1)].verse == 17
+    assert p.marks[1].asyndeton
+    assert "asyndeton" in _indicators(p.marks, 1)
+
+    # (c) διό.
+    assert p.words[p.first_word(5)].verse == 21
+    assert p.marks[5].dio
+    assert "dio" in _indicators(p.marks, 5)
+    assert 5 in p.seams
+
+
+def test_romans8_rhetorical_question_openers():
+    """RULING Q8(g). Rom 8:31 "Τί οὖν ἐροῦμεν πρὸς ταῦτα;", 8:33 "τίς
+    ἐγκαλέσει κατὰ ἐκλεκτῶν θεοῦ;", 8:34 "τίς ὁ κατακρινῶν;" — each opens on
+    an interrogative and closes on the Greek question mark, which is the pair
+    of conditions the ruling names (the question mark alone would catch every
+    question inside a dialogue). Each is a strong seam."""
+    p = Sectioned("Romans 8:29-34")
+    questions = [i for i, m in enumerate(p.marks) if m.question]
+    assert [p.words[p.first_word(i)].verse for i in questions] == [31, 33, 34]
+    for i in questions:
+        assert p.words[p.last_word(i)].text.rstrip().endswith(";")
+        assert "question" in _indicators(p.marks, i)
+        assert i in p.seams
+    # 8:32's ὅς γε τοῦ ἰδίου υἱοῦ … πῶς οὐχὶ … χαρίσεται; ends on the question
+    # mark too, but does not OPEN with the interrogative, so it is no opener.
+    assert p.words[p.last_word(6)].text.rstrip().endswith(";")
+    assert not p.marks[6].question
+
+
 def test_romans12_oun_opens_the_exhortation():
     """Παρακαλῶ οὖν (Rom 12:1) with the doxology of 11:33–36 in front of it:
     the οὖν seam closes the doxology and the section fold joins the two with
-    the Inference οὖν names."""
+    the Inference οὖν names.
+
+    RECOMPUTED for RULING Q8/Q12. The doxology is a chain of rhetorical
+    questions — "Τίς γὰρ ἔγνω νοῦν κυρίου;", "τίς σύμβουλος αὐτοῦ ἐγένετο;" —
+    and Q8(g) makes each of those a strong seam, so every sentence of this
+    passage now stands as its own section. The Inference is still drawn where
+    the οὖν puts it; what changed is that its supported side is the 12:1
+    sentence alone, with 12:2 chaining on as a further Series."""
     p = Sectioned("Romans 11:33-12:2")
     assert p.marks[7].oun
     assert p.words[p.first_word(7)].chapter == 12
     assert 7 in p.seams
-    assert p.sections[-1] == (7, 8)
+    assert [m.question for m in p.marks].count(True) == 3
+    assert p.sections[-2:] == [(7, 7), (8, 8)]
 
     doc = build_document(p.segments)
-    root = doc["forest"][0]
-    assert root["rel"] == "Inf" and root["prominent"] == 1
-    assert span_of(doc, root["children"][1]) == (p.first_word(7), p.last_word(8))
+    inference = the_one(b for b in brackets(doc["forest"][0])
+                        if b["rel"] == "Inf")
+    assert inference["prominent"] == 1
+    assert span_of(doc, inference["children"][1]) == (p.first_word(7),
+                                                      p.last_word(7))
+    assert span_of(doc, inference["children"][0]) == (p.first_word(0),
+                                                      p.last_word(6))
 
 
 # ---------------------------------------------------------------------------
 # The promotion pass — the one structure-dependent indicator
 
-def test_gar_block_that_develops_is_promoted_to_its_own_section():
-    """Hebrews 4:11–13 has no surface indicator at all inside it (the οὖν of
-    4:11 opens the passage), so the promotion pass alone sections it: the γάρ
-    of 4:12 opens a because-block that runs on into 4:13 — a Series joining
-    the two sentences, a Ft/In and a Ground inside the second — and a
-    developed support like that is section-sized.
+def test_gar_block_that_crosses_a_sentence_is_promoted_to_its_own_section():
+    """Romans 5:9–11 has no surface indicator at all inside it, so the
+    promotion pass alone sections it: the γάρ of 5:10 opens a because-block
+    that RUNS ON into 5:11 (οὐ μόνον δέ, ἀλλὰ καὶ καυχώμενοι …, a Series
+    join), and a support that develops across a sentence boundary is
+    section-sized.
 
-    The consequence is the tree: the Ground now supports the whole block
-    (4:12–13) instead of 4:12 alone, which is what a flat sentence fold gave
-    (Ser[Grnd[4:11, 4:12], 4:13])."""
-    p = Sectioned("Hebrews 4:11-13")
+    The consequence is the tree: the Ground supports the whole block
+    (5:10–11) instead of 5:10 alone, which is what a flat sentence fold gives.
+
+    (This test used to run on Hebrews 4:11–13, which the RULING Q8/Q12 soft
+    indicators now seam on the surface — the same two sections, but no longer
+    the promotion pass's doing.)"""
+    p = Sectioned("Romans 5:9-11")
     assert len(p.packets) == 3
     assert p.seams == []                      # nothing on the surface
     assert p.sections == [(0, 0), (1, 2)]     # …the promotion did this
@@ -333,29 +574,58 @@ def test_gar_block_that_develops_is_promoted_to_its_own_section():
     assert span_of(doc, root["children"][0]) == (p.first_word(0), p.last_word(0))
     support = root["children"][1]
     assert span_of(doc, support) == (p.first_word(1), p.last_word(2))
-    # The support develops: the Series is the block's own join, and the Ft/In
-    # and Ground are inside 4:13.
-    rels = {b["rel"] for b in brackets(support)}
-    assert {"Ser", "FtIn", "Grnd"} <= rels
 
 
-def test_an_undeveloped_gar_stays_a_supporting_clause():
-    """The promotion is not "every γάρ": 1 Thess 1:8's ground (ἀφ᾽ ὑμῶν γὰρ
-    ἐξήχηται …) develops a Neg/Pos and a Cause–Effect but no coordinate and no
-    Ft/In, so it is not section-sized and the sentence fold keeps it — the two
-    γάρ Grounds of the passage stay nested exactly as the student drew them.
-    (The 1:9 ground IS promoted, and produces the same bracket the flat fold
-    did, so the diagram's scorecard is untouched — see
-    test_relationing_golden.)"""
+def test_a_within_sentence_gar_is_not_a_section():
+    """RULING Q10: the development must CROSS A SENTENCE BOUNDARY.
+
+    1 Thess 1:6–10 has two γάρ Grounds. The 1:8 one (ἀφ᾽ ὑμῶν γὰρ ἐξήχηται …)
+    never qualified — it develops a Neg/Pos and a Cause–Effect inside its own
+    sentence. The 1:9 one (αὐτοὶ γὰρ περὶ ἡμῶν ἀπαγγέλλουσιν …) used to be
+    promoted on the strength of the coordinate INSIDE it, and no longer is:
+    nothing Ser-chains onto it, so its support stays a supporting clause and
+    the passage is one section. The two Grounds nest exactly as the student
+    drew them."""
     p = Sectioned("1 Thessalonians 1:6-10")
     assert p.seams == []
-    assert p.sections == [(0, 1), (2, 2)]
+    assert p.sections == [(0, 2)]
     doc = build_document(p.segments)
     root = doc["forest"][0]
     assert root["rel"] == "Grnd"
     inner = root["children"][0]
     assert inner["rel"] == "Grnd"
     assert span_of(doc, inner) == (p.first_word(0), p.last_word(1))
+
+
+def test_a_causal_hoti_block_is_promoted_too():
+    """RULING Q10's second half: a CAUSAL ὅτι whose ground runs on into the
+    following sentences is a because-block like a γάρ, and promotes.
+
+    1 John 3:2–3: "οἴδαμεν ὅτι ἐὰν φανερωθῇ ὅμοιοι αὐτῷ ἐσόμεθα, ὅτι ὀψόμεθα
+    αὐτὸν καθώς ἐστιν." — the first ὅτι is the content of οἴδαμεν, the second
+    is causal ("because we will see Him as He is"), and 3:3 ("καὶ πᾶς ὁ ἔχων
+    τὴν ἐλπίδα ταύτην …") Ser-chains onto it. The surface indicators put 3:2's
+    two sentences and 3:3 in ONE section; the promotion cuts the block out."""
+    p = Sectioned("1 John 3:1-4")
+    assert _causal_hoti_sentence(p.packets[3].opening, p.words)
+    assert p.words[p.first_word(3)].verse == 2
+    surface = _section_bounds(len(p.packets), p.seams)
+    assert (2, 4) in surface                  # what the seams alone give
+    assert p.sections == [(0, 0), (1, 1), (2, 2), (3, 4), (5, 5)]
+
+    doc = build_document(p.segments)
+    starts = {pr["id"]: pr["source"]["start"] for pr in doc["propositions"]}
+    assert starts[doc["sections"][-2]["start"]] == p.first_word(3)
+
+
+def test_a_causal_hoti_inside_one_sentence_is_not_a_section():
+    """The same crossing rule guards the ὅτι half. Matt 5:3 Μακάριοι οἱ πτωχοὶ
+    τῷ πνεύματι, ὅτι αὐτῶν ἐστιν ἡ βασιλεία τῶν οὐρανῶν — a causal ὅτι with
+    nothing chained onto its sentence, so the block is one sentence long and
+    the verse stays a single section."""
+    p = Sectioned("Matthew 5:3")
+    assert _causal_hoti_sentence(p.packets[0].opening, p.words)
+    assert p.sections == [(0, 0)]
 
 
 # ---------------------------------------------------------------------------
@@ -365,12 +635,16 @@ def test_the_section_fold_reuses_the_sentence_join_table():
     """The big fold asks the same question of a section's FIRST sentence that
     the small fold asks of every sentence, through the same
     ``_sentence_join``: γάρ → Ground, οὖν → Inference, δέ/καί/asyndeton →
-    Series. 1 John's three sections are asyndeton and δέ, so they chain as
-    Series; Hebrews' two are joined by the οὖν that made the seam."""
+    Series. 1 John's sections are asyndeton and δέ, so they chain as Series;
+    Hebrews' last section opens with the γάρ of 4:12, so the outermost
+    bracket there is that Ground (RECOMPUTED for RULING Q8/Q12: 4:12 is a
+    section of its own now — see test_firstpass_golden), and the Inference the
+    οὖν seam produced sits inside it."""
     john = build_document(Sectioned("1 John 1:1-2:2").segments)
     assert john["forest"][0]["rel"] == "Ser"
     hebrews = build_document(Sectioned("Hebrews 4:9-12").segments)
-    assert hebrews["forest"][0]["rel"] == "Inf"
+    assert hebrews["forest"][0]["rel"] == "Grnd"
+    assert hebrews["forest"][0]["children"][0]["rel"] == "Inf"
 
 
 @pytest.mark.parametrize("ref", ["1 John 1:1-2:2", "Matthew 3:1-12",
@@ -421,11 +695,13 @@ def test_sections_are_emitted_as_colour_blocks():
     validate_document(doc, corpus_size=len(p.words))
 
     starts = {pr["id"]: pr["source"]["start"] for pr in doc["propositions"]}
-    assert doc["sections"] == [{"start": "p20", "color": 1},
-                               {"start": "p34", "color": 2}]
+    assert [b["color"] for b in doc["sections"]] == list(range(1, 8))
     assert [starts[b["start"]] for b in doc["sections"]] == [
-        p.first_word(3), p.first_word(6)]
-    # …which are the two BSB divisions: the 1:5 heading and the 1:8 paragraph.
+        p.first_word(lo) for lo, _ in p.sections[1:]]
+    # Two of them are the BSB's own divisions: the 1:5 heading and the 1:8
+    # paragraph (the others are RULING Q8's indicators — see
+    # test_1john_headings_and_paragraphs_section_the_letter_opening).
+    assert {"p20", "p34"} <= {b["start"] for b in doc["sections"]}
     assert doc["propositions"][19]["label"] == "5a"
     assert doc["propositions"][33]["label"] == "8a"
 
@@ -445,11 +721,15 @@ def test_colour_blocks_match_the_sections_in_both_modes():
 
 
 def test_one_section_means_no_colour_blocks():
-    """1 John 1:5–7: no heading, no paragraph, no quotation, no οὖν, and its
-    two sentence joins are Series — nothing to section on, so the passage is
-    one block and the document carries no ``sections`` key at all (the shape
-    the editor writes when the analyst has drawn no breaks)."""
-    p = Sectioned("1 John 1:5-7")
+    """1 Thess 1:6–10: no heading, no paragraph, no quotation, no οὖν, no soft
+    pair (each boundary carries the English period and nothing else), and no
+    because-block that crosses a sentence — nothing to section on, so the
+    passage is one block and the document carries no ``sections`` key at all
+    (the shape the editor writes when the analyst has drawn no breaks).
+
+    (This test used to run on 1 John 1:5–7, whose 5→6 boundary now carries
+    three soft indicators — RULING Q8/Q12.)"""
+    p = Sectioned("1 Thessalonians 1:6-10")
     assert p.seams == []
     assert p.sections == [(0, 2)]
     doc = build_document(p.segments)

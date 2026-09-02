@@ -21,6 +21,10 @@ Contract:
     Segment.sentence                        0-based, increments after a word
                                             whose ends_sentence is True
     Segment.opener                          Opener | None — why it opened
+    Segment.embedded                        interrupting relative clauses left
+                                            INSIDE the segment, as inclusive
+                                            ranges (the Text Flow sets them off
+                                            in place); never a boundary
 """
 
 from dataclasses import dataclass
@@ -44,6 +48,14 @@ class Segment:
     end: int     # inclusive corpus index
     sentence: int
     opener: Opener | None
+    # Interrupting relative clauses that stayed INSIDE this segment — the ones
+    # the pass below already tracks with its ``embedded`` state (Mt 2:9 ὁ
+    # ἀστήρ, ⟨ὃν εἶδον ἐν τῇ ἀνατολῇ,⟩ προῆγεν). Reported so the Text Flow can
+    # set them off in place (Text Flow rule 10); purely descriptive — surfacing
+    # a span never moves a boundary. Inclusive corpus ranges, in order, each
+    # inside [start, end]. Defaulted, so the contract-shaped stand-ins the
+    # treebuild tests construct stay valid.
+    embedded: tuple[tuple[int, int], ...] = ()
 
 
 # Subordinating conjunctions / conjunctive adverbs that open a dependent
@@ -220,17 +232,25 @@ def segment(start: int, end: int) -> list[Segment]:
     last_finite = -1
     embedded = False         # inside an embedded (interrupting) relative clause
     embedded_finite = False
+    emb_open: int | None = None   # where the open embedded clause started
+    emb_spans: list[tuple[int, int]] = []   # the CLOSED ones, for the Segment
     last_comma = -1          # index of the last comma-bearing word in segment
     has_content = False      # any non-absorbable word seen in segment
     ptcp_absorbed = False    # an adverbial ptcp was absorbed into this segment
     any_verb = False         # any verb form at all (finite, inf, ptcp) inline
 
     def emit(seg_end: int) -> None:
-        segs.append(Segment(start=seg_start, end=seg_end, sentence=sentence, opener=opener))
+        segs.append(Segment(
+            start=seg_start, end=seg_end, sentence=sentence, opener=opener,
+            # Only the spans this segment wholly contains: one straddling the
+            # boundary describes no single line and is simply not reported.
+            embedded=tuple((a, b) for a, b in emb_spans
+                           if seg_start <= a and b <= seg_end),
+        ))
 
     def clear(b: int, new_opener: Opener | None) -> None:
         nonlocal seg_start, opener, host_finite, last_finite
-        nonlocal embedded, embedded_finite, last_comma, has_content
+        nonlocal embedded, embedded_finite, emb_open, last_comma, has_content
         nonlocal ptcp_absorbed, any_verb
         seg_start = b
         opener = new_opener
@@ -238,6 +258,8 @@ def segment(start: int, end: int) -> list[Segment]:
         last_finite = -1
         embedded = False
         embedded_finite = False
+        emb_open = None
+        emb_spans.clear()
         last_comma = -1
         has_content = False
         ptcp_absorbed = new_opener is not None and new_opener.kind == "ptcp"
@@ -278,8 +300,11 @@ def segment(start: int, end: int) -> list[Segment]:
         host_finite/last_finite (the tail leaves those to the finite-verb
         branch of the main chain)."""
         nonlocal host_finite, last_finite
+        # Embedded spans that lie wholly in the moved words travel with them.
+        carried = [span for span in emb_spans if span[0] >= b]
         emit(b - 1)
         clear(b, new_opener)
+        emb_spans.extend(carried)
         for j in range(b, i):
             if words[j].is_finite_verb:
                 host_finite = True
@@ -329,6 +354,7 @@ def segment(start: int, end: int) -> list[Segment]:
                 # ἀναμένειν τὸν υἱὸν … ὃν ἤγειρεν) is a normal trailing
                 # relative and splits.
                 embedded = True
+                emb_open = i        # … and the span opens here
             else:
                 split(b, Opener("rel", lemma, i))
 
@@ -427,7 +453,11 @@ def segment(start: int, end: int) -> list[Segment]:
                 if not embedded_finite:
                     embedded_finite = True   # the embedded clause's own verb
                 else:
-                    # Host clause resumes after the embedded relative.
+                    # Host clause resumes after the embedded relative, which
+                    # therefore ran from its pronoun up to the word before.
+                    if emb_open is not None:
+                        emb_spans.append((emb_open, i - 1))
+                        emb_open = None
                     embedded = False
                     embedded_finite = False
                     host_finite = True

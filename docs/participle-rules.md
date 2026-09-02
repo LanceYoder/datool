@@ -34,8 +34,8 @@ weighing a rule for revision.
 | 4 | λέγων / λέγοντες (redundant participle of saying) introducing speech | WEd — it rides with its dicendi clause; the Ft/In over the speech is the dicendi machinery's own join | sure | yes | chart: "redundant"; course flow puts λέγοντες on its own line, speech content under it |
 | 5 | Perfect-tense participle (not periphrastic) | Grnd (cause) | default | yes | "Adverbial perfect participles almost always belong here" |
 | 6 | Participle negated with οὐ (and no μή in the segment) | Grnd (cause) | default | yes | "the causal participle will often use οὐ when negated" |
-| 7 | Attendant circumstance: aorist participle before an aorist imperative-or-indicative main verb | Ser (coordinate) | default | yes | the chart's five-feature test, "90% of the time" |
-| 8 | Aorist participle preceding its clause (not #7) | Tmp ("after …") | default | yes | temporal is the antecedent-time reading |
+| 7 | Attendant circumstance: aorist participle before an aorist **IMPERATIVE** main verb (RULING Q5) | Ser (coordinate) | default | yes | the chart's five-feature test, "90% of the time" |
+| 8 | Aorist participle preceding its clause (not #7 — including every aorist-INDICATIVE narrative pair, RULING Q5) | Tmp ("after …") | default | yes | temporal is the antecedent-time reading |
 | 9 | Present participle following its clause | WEd (means/manner) | default | yes | "usually follows the main verb"; result (CE) overlaps but is rarer |
 | 10 | Present participle preceding its clause | Tmp ("while …") | default | yes | contemporaneous time |
 | 11 | Anything else | Tmp | default (assumption) | yes | "almost all participles are temporal in a secondary sense" |
@@ -49,22 +49,31 @@ signal: **Condition** (CndE — "overlaps in form and meaning with Means") and
 **Result** (CE — present + follows, same surface as Means). Both stay
 reachable only by hand.
 
-## Known costs of the table, for the expert
+## Known costs of the table — two of the three now decided
 
-1. **Rule 11 is an implementation assumption.** The chart gives the residual
-   bucket no tier; we join it to minimal like every other default. Its largest
-   member is the **aorist participle FOLLOWING its clause**, for which the
-   chart has no rule at all — so it reads Temporal. The 1 Thess 1:6 golden
-   (μιμηταὶ … ἐγενήθητε, δεξάμενοι τὸν λόγον) is the case that costs us: the
-   student reads means (W/Ed). If the expert wants aorist-following to read
-   W/Ed, that is a one-line rule between #8 and #9.
-2. **Rule 7 over-fires on narrative indicatives.** The chart's own example
-   Matt 4:2 (νηστεύσας … ἐπείνασεν) is aorist + aorist indicative + preceding,
-   so the simplified test coordinates it where Wallace reads temporal. Acts
-   2:37 (Ἀκούσαντες δὲ κατενύγησαν) is the same shape. Restricting #7 to an
-   aorist **imperative** main verb would fix both at the cost of the
-   indicative attendant-circumstance cases.
-3. **Rule 2 depends on segmentation.** A genitive absolute whose subject
+1. **Rule 11's residual is DECIDED (RULING Q4, 2026-08-29).** The chart gives
+   the residual bucket no tier; we join it to minimal like every other
+   default, and its largest member is the **aorist participle FOLLOWING its
+   clause**, for which the chart has no rule at all. The expert confirms
+   **Temporal as the default there**: the 1 Thess 1:6 golden (μιμηταὶ …
+   ἐγενήθητε, δεξάμενοι τὸν λόγον) reads means (W/Ed) in the student's
+   diagram, but that is the STUDENT'S reading of that verse, not the rule, so
+   the pinned divergence stays and no rule is added between #8 and #9. Where
+   the translators do read means the English cue still says so, one instance
+   at a time (Matt 27:66 "by sealing the stone" → W/Ed).
+2. **Rule 7 is DECIDED (RULING Q5, 2026-08-29): aorist IMPERATIVE only.** The
+   chart's own example Matt 4:2 (νηστεύσας … ἐπείνασεν) is aorist + aorist
+   indicative + preceding, so the simplified test coordinated it where Wallace
+   reads temporal; Acts 2:37 (Ἀκούσαντες δὲ κατενύγησαν) and Matt 2:11 (καὶ
+   ἐλθόντες … εἶδον) are the same shape. The expert restricts #7 to an aorist
+   **imperative** main verb (Matt 2:8 Πορευθέντες ἐξετάσατε), and the
+   indicative cases fall through to #8, "after …". Measured: 316 participles
+   corpus-wide move Ser → Tmp; 24 keep the coordination.
+3. **λέγων as W/Ed is DECIDED (RULING Q6, 2026-08-29):** rule 4 is confirmed
+   exactly as built — the redundant participle of saying rides with its
+   dicendi clause as the WAY the saying happened, and the Ft/In over the
+   speech content stays the dicendi machinery's own join.
+4. **Rule 2 depends on segmentation.** A genitive absolute whose subject
    stands *before* the participle (Matt 9:18 Ταῦτα αὐτοῦ | λαλοῦντος αὐτοῖς)
    is split by stage 1, so the subject is no longer in the participle's
    segment and the rule cannot see it; the segment falls through to #10 —
@@ -96,10 +105,14 @@ line/proposition:
    moot; Manner and Means both map to W/Ed.
 3. *Attendant circumstance as coordinate Ser at 90% confidence — keep in
    minimal or defaults-only?* — **Minimal is defaults-included**: minimal =
-   grammar-forced calls + defaults right ~80%+ of the time, so rule 7 is in.
+   grammar-forced calls + defaults right ~80%+ of the time, so rule 7 is in
+   (narrowed to the imperative shape by RULING Q5).
 4. *Word-order tests / chained participles* — confirmed: a participle attaches
    to the nearest clause in the shift-reduce pass, and ὥστε + infinitive stays
    a sure C/E while ὥστε + a finite verb does not.
 
-Still open: the three costs listed above, and the draft `ASKING_VERBS` lemma
-table in `da/treebuild.py` that drives the ἵνα content-vs-purpose rule.
+Still open: cost #4 above (rule 2 vs segmentation), and the two DRAFT lemma
+tables in `da/treebuild.py` — `ASKING_VERBS`, which drives the ἵνα
+content-vs-purpose rule, and `COMMUNICATION_VOLITION`, which RULING Q9 added
+as the corroboration the English "that" cue needs before it may outrank the
+purpose default.

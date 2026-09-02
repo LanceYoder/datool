@@ -5,9 +5,11 @@ import {
   embeddedAt,
   indentLine,
   initTextFlow,
+  isAligned,
   isSentenceEnd,
   lineIndexOf,
   mergeWithNext,
+  reconcileFlow,
   splitLineAfter,
   startsSentence,
   toggleEmbedded,
@@ -253,6 +255,140 @@ describe('toggleEmbedded', () => {
   it('leaves the source flow untouched', () => {
     toggleEmbedded(base, 101, 102, 'paren');
     expect(base.lines[0]!.embedded).toBeUndefined();
+  });
+});
+
+describe('isAligned', () => {
+  const props = [
+    { start: 100, end: 101 },
+    { start: 102, end: 104 },
+  ];
+
+  it('says yes only when the lines are the propositions, in order', () => {
+    expect(isAligned({ lines: [
+      { start: 100, end: 101, indent: 0 },
+      { start: 102, end: 104, indent: 3 },
+    ] }, props)).toBe(true);
+  });
+
+  it('says no to a different division, a different count, or no flow at all', () => {
+    expect(isAligned({ lines: [{ start: 100, end: 104, indent: 0 }] }, props)).toBe(false);
+    expect(isAligned({ lines: [
+      { start: 100, end: 102, indent: 0 },
+      { start: 103, end: 104, indent: 0 },
+    ] }, props)).toBe(false);
+    expect(isAligned(null, props)).toBe(false);
+    expect(isAligned({ lines: [] }, props)).toBe(false);
+  });
+
+  it('calls an empty flow aligned with no propositions', () => {
+    expect(isAligned({ lines: [] }, [])).toBe(true);
+  });
+});
+
+describe('reconcileFlow', () => {
+  /** The propositions a flow's own lines describe — an aligned starting point. */
+  const propsOf = (flow: TextFlow) => flow.lines.map((l) => ({ start: l.start, end: l.end }));
+
+  const base = initTextFlow(passage('α β γ. δ ε. ζ η.')); // 100-102, 103-104, 105-106
+
+  it('gives every proposition a line, in order', () => {
+    const props = [
+      { start: 100, end: 103 },
+      { start: 104, end: 106 },
+    ];
+    const flow = reconcileFlow(base, props);
+    expect(ranges(flow)).toEqual([
+      [100, 103],
+      [104, 106],
+    ]);
+    expectContiguous(flow);
+  });
+
+  it('starts every line flush left with no flow to go on', () => {
+    const flow = reconcileFlow(null, propsOf(base));
+    expect(ranges(flow)).toEqual(ranges(base));
+    expect(flow.lines.every((l) => l.indent === 0)).toBe(true);
+    expect(reconcileFlow(null, [])).toEqual({ lines: [] });
+  });
+
+  it('changes nothing where the division already matches', () => {
+    const indented = indentLine(base, 1, 2);
+    expect(reconcileFlow(indented, propsOf(indented))).toEqual(indented);
+  });
+
+  it('gives BOTH halves of a divided line the indent it had', () => {
+    const indented = indentLine(base, 1, 3);
+    const props = propsOf(splitLineAfter(indented, 103));
+    const flow = reconcileFlow(indented, props);
+    expect(ranges(flow)).toEqual([
+      [100, 102],
+      [103, 103],
+      [104, 104],
+      [105, 106],
+    ]);
+    expect(flow.lines.map((l) => l.indent)).toEqual([0, 3, 3, 0]);
+  });
+
+  it('gives a joined line the FIRST line’s indent', () => {
+    const indented = indentLine(indentLine(base, 0, 1), 1, 4);
+    const flow = reconcileFlow(indented, propsOf(mergeWithNext(indented, 0)));
+    expect(ranges(flow)).toEqual([
+      [100, 104],
+      [105, 106],
+    ]);
+    expect(flow.lines[0]!.indent).toBe(1);
+  });
+
+  it('leaves a line flush when nothing old covers its first word', () => {
+    const short = { lines: [{ start: 100, end: 102, indent: 5 }] };
+    const flow = reconcileFlow(short, propsOf(base));
+    expect(flow.lines.map((l) => l.indent)).toEqual([5, 0, 0]);
+  });
+
+  it('carries an embedding that still fits inside one line', () => {
+    const withEmb = toggleEmbedded(base, 100, 101, 'paren');
+    const flow = reconcileFlow(withEmb, [
+      { start: 100, end: 104 },
+      { start: 105, end: 106 },
+    ]);
+    expect(flow.lines[0]!.embedded).toEqual([{ start: 100, end: 101, style: 'paren' }]);
+    expect(flow.lines[1]!.embedded).toBeUndefined();
+  });
+
+  it('keeps both lines’ embeddings when two lines become one', () => {
+    const withEmb = toggleEmbedded(toggleEmbedded(base, 101, 102, 'paren'), 103, 104, 'bracket');
+    const flow = reconcileFlow(withEmb, [{ start: 100, end: 106 }]);
+    expect(flow.lines[0]!.embedded).toEqual([
+      { start: 101, end: 102, style: 'paren' },
+      { start: 103, end: 104, style: 'bracket' },
+    ]);
+  });
+
+  it('drops an embedding a new division would cut in two', () => {
+    const withEmb = toggleEmbedded(base, 100, 102, 'paren');
+    const flow = reconcileFlow(withEmb, [
+      { start: 100, end: 101 },
+      { start: 102, end: 106 },
+    ]);
+    expect(flow.lines[0]!.embedded).toBeUndefined();
+    expect(flow.lines[1]!.embedded).toBeUndefined();
+  });
+
+  it('leaves the source flow untouched', () => {
+    const withEmb = toggleEmbedded(base, 100, 101, 'paren');
+    reconcileFlow(withEmb, [{ start: 100, end: 106 }]);
+    expect(ranges(withEmb)).toEqual(ranges(base));
+    expect(withEmb.lines[0]!.embedded).toEqual([{ start: 100, end: 101, style: 'paren' }]);
+  });
+
+  it('leaves what it makes aligned', () => {
+    const props = [
+      { start: 100, end: 100 },
+      { start: 101, end: 105 },
+      { start: 106, end: 106 },
+    ];
+    expect(isAligned(reconcileFlow(base, props), props)).toBe(true);
   });
 });
 

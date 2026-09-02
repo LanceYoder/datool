@@ -170,6 +170,36 @@ class FirstPassView(APIView):
         })
 
 
+class TextFlowView(APIView):
+    """The TEXT FLOW derived for a corpus range: ``{"textFlow": {...}}``.
+
+    The first pass now ships a flow with every analysis it makes
+    (:func:`da.firstpass._analyzed`); this is the same derivation offered on
+    its own, for an analysis saved BEFORE that — or one whose flow the analyst
+    cleared. Range rules are the corpus views': integers, inside the corpus,
+    within :data:`WORD_RANGE_CAP`.
+    """
+
+    def get(self, request):
+        raw_start = request.query_params.get("start")
+        raw_end = request.query_params.get("end")
+        try:
+            start, end = int(raw_start), int(raw_end)
+        except (TypeError, ValueError):
+            return _errors(["start and end must be integers"])
+        words = load_words()
+        if not (0 <= start <= end < len(words)):
+            return _errors([f"need 0 <= start <= end < {len(words)}"])
+        if end - start + 1 > WORD_RANGE_CAP:
+            return _errors([f"range exceeds the {WORD_RANGE_CAP}-word cap"])
+        # Imported at call time, like the first pass above: the analyzer is a
+        # separate service and the rest of the API must not go down with it.
+        from .segmentation import segment
+        from .treebuild import build_text_flow
+
+        return Response({"textFlow": build_text_flow(segment(start, end), words)})
+
+
 class CorpusWordsView(APIView):
     def get(self, request):
         raw_start = request.query_params.get("start")

@@ -209,7 +209,10 @@ def test_segments_tile_range(book):
 # --- Contract ----------------------------------------------------------------
 
 def test_contract_shapes():
-    assert [f.name for f in fields(Segment)] == ["start", "end", "sentence", "opener"]
+    # "embedded" is the additive last field (default ()): a Segment built in
+    # the old positional shape is still a valid — and equal — Segment.
+    assert [f.name for f in fields(Segment)] == [
+        "start", "end", "sentence", "opener", "embedded"]
     assert [f.name for f in fields(Opener)] == ["kind", "lemma", "index"]
     segs = segment(0, 0)  # Matthew 1:1, first word
     assert segs == [Segment(start=0, end=0, sentence=0, opener=None)]

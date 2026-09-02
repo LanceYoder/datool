@@ -2,10 +2,23 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useParams } from 'react-router-dom';
 import type { Analysis, Document as AnalysisDocument, TextFlow } from '../types';
-import { errorMessages, getAnalysis, updateAnalysis } from '../api';
+import { errorMessages, getAnalysis, getTextFlow, updateAnalysis } from '../api';
 import AnalysisEditor from '../editor/AnalysisEditor';
+import type { EditorActions } from '../editor/AnalysisEditor';
 import NotesEditor from '../notes/NotesEditor';
 import TextFlowPanel from '../textflow/TextFlowPanel';
+import { isAligned, reconcileFlow } from '../textflow/textflow';
+
+/**
+ * The propositions the flow's lines ARE: every corpus-sourced proposition, in
+ * document order. (A raw one — a proposition typed rather than read out of the
+ * corpus — has no place in the flow, which is the passage re-read.)
+ */
+function corpusPropositions(doc: AnalysisDocument): { start: number; end: number }[] {
+  return doc.propositions.flatMap((p) =>
+    p.source.kind === 'corpus' ? [{ start: p.source.start, end: p.source.end }] : [],
+  );
+}
 
 /** Printable width of US Letter portrait at 0.5in margins, in CSS pixels. */
 const PRINT_WIDTH_PX = 7.5 * 96;
@@ -71,14 +84,27 @@ export default function AnalysisPage() {
   // The editor rebuilds the document from its own state, which knows nothing
   // of the text flow — so the flow the draft already carries is carried over
   // rather than dropped by the next bracketing edit.
+  //
+  // And the flow's lines ARE the propositions: an edit that divided or joined
+  // them re-cuts the flow to match, keeping the indents and embeddings the new
+  // division still allows. This is the tree -> flow direction.
   const onDocumentChange = useCallback((doc: AnalysisDocument) => {
-    const flow = draftRef.current?.textFlow;
-    draftRef.current = flow === undefined ? doc : { ...doc, textFlow: flow };
+    const carried = draftRef.current?.textFlow ?? null;
+    const props = corpusPropositions(doc);
+    let next = carried === null ? doc : { ...doc, textFlow: carried };
+    if (props.length > 0 && !isAligned(carried, props)) {
+      const flow = reconcileFlow(carried, props);
+      next = { ...next, textFlow: flow };
+      setTextFlow(flow);
+    }
+    draftRef.current = next;
     setDirty(true);
   }, []);
 
   // The mirror image: a flow edit merges into the LATEST draft, never into the
   // document as it loaded, so it cannot undo concurrent proposition edits.
+  // Only indents and embeddings arrive here now — where the lines are DIVIDED
+  // is the propositions', and comes back through onDocumentChange above.
   const onTextFlowChange = useCallback((flow: TextFlow) => {
     const base = draftRef.current;
     if (base === null) return;
@@ -100,6 +126,45 @@ export default function AnalysisPage() {
     }
     return min > max ? null : { start: min, end: max };
   }, [initialDoc]);
+
+  // There is ALWAYS a flow. A document saved before the flow existed — or one
+  // whose lines no longer match its propositions — takes the flow the first
+  // pass derives for the passage (the same clause division and indents as the
+  // analysis), re-cut to the propositions; if that cannot be had, one flush
+  // line per proposition. Deriving it is not an EDIT: the page stays clean, so
+  // merely opening an old analysis raises no unsaved-changes warning, and the
+  // flow goes with the next save the analyst makes.
+  useEffect(() => {
+    if (initialDoc === null || passageRange === null) return;
+    if (isAligned(initialDoc.textFlow ?? null, corpusPropositions(initialDoc))) return;
+    let cancelled = false;
+    setTextFlow(null); // the panel waits
+    const install = (derived: TextFlow | null) => {
+      if (cancelled) return;
+      const base = draftRef.current ?? initialDoc;
+      const flow = reconcileFlow(derived, corpusPropositions(base));
+      draftRef.current = { ...base, textFlow: flow };
+      setTextFlow(flow);
+    };
+    getTextFlow(passageRange.start, passageRange.end)
+      .then(install)
+      .catch(() => {
+        install(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initialDoc, passageRange]);
+
+  // The editor's own split and merge, reached from the text flow: the two
+  // views divide one document, and one undo history.
+  const editorActions = useRef<EditorActions | null>(null);
+  const onSplitWord = useCallback((index: number) => {
+    editorActions.current?.splitAfter(index);
+  }, []);
+  const onMergeAfterLine = useCallback((index: number) => {
+    editorActions.current?.mergeAt(index);
+  }, []);
 
   const titleDirty = analysis !== null && title !== analysis.title;
   const notesDirty = analysis !== null && notes !== analysis.notes;
@@ -164,6 +229,9 @@ export default function AnalysisPage() {
           : ({ '--tree-margin': `${treeMargin}px` } as CSSProperties)
       }
     >
+      {/* The spread: everything the book skin's fold may run down — the fold
+          ends with the editor, so the full-width panels below stay uncut. */}
+      <div className="analysis-spread">
       <div className="analysis-toolbar">
         <div className={titleEditing ? 'title-field editing' : 'title-field'}>
           <input
@@ -214,24 +282,29 @@ export default function AnalysisPage() {
             document={initialDoc}
             onChange={onDocumentChange}
             onTreeMargin={setTreeMargin}
+            actionsRef={editorActions}
           />
-          {/* Below the analysis, the two panels stand under the halves they
-              belong to: the notes under the tree, the text flow under the
-              Greek it re-reads. */}
-          <div className="analysis-lower">
-            {/* has-notes is what the print sheet reads: an empty box prints
-                nothing rather than a blank page. */}
-            <section className={notes.trim() === '' ? 'notes-panel' : 'notes-panel has-notes'}>
-              <h2>Notes</h2>
-              <NotesEditor value={notes} onChange={setNotes} />
-            </section>
-            <TextFlowPanel
-              flow={textFlow}
-              range={passageRange}
-              onChange={onTextFlowChange}
-            />
-          </div>
         </>
+      )}
+      </div>
+      {/* Below the spread: the text flow across the whole width — it is the
+          passage re-read, and reads like one — with the notes under it. */}
+      {analysis !== null && initialDoc !== null && (
+        <div className="analysis-lower">
+          <TextFlowPanel
+            flow={textFlow}
+            range={passageRange}
+            onChange={onTextFlowChange}
+            onSplitWord={onSplitWord}
+            onMergeAfterLine={onMergeAfterLine}
+          />
+          {/* has-notes is what the print sheet reads: an empty box prints
+              nothing rather than a blank page. */}
+          <section className={notes.trim() === '' ? 'notes-panel' : 'notes-panel has-notes'}>
+            <h2>Notes</h2>
+            <NotesEditor value={notes} onChange={setNotes} />
+          </section>
+        </div>
       )}
       {analysis === null && errors.length === 0 && <p className="muted">Loading…</p>}
     </div>

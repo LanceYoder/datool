@@ -6,6 +6,7 @@ import type {
   Document,
   FirstPassResult,
   TaxonomyEntry,
+  TextFlow,
   VerseText,
 } from './types';
 
@@ -87,6 +88,23 @@ export function restoreAnalysis(id: string): Promise<Analysis> {
 
 export function firstPass(text: string, maximal = false): Promise<FirstPassResult> {
   return request<FirstPassResult>('/api/first-pass', 'POST', { text, maximal });
+}
+
+/**
+ * The Text Flow the first pass derives for a corpus range — the same clause
+ * division and indents an analysis made today ships with (da/treebuild.py's
+ * build_text_flow), offered on its own for one saved before that, or one whose
+ * flow was cleared.
+ *
+ * NOT chunked, unlike getCorpusWords below: the indents are read off a whole
+ * sentence at a time, so a flow assembled from pieces would be wrong at every
+ * seam. A passage over the server's cap is refused instead.
+ */
+export async function getTextFlow(start: number, end: number): Promise<TextFlow> {
+  const { textFlow } = await request<{ textFlow: TextFlow }>(
+    `/api/text-flow?start=${start}&end=${end}`,
+  );
+  return textFlow;
 }
 
 /** Server-side cap on one corpus words request (see da/views.py). */

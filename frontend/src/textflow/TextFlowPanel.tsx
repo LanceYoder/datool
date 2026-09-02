@@ -3,41 +3,50 @@
 // from textflow.ts and hands the new flow up, exactly as the bracket editor
 // hands its document up.
 //
-//   click a word          a small popover: divide the line after this word,
-//                         join it to the line below (on the last word), begin
-//                         an embedding — or, inside one, release it
+//   right-click a word    divide the line after it — or, on the line's LAST
+//                         word, join it to the line below. Exactly the tree's
+//                         gesture, because it is the same division: one line
+//                         per proposition, so either view divides both
+//   click a word          a small popover: begin an embedding — or, inside
+//                         one, release it
 //   click a second word   completes the embedding, then ( ) or [ ] chooses
 //                         how it is set off (same line only)
 //   ◀ ▶ at a line's left  move the clause out / in one step; Tab and
 //                         Shift+Tab do the same while the line has focus
 //
+// The panel never starts a flow: the page always has one for it (the flow the
+// document carries, or the one the first pass derives for the passage, re-cut
+// to the propositions), and while that is on its way the panel waits.
+//
 // Escape and a click outside close whatever is open.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import type { CorpusWord, TextFlow, TextFlowEmbedded, TextFlowLine } from '../types';
 import { errorMessages, getCorpusWords } from '../api';
 import { displayWordText } from '../editor/convert';
 import {
   embeddedAt,
   indentLine,
-  initTextFlow,
   lineIndexOf,
-  mergeWithNext,
-  splitLineAfter,
   startsSentence,
   toggleEmbedded,
 } from './textflow';
 
-/** One indent step, in rem — mirrors --textflow-step in styles.css. */
-const INDENT_REM = 1.5;
-
 export interface TextFlowPanelProps {
-  /** The document's flow, or null when none has been started. */
+  /** The document's flow, or null while the page is still deriving one. */
   flow: TextFlow | null;
   /** The passage's inclusive corpus range, or null when it has no corpus words. */
   range: { start: number; end: number } | null;
   onChange: (flow: TextFlow) => void;
+  /**
+   * Divide the PROPOSITION after this corpus word — the flow's lines are its
+   * propositions, so the division is made where they live, in the document,
+   * and comes back to the panel as a new flow.
+   */
+  onSplitWord?: (corpusIndex: number) => void;
+  /** Join the line ending at this corpus word to the one below it. */
+  onMergeAfterLine?: (corpusIndex: number) => void;
 }
 
 /** What is open over the lines, if anything. */
@@ -45,7 +54,13 @@ type Popover =
   | { kind: 'word'; wordIndex: number; at: { x: number; y: number } }
   | { kind: 'style'; from: number; to: number; at: { x: number; y: number } };
 
-export default function TextFlowPanel({ flow, range, onChange }: TextFlowPanelProps) {
+export default function TextFlowPanel({
+  flow,
+  range,
+  onChange,
+  onSplitWord,
+  onMergeAfterLine,
+}: TextFlowPanelProps) {
   const [words, setWords] = useState<CorpusWord[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [popover, setPopover] = useState<Popover | null>(null);
@@ -121,24 +136,12 @@ export default function TextFlowPanel({ flow, range, onChange }: TextFlowPanelPr
       </section>
     );
   }
-  if (words === null) {
+  // The words, or the flow the page is deriving for them, may still be out.
+  if (words === null || flow === null || flow.lines.length === 0) {
     return (
       <section className="textflow-panel">
         {heading}
         <p className="muted">Loading…</p>
-      </section>
-    );
-  }
-  if (flow === null || flow.lines.length === 0) {
-    return (
-      <section className="textflow-panel">
-        {heading}
-        <p className="muted">
-          One line per clause, indented under what it modifies — the step before the tree.
-        </p>
-        <button type="button" onClick={() => onChange(initTextFlow(words))}>
-          Start text flow
-        </button>
       </section>
     );
   }
@@ -174,6 +177,21 @@ export default function TextFlowPanel({ flow, range, onChange }: TextFlowPanelPr
   const commit = (next: TextFlow) => {
     close();
     if (next !== flow) onChange(next);
+  };
+
+  /**
+   * Right-click divides, exactly as it does in the tree: after this word, or —
+   * on the line's last word, where there is nothing left to divide — into the
+   * line below. The passage's final word can do neither. The division itself
+   * belongs to the propositions, so it is made there and returns as a flow.
+   */
+  const onWordContextMenu = (wordIndex: number) => {
+    close();
+    const lineIdx = lineIndexOf(flow, wordIndex);
+    const line = flow.lines[lineIdx];
+    if (line === undefined) return;
+    if (wordIndex !== line.end) onSplitWord?.(wordIndex);
+    else if (lineIdx < flow.lines.length - 1) onMergeAfterLine?.(wordIndex);
   };
 
   // ---- The lines ----------------------------------------------------------
@@ -231,6 +249,11 @@ export default function TextFlowPanel({ flow, range, onChange }: TextFlowPanelPr
               event.stopPropagation();
               onWordClick(i, event.currentTarget);
             }}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onWordContextMenu(i);
+            }}
           >
             {displayWordText(word.text)}
           </span>
@@ -253,8 +276,9 @@ export default function TextFlowPanel({ flow, range, onChange }: TextFlowPanelPr
 
   let popoverNode: ReactNode = null;
   if (popover !== null && popover.kind === 'word') {
-    const lineIdx = lineIndexOf(flow, popover.wordIndex);
-    const line = flow.lines[lineIdx];
+    // Only the embedding lives here: dividing is the right-click's, on both
+    // sides of the analysis.
+    const line = flow.lines[lineIndexOf(flow, popover.wordIndex)];
     const inside = embeddedAt(flow, popover.wordIndex);
     if (line !== undefined) {
       popoverNode = (
@@ -264,24 +288,6 @@ export default function TextFlowPanel({ flow, range, onChange }: TextFlowPanelPr
           style={{ left: popover.at.x, top: popover.at.y }}
           role="menu"
         >
-          {popover.wordIndex !== line.end && (
-            <button
-              type="button"
-              className="popover-item"
-              onClick={() => commit(splitLineAfter(flow, popover.wordIndex))}
-            >
-              Split after this word
-            </button>
-          )}
-          {popover.wordIndex === line.end && lineIdx < flow.lines.length - 1 && (
-            <button
-              type="button"
-              className="popover-item"
-              onClick={() => commit(mergeWithNext(flow, lineIdx))}
-            >
-              Merge with next line
-            </button>
-          )}
           {inside === null ? (
             <button
               type="button"
@@ -349,7 +355,7 @@ export default function TextFlowPanel({ flow, range, onChange }: TextFlowPanelPr
                 ? 'textflow-line sentence-start'
                 : 'textflow-line'
             }
-            style={{ paddingLeft: `${line.indent * INDENT_REM}rem` }}
+            style={{ '--tf-indent': line.indent } as CSSProperties}
             tabIndex={0}
             onKeyDown={(event) => onLineKeyDown(event, lineIdx)}
           >

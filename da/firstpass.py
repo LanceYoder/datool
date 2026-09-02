@@ -72,13 +72,28 @@ def first_pass(text: str, maximal: bool = False) -> FirstPassResult:
 
 
 def _analyzed(start: int, end: int, maximal: bool) -> dict:
-    """Segment a corpus range into clauses and draw its connections."""
+    """Segment a corpus range into clauses, draw its connections, and write
+    out the passage's TEXT FLOW.
+
+    The flow rides on BOTH levels unchanged: it is a grammatical reading (one
+    clause per line, dependents indented under what they modify), not a
+    semantic one, so there is nothing in it for the minimal/maximal tiering to
+    hold back. It comes from the same segmentation and the same within-sentence
+    assembly the classifier just ran — :func:`da.treebuild.build_text_flow` —
+    so the flow's lines ARE the analysis's propositions.
+    """
     # Imported here, not at module top: the analyzer lives in its own modules
     # and raw-mode entry must keep working even while they are being reworked.
     from .segmentation import segment
-    from .treebuild import build_document
+    from .treebuild import build_document, build_text_flow
 
-    return build_document(segment(start, end), confident_only=not maximal)
+    segments = segment(start, end)
+    document = build_document(segments, confident_only=not maximal)
+    document["textFlow"] = build_text_flow(segments)
+    # build_document validated the analysis; the flow is added after, so the
+    # document is checked once more as it actually ships.
+    validate_document(document)
+    return document
 
 
 def _reference_alignment(reference) -> Alignment:

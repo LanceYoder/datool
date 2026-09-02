@@ -173,9 +173,42 @@ corpus range inside the corpus; the lines are **contiguous and ordered** — eac
 line begins one word after the previous line ends, so the flow is one gapless run
 of words; `indent` is an integer 0–8; each `embedded` range lies inside its own
 line, the ranges are strictly ordered and non-overlapping, and `style` is `"paren"`
-or `"bracket"`. The flow's range is its OWN — the student may flow a wider or
-narrower stretch than the propositions cover, so nothing cross-checks the two.
-Legacy v1 documents simply carry no `textFlow`.
+or `"bracket"`. Legacy v1 documents simply carry no `textFlow`.
+
+**Where the lines are DIVIDED is not the flow's own: one line per corpus
+proposition, always.** The two views are two readings of one division, so dividing
+in either divides both — right-click a word to split after it, right-click a line's
+(proposition's) last word to join it to the next, the same gesture in the bracket
+editor and in the flow. A division made in the flow runs the EDITOR's command
+(`AnalysisEditor`'s `actionsRef`), so both views and one undo history stay in step.
+What the flow owns is how each line is SET: its `indent` and its `embedded` marks,
+edited only in the panel. After any division the flow is re-cut to the propositions
+(`reconcileFlow` in `frontend/src/textflow/textflow.ts`, `isAligned` deciding
+whether it must run): a divided line leaves both halves at its indent, a joined one
+keeps the upper line's, and an embedded stretch survives wherever it still falls
+inside one line. The panel never starts a flow of its own — a document opened
+without one, or with one that no longer matches its propositions, takes the derived
+flow below, re-cut the same way, and that arrival is not an edit: the page stays
+clean until the analyst changes something, and the flow travels with the next save.
+
+**The first pass now derives the flow** (`da/treebuild.py`'s `build_text_flow`), so a
+new analysis arrives with one already written — same at both levels, since the flow
+is grammatical rather than semantic. Its lines are the stage-1 segments, and its
+indents are read off the SAME within-sentence assembly the classifier runs
+(`_assemble_sentence`, with an `_IndentRecorder` riding along — one pass, not a
+second walk), following the course's rules: an independent clause stands flush, a
+dependent unit one step under the clause it modifies, a coordinated clause level
+with the clause it coordinates with, and a quotation one step under the clause that
+introduces it. Inter-sentence logic never indents — the blank line is what separates
+sentences. Interrupting relatives the segmenter kept inline come through as
+`embedded` parenthesis marks. `GET /api/text-flow?start=&end=` runs the same
+derivation for an analysis saved before this existed, and `AnalysisPage` fetches it
+on load whenever the document has no flow, or one whose lines are no longer its
+propositions — with a flush line per proposition as the fallback when the request
+fails. There is no empty state and nothing to choose. Verified
+against both worked examples in *Text Flow Instructions.pdf*: 1 John 1:5–10 comes
+out line for line, and Matthew 8:23–29 matches every indent relationship (see
+`da/tests/test_text_flow.py` for its three documented divergences).
 
 Star walk: root `prominent: 1` → the Series packet → coordinate FAN, so the walk
 continues into each member. Main point: **6d + 6e jointly** ("we are lying and do
@@ -255,12 +288,14 @@ call, not one:
 
 A default that is usually right is worth drawing: re-labelling one bracket is
 cheaper for the analyst than drawing the whole structure by hand. Only
-**genuinely undecidable** joins stay out of minimal — a bare ἀλλά, an
-apposition, an implicit-proposition prepositional phrase, an unknown
-subordinator, and the speculative groupings (which clauses of an asyndetic run
-belong together). `build_document(confident_only=True)` keeps the maximal
-all-sure subtrees and dissolves everything else into disconnected roots; the
-API contract is unchanged, and Full still connects everything into one tree.
+**genuinely undecidable** joins stay out of minimal — an implicit-proposition
+prepositional phrase, an unknown subordinator, and the speculative groupings
+(which clauses of an asyndetic run belong together). The 2026-08-29 rulings
+moved two of the old hold-outs in: a **bare ἀλλά** is an Alternative (Q1) and
+an **apposition** a Fact–Interpretation (Q2), both sure.
+`build_document(confident_only=True)` keeps the maximal all-sure subtrees and
+dissolves everything else into disconnected roots; the API contract is
+unchanged, and Full still connects everything into one tree.
 
 No ML/LLM in v1. The honest 80/20: relations signaled by explicit connectives are the
 easy 80%; the rest is the user's interpretive work, and the pipeline's job there is to
@@ -312,8 +347,9 @@ by construction):
   |---|---|---|
   | γάρ | Ground `G` | yes — grammar |
   | οὖν, διό, ἄρα, ὅθεν, τοίνυν | Inference `∴` | yes — grammar (mid- *and* inter-sentence) |
-  | ἵνα, ὅπως — English cue "that" | Fact–Interpretation `Ft/In` (content) | yes — cue |
+  | ἵνα, ὅπως — English cue "that" **with a communication/volition verb in the preceding clause** (Q9) | Fact–Interpretation `Ft/In` (content) | yes — cue |
   | ἵνα, ὅπως — English cue "so that"/"in order that" | Means–End `M/Ed` (purpose) | yes — cue |
+  | ἵνα, ὅπως preceded by a coordinator, with an earlier ἵνα in the sentence (Q7) | inherits that sibling's call | yes |
   | ἵνα, ὅπως after an asking verb (ἐρωτάω, αἰτέω, παρακαλέω, δέομαι, προσεύχομαι, εὔχομαι, ἀξιόω) | Fact–Interpretation `Ft/In` (content of the request) | yes — default |
   | ἵνα, ὅπως otherwise | Means–End `M/Ed` (purpose) | yes — default |
   | ὥστε **+ infinitive** | Cause–Effect `C/E` | yes — grammar |
@@ -326,12 +362,13 @@ by construction):
   | καθώς, ὥσπερ, καθάπερ, ὡσεί | Comparison `//` | yes — grammar |
   | ὡς | Comparison `//`, or Temporal `T` / `Ft/In` when the English cue says so | yes |
   | οὐ … ἀλλά | Negative–Positive `−/+` | yes — grammar |
-  | bare ἀλλά | Negative–Positive `−/+` | **no — undecidable** |
+  | bare ἀλλά (Q1) | Alternative `Alt` | yes — default |
   | μέν … δέ | Alternative `Alt` | yes — grammar |
-  | δέ without μέν | Series `S` | yes — default |
+  | δέ rendered "but"/"yet" by the BSB (Q1) | Alternative `Alt` | yes — cue |
+  | δέ without μέν, not contrastive | Series `S` | yes — default |
   | καί, οὐδέ, τε joining clauses | Series `S` | yes — default |
   | asyndeton (within or between sentences) | Series `S` | yes — default |
-  | verbum dicendi + `·` opening speech | Fact–Interpretation `Ft/In` | yes — default (re-mark S/R by hand) |
+  | speech introduction — a verbum dicendi (the βοάω/κράζω class included, Q11a) in the closing clause + `·`, or an ELIDED verb: no finite verb at all + `·` + a quotation opening in the next sentence (Q11b) | Fact–Interpretation `Ft/In` | yes — default (re-mark S/R by hand) |
   | ὅτι — English cue "that" / "because" | `Ft/In` / Ground `G` (the primary test) | yes — cue |
   | ὅτι with no English cue, after λέγω/οἶδα/γινώσκω-class | Fact–Interpretation `Ft/In` | yes — grammar |
   | ὅτι otherwise (causal) | Ground `G` | yes — default |
@@ -339,7 +376,8 @@ by construction):
   | preposition + articular infinitive (εἰς τό, ἐν τῷ, διὰ τό …) | per the table | yes — grammar |
   | other adverbial infinitive | Means–End `M/Ed` | yes — default |
   | adverbial participle | English cue, else `docs/participle-rules.md` | yes — every tier |
-  | apposition, implicit-proposition PP | Fact–Interpretation / by preposition | **no — unruled** |
+  | apposition (Q2) | Fact–Interpretation `Ft/In` | yes — default |
+  | implicit-proposition PP | English cue (Q3), else by preposition | **no — the implied proposition is the open question, not its relation** |
   | unknown subordinator or coordinator | Series `S` | **no** |
 
 - Between sentences: everything is connected into **one complete tree**. Sentence-initial
@@ -357,28 +395,42 @@ internally, and only then are the section packets folded together — everything
 inside a section connects before the section connects outward. A section is a
 run of WHOLE sentences, so stage 1 and within-sentence assembly are untouched.
 Seams are scored from a weighted indicator table (`SEAM_WEIGHTS`, threshold 1,
-one entry per indicator so adding one is a line) read off the BSB structure
-marks (`da/corpus/structure.py`): a section **heading** and both bounds of a
-**quotation** are hard seams (weight 2), a **paragraph** break and
-sentence-initial **οὖν** strong ones (weight 1), and the **English period** is
-the soft vote, detected but weighted 0 until it is calibrated. The critical
-ruling is that *the speech verb rides with its speech*: a seam before a
-quotation falls BEFORE the dicendi sentence introducing it (the `VERBA_DICENDI`
-+ `·` machinery, λέγων included), never between the two, and a quotation
-opening mid-sentence never splits that sentence. One further seam is
-structure-dependent and comes after the within-section fold: a sentence-level
-γάρ Ground whose support **develops** — a coordinate or a Fact–Interpretation
-inside it — is section-sized and is promoted to a section of its own. The
-section fold then reuses `_sentence_join` unchanged, the new section's first
-sentence deciding the relationship (γάρ → Ground, οὖν → Inference, δέ/καί/
-asyndeton → Series, a dicendi close before a speech section → Ft/In), with its
-normal tiers: sectioning changes the SHAPE of the minimal analysis rather than
-the tier of any join, since a within-fold join cannot cross a seam by
-construction. The sections are also emitted as the document's `sections`
+one entry per indicator so adding one is a line), read off the BSB structure
+marks (`da/corpus/structure.py`) and the morphology. **HARD** (2): a section
+**heading** and both bounds of a **quotation**. **STRONG** (1), each a seam on
+its own: a **paragraph** break, sentence-initial **οὖν**, **διό/διὰ τοῦτο**, a
+**narrative scene-setter** (μετὰ ταῦτα, ἐν ἐκείναις ταῖς ἡμέραις, καὶ
+ἐγένετο, τότε, or an opening genitive absolute — narrative books only), a
+**rhetorical-question opener** (an interrogative first, the Greek `;` last),
+and a **vocative** in a letter. **SOFT** (0.5), never a seam alone but
+combining with each other at 0.5 + 0.5: a **mood/person shift**, **epistolary
+asyndeton**, a **lexical-cohesion drop** (no content lemma shared with the
+previous sentence), the **English period**, and a vocative outside the
+epistles. A module-level `GENRE` table maps book number → narrative (1–5 and
+27, Revelation counting narrative) or epistle (6–26) for the three
+genre-sensitive indicators.
+
+The critical ruling is that *the speech verb rides with its speech*: a seam
+before a quotation falls BEFORE the dicendi sentence introducing it (the
+`VERBA_DICENDI` + `·` machinery — λέγων, the βοάω class, and an ELIDED speech
+verb in front of a quotation all included), never between the two, and a
+quotation opening mid-sentence never splits that sentence. One further seam is
+structure-dependent and comes after the within-section fold: a "because" block
+whose support **develops across a sentence boundary** — a sentence-level γάρ
+Ground, or a causal ὅτι inside the sentence, plus the sentences the fold would
+Ser-chain onto it — is section-sized and is promoted to a section of its own.
+The section fold then reuses `_sentence_join` unchanged, the new section's
+first sentence deciding the relationship (γάρ → Ground, οὖν → Inference,
+δέ/καί/asyndeton → Series, a dicendi close before a speech section → Ft/In),
+with its normal tiers: sectioning changes the SHAPE of the minimal analysis
+rather than the tier of any join, since a within-fold join cannot cross a seam
+by construction. The sections are also emitted as the document's `sections`
 colour blocks, so the division the analyzer read is visible in the editor
-immediately. Corpus-wide the NT's 10,523 sentences fall into 4,575 sections
-(2.3 sentences each) and every chapter still builds and validates in both
-modes.
+immediately. Corpus-wide the NT's 10,523 sentences fall into 6,268 sections
+(1.7 sentences each — 6,146 from the surface indicators, 122 more from the
+promotion pass) and every chapter still builds and validates in both modes.
+Whether the soft-pair rule sections too finely is the open calibration
+question; `docs/sectioning.md` states it with the numbers.
 
 **The English-cue layer** (`docs/english-cue-rules.md`, built) sits over the
 ambiguous triggers. Greek connectives and participles are systematically
@@ -396,21 +448,29 @@ cue outranks the tense/position defaults, chart rules 5–11, but not the
 grammar-forced rules 1–4), **ὥστε + finite verb** (out of minimal by the
 ruling, RESURRECTED to a sure C/E by "so that"/"as a result" or to a sure
 Inference by "therefore"), **ἵνα/ὅπως** (the cue overrides the asking-verb
-list) and **ὡς** alone among the comparatives ("when" → Temporal, "that" →
-Ft/In). Cue-derived calls are `_sure`: a translator's reading is exactly the
-sensible-default tier. The table carries no contrastive "but" row, and
-implicit-proposition PPs take no cue — both are open questions.
+list, except that its "that" needs a communication/volition verb in the
+preceding clause to outrank the purpose default — Q9) and **ὡς** alone among
+the comparatives ("when" → Temporal, "that" → Ft/In). Cue-derived calls are
+`_sure`: a translator's reading is exactly the sensible-default tier. Two
+triggers were added by the rulings: **δέ** reads the contrastive "but"/"yet"
+rows as an Alternative (Q1 — and no other trigger accepts `Alt`, which is what
+fences those rows to it), and **implicit-proposition PPs** take a cue for
+which relationship they carry (Q3) while staying out of minimal, since what
+keeps them out is whether the implied proposition is drawable at all.
 A segment with no usable English falls back to the grammar-only rules
-unchanged. Corpus-wide the layer relabels 2.3% of the brackets Full draws;
-against the worked diagrams it gains Acts 2:37's Temporal on Ἀκούσαντες.
+unchanged. Corpus-wide the layer relabels 4.1% of the brackets Full draws;
+against the worked diagrams it gains Acts 2:37's Temporal on Ἀκούσαντες and
+1 John 1:7's Alternative.
 
 **Adverbial participles** get their own classifier — the Wallace/Keating chart as an
 ordered rule list (`docs/participle-rules.md`, source `documents/Adverbial
 Participles.pdf`): καίπερ → Adversative, genitive absolute → Temporal, future →
 Means–End, λέγων introducing speech → rides with its dicendi clause as `W/Ed`,
-then **the English cue**, then perfect or οὐ-negated → Ground, aorist before an aorist
-imperative/indicative → attendant-circumstance Series, aorist before its clause →
-Temporal, present after → `W/Ed`, present before → Temporal, residual → Temporal.
+then **the English cue**, then perfect or οὐ-negated → Ground, aorist before an
+aorist **imperative** → attendant-circumstance Series (Q5 narrowed this from
+"imperative or indicative": the narrative indicative pairs read Temporal),
+aorist before its clause → Temporal, present after → `W/Ed`, present before →
+Temporal, residual → Temporal (Q4 confirms the residual).
 Every tier joins the minimal analysis. "Before/after its clause" is the segment's
 position in the shift-reduce pass: held and attaching forward = before, attaching
 backward to the stack = after.

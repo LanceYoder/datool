@@ -9,109 +9,7 @@ DESIGN.md §5 (the first pass).
 
 ## Open
 
-1. **(2026-08-29) Contrastive "but"/"yet" English cue with no preceding
-   negation.** οὐ … ἀλλά is a sure Neg/Pos; but a bare "but" cue (bare ἀλλά,
-   or δέ rendered "but") tells us *contrast* without telling us *which*
-   contrary relationship (NegPos / Alt / Adv). Today these stay out of
-   minimal. Is there a default worth taking — e.g. bare ἀλλά → NegPos, δέ
-   "but" → Alt — or do they stay hand-only?
-
-2. **(2026-08-29) Appositions.** A split-off apposition / attributive-article
-   phrase currently guesses Ft/In and stays OUT of minimal (unruled). Is
-   apposition → Ft/In an 80%+ default that should join minimal?
-
-3. **(2026-08-29) Implicit-proposition prepositional phrases.** A split-off
-   PP guesses its relation by preposition (εἰς/πρός → M/Ed; ἕως/ἄχρι/μέχρι/
-   πρό/μετά → Tmp; ἐν/ἐπί/ὑπό/παρά → Loc; διά/ἐκ/ἀπό/χάριν/ἕνεκα → Grnd;
-   otherwise W/Ed) and stays OUT of minimal. Are these per-preposition
-   defaults right, and do they join minimal? (The English cue layer will
-   also apply here once built — "because of" → Grnd, "in order to" → M/Ed…)
-
-4. **(2026-08-29) Aorist participle FOLLOWING its clause.** The Wallace chart
-   has no rule for this shape, so it falls to the residual Temporal. The
-   1 Thess 1:6 golden (δεξάμενοι τὸν λόγον after ἐγενήθητε) reads it as
-   means (W/Ed). Should aorist-following read W/Ed instead of Tmp?
-
-5. **(2026-08-29) Attendant circumstance scope.** The chart's five-feature
-   test fires on aorist + aorist *indicative* narrative (Matt 4:2 νηστεύσας
-   … ἐπείνασεν; Acts 2:37 Ἀκούσαντες … κατενύγησαν) where Wallace reads
-   temporal. Restrict the coordinate-Series rule to aorist **imperative**
-   main verbs (Matt 2:13 "rise and take"), letting indicative cases read
-   temporal — or keep the broad rule?
-
-6. **(2026-08-29) λέγων as W/Ed, not Ft/In.** The ruling said the redundant
-   speech participle "joins as Ft/In over the speech" — but the speech is
-   its own segment and the dicendi machinery already brackets it Ft/In, so
-   bracketing the participle Ft/In too would double-mark it. As built, the
-   participle rides with its dicendi clause as W/Ed (matching the Acts 2:40
-   diagram exactly), and the Ft/In lands on the speech. Confirm this
-   reading of the ruling.
-
-7. **(2026-08-29) ἵνα look-back is one clause.** The asking-verb test sees
-   only the immediately preceding clause, so the second ἵνα in John 17:15
-   (ἀλλ' ἵνα τηρήσῃς, still governed by ἐρωτῶ) reads purpose instead of
-   content. Widen the look-back (to the sentence's governing verb), or
-   accept the miss?
-
-8. **(2026-08-29) Additional section-break indicators — proposed, for
-   ruling.** The five decided indicators are below under DECIDED, along with
-   BSB section headings (approved 2026-08-29). Still-open candidates, each
-   machine-detectable today:
-   b. **Sentence-initial vocatives** (ἀδελφοί, ἀγαπητοί, τεκνία, and the
-      like): the classic epistolary topic-shift opener (1 John, James).
-   c. **Sentence-initial διό / διὰ τοῦτο**: the same transition class as
-      οὖν.
-   d. **Narrative scene-setters**: sentence-initial genitive absolute;
-      μετὰ ταῦτα; ἐν (ἐκείναις) ταῖς ἡμέραις; καὶ ἐγένετο; τότε — new time,
-      place, or participants.
-   e. **Mood/person shift**: a run of imperatives opening after indicative
-      exposition (the hortatory turn, e.g. Hebrews' "let us…" sections), or
-      a sustained 3rd→2nd person shift.
-   f. **Asyndeton at a sentence start in the epistles**: no connective at
-      all often marks a fresh unit in letters (pervasive in James) — the
-      opposite default from narrative, where asyndeton is just style.
-   g. **Rhetorical-question openers** (Τί οὖν ἐροῦμεν;-type): interrogative
-      sentences that launch a unit of argument (Romans).
-   h. *(harder, later)* **Lexical-cohesion shift / inclusio**: vocabulary
-      overlap between adjacent sentences drops at true seams; an inclusio
-      (repeated opening phrase) closes a section. Statistical, not rule-
-      based — flagged for a later phase.
-
-9. **(2026-08-29) The ἵνα "that" cue and archaic purpose-"that".** The
-   English-cue layer moves 78 ἵνα clauses from purpose to content on a
-   "that" rendering. Sampling says the majority are genuine content clauses
-   the ASKING_VERBS list misses (εἶπον ἵνα, διαστέλλομαι ἵνα, κηρύσσω ἵνα,
-   δέομαι ἵνα) — but John 3:16's archaic purpose-"that" ("that whoever
-   believes…") is miscalled content. Should the "that" cue outrank purpose
-   only with corroboration (e.g. a communication/volition verb in the
-   preceding clause), or is ~78-mostly-right exactly the 80% default we
-   want? (Note: the cue already reaches past the one-clause look-back of
-   Open #7, fixing John 17:15's second ἵνα.)
-
-10. **(2026-08-29) Promotion-pass calibration.** The γάρ-development rule
-    ("a because-block containing ≥1 coordinate or Ft/In becomes its own
-    section") fires on most γάρ sentences in argumentative prose — a Pauline
-    ground almost always contains a coordination — taking Romans 8 from 8
-    sections to 20 (corpus-wide: +12%). Should the qualifying development
-    have to cross a sentence boundary (a multi-SENTENCE because-block) rather
-    than merely contain a coordination? Also: only γάρ can reach this test
-    today — a causal ὅτι is a subordinator and never makes a sentence-level
-    Ground. Should developed ὅτι-blocks be promoted too?
-
-11. **(2026-08-29) Speech-introduction gaps.** The speech-verb-rides-with-
-    its-speech rule keys on VERBA_DICENDI + '·'. Two misses: (a) verbs of
-    crying out (βοάω, κράζω-class: Matt 3:3 Φωνὴ βοῶντος…) are not in the
-    list — add them?; (b) an ELIDED speech verb (Acts 2:38 Πέτρος δὲ πρὸς
-    αὐτούς· — "Peter [said] to them") leaves the introduction outside the
-    speech section. Is "clause ending in '·' with a person-subject and no
-    verb" safe to treat as a speech introduction?
-
-12. **(2026-08-29) The English-period seam weight.** Detected (Greek
-    sentence ends the verse + the BSB verse ends on a full stop) but
-    weighted 0, so it never tips a boundary. What weight — if any — should
-    it carry, and does it need a companion indicator to combine with?
-
-13. **(2026-08-29) Sectioning vs the worked examples' color sections.** The
+1. **(2026-08-29) Sectioning vs the worked examples' color sections.** The
     four example spreadsheets mark sections with color fills (usually three
     per passage). Comparison with the auto-sectioner:
     Eph 1:13–14 matches (one section); 1 Thess 1:6–10 half-matches (we seam
@@ -129,7 +27,7 @@ DESIGN.md §5 (the first pass).
     passage would match the student 2-for-2. Should the development test
     include Neg/Pos (and C/E)?
 
-14. **(2026-08-29) Sentences that never get their apodosis lose their
+2. **(2026-08-29) Sentences that never get their apodosis lose their
     relationship.** A sentence-initial dependent (ὥστε, εἰ/ἐάν, causal ὅτι,
     ὡς…) is held forward; when its own sentence never produces an
     independent clause, the held relationship is discarded and the sentence
@@ -140,7 +38,64 @@ DESIGN.md §5 (the first pass).
     change 858 joins, so it needs a ruling: should a dangling sentence-
     initial subordinator's relationship carry FORWARD to the next sentence?
 
+3. **(2026-08-29) Auto text flow: the mood-agreement rule for coordinate
+    lines.** Where a coordinating conjunction could continue either an inner
+    clause or an outer one, the auto-flow places it beside the nearest
+    preceding clause whose finite verb AGREES IN MOOD (falling back to the
+    structural right edge). This is our generalization, not a rule in the
+    course handout — but it is what makes both handout examples come out
+    exactly (Matt 8:24 αὐτὸς δὲ ἐκάθευδεν returns to the indicative main
+    rather than the ὥστε infinitive; 1 John 1:6 καὶ … περιπατῶμεν lines up
+    with the subjunctive protasis rather than the indicative ὅτι content).
+    Naive alternatives get 8/10 of the handout's coordinate lines; mood
+    agreement gets 10/10. Bless, refine, or replace?
+
+4. **(2026-08-29) Soft-pair seams over-fire — cohesion needs calibration.**
+   Implementing Q8(h)+Q12 as ruled (cohesion drop 0.5 + English period 0.5,
+   two softs = seam) measured badly: the cohesion indicator fires at 63% of
+   sentence boundaries (Greek sentences are short and often share no content
+   lemma), so soft pairs alone create 2,320 seams and drive the corpus to
+   1.68 sentences per section (from 2.30). Concrete cost: Hebrews 4:11→4:12
+   seams on cohesion+period DESPITE v12 opening with γάρ, splitting the
+   student's Inf/Grnd shape. Options: (a) softs alone never seam (threshold
+   above 1 for soft pairs); (b) weight cohesion below 0.5; (c) suppress the
+   soft indicators when the new sentence OPENS with a binding connective
+   (γάρ, ὅτι, ἵνα, ὥστε, καθώς — a grounded/bound sentence is glued to its
+   predecessor whatever its vocabulary). We recommend (c): it restores the
+   Hebrews shape and is a principle, not a tuned number.
+
 ## Decided
+
+Rulings of 2026-08-29 (the expert's answers to questions 1-12 as sent):
+
+- **Contrastive "but" (Q1)** -> the default for BOTH is Alternative: bare
+  ἀλλά -> Alt (in minimal; οὐ…ἀλλά stays NegPos sure), δέ rendered "but" ->
+  Alt (else Series as before).
+- **Appositions (Q2)** -> Ft/In, and it joins minimal.
+- **Implicit-proposition PPs (Q3)** -> the per-preposition defaults are
+  right, and the English cues apply to them too ("because of" -> Grnd,
+  "in order to" -> M/Ed) — but PPs stay OUT of minimal.
+- **Aorist participle following its clause (Q4)** -> Temporal stands as the
+  default (the 1 Thess 1:6 W/Ed reading is the student's, not the rule).
+- **Attendant circumstance (Q5)** -> restrict to aorist IMPERATIVE main
+  verbs; aorist-indicative narrative cases read Temporal.
+- **λέγων as W/Ed (Q6)** -> confirmed as built.
+- **ἵνα look-back (Q7)** -> widen ONLY when a coordinating conjunction
+  stands before the second ἵνα (ἀλλ' ἵνα / καὶ ἵνα chains inherit the
+  governing verb's reach).
+- **Section indicators (Q8)** -> b-h ALL accepted: vocatives, διό/διὰ
+  τοῦτο, narrative scene-setters, mood/person shift, epistolary asyndeton,
+  rhetorical-question openers, and lexical-cohesion shift / inclusio.
+- **ἵνα "that" cue (Q9)** -> outranks purpose only WITH corroboration — a
+  communication/volition verb in the preceding clause (John 3:16 reads
+  purpose again).
+- **Promotion pass (Q10)** -> the qualifying development must CROSS a
+  sentence boundary, and developed causal-ὅτι blocks promote too.
+- **Speech introductions (Q11)** -> (a) add the βοάω/κράζω class to the
+  dicendi list; (b) an elided speech verb counts ONLY when direct speech
+  follows.
+- **English period (Q12)** -> never a seam alone; it needs a companion
+  indicator (soft signals combine).
 
 - **Minimal's meaning** — minimal = everything grammar-forced PLUS sensible
   defaults (right ~80%+); Full stays the connect-everything mode; these are

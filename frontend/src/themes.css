@@ -350,23 +350,26 @@
   background: transparent;
 }
 
-/* The fold runs the height of the LEAF — from the top of the written area to
-   the bottom of it — because that is what a fold does. So it is drawn by the
-   page, not by the editor's shell, and it is drawn OVER everything: the
-   shadow of a page curving into its spine falls on whatever is written there,
-   the toolbar included. Inert, and light enough at the seam that the verse
-   numbers standing beside it are untouched. */
-[data-theme='book'] .analysis-page::before {
+/* The fold runs the height of the SPREAD — the toolbar and the two written
+   pages — and stops there: the text flow and the notes below run the full
+   width of the leaf, and a crease through them would cut the flow in half.
+   Drawn OVER everything above the panels: the shadow of a page curving into
+   its spine falls on whatever is written there, the toolbar included. Inert,
+   and light enough at the seam that the verse numbers standing beside it are
+   untouched. */
+[data-theme='book'] .analysis-spread {
+  position: relative;
+}
+
+[data-theme='book'] .analysis-spread::before {
   content: '';
   position: absolute;
   z-index: 5;
   pointer-events: none;
-  /* Out over the border on both ends. An absolutely positioned child is laid
-     out against the PADDING box, so top:0 would start the fold below the
-     frame and leave the leaf creased only where it is written on — which is
-     not what a fold does. It runs the whole leaf, ornament included. */
-  top: calc(-1 * var(--frame-w));
-  bottom: calc(-1 * var(--frame-w));
+  /* Up over the frame at the top — the crease starts at the leaf's edge —
+     but flush at the bottom, where the full-width panels take the page. */
+  top: calc(-1 * var(--frame-w) - var(--page-pad));
+  bottom: 0;
   left: calc(var(--page-pad) + var(--tree-margin, 50%) - 104px);
   width: 208px;
   background: linear-gradient(
@@ -514,13 +517,9 @@
   margin-right: 0;
 }
 
-/* Once the notes share the foot of the leaf with the text flow, the spread
-   itself divides them — the notes take the verso, the flow the recto — so
-   neither needs to be pushed across the fold. */
-[data-theme='book'] .analysis-lower {
-  gap: 2rem;
-}
-
+/* The foot of the leaf belongs to the full-width panels — the flow first,
+   the notes under it — and the fold has already ended above them, so
+   neither is pushed off the (former) spine. */
 [data-theme='book'] .analysis-lower .notes-panel {
   margin-left: 0;
 }

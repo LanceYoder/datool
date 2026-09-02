@@ -11,9 +11,10 @@ interpretive work. These tests pin the layer at three levels:
     carries each cue — every expectation below was read off the corpus, not
     invented;
   * the boundaries: what the cue is NOT allowed to override (the grammar-forced
-    participle rules, the non-ὡς comparatives, implicit-proposition PPs) and
-    the joins the cue table deliberately stays out of (the contrastive "but"
-    of expert-questions.md Open #1, which has no row at all).
+    participle rules, the non-ὡς comparatives), what it may name but never make
+    sure (implicit-proposition PPs — RULING Q3), and the per-trigger fencing
+    that keeps the contrastive "but"/"yet" rows readable by δέ alone
+    (RULING Q1).
 
 Cue-derived calls are ``sure``: a translator's reading is exactly the
 "sensible-default" tier the re-tier put in the minimal analysis.
@@ -30,6 +31,7 @@ from da.treebuild import (
     _has_lemma,
     _segment_participle,
     ASKING_VERBS,
+    NEGATIVES,
     VERBA_DICENDI,
     build_document,
     leading_cue,
@@ -38,6 +40,24 @@ from da.treebuild import (
 )
 
 from .test_firstpass_golden import SER, SUB, Seg, call_for, opened_by, passage
+
+
+def ALT(first, second):
+    """A coordinate Alternative bracket — RULING Q1's reading of a bare ἀλλά
+    and of a δέ the BSB renders "but"."""
+    return {"kind": "bracket", "rel": "Alt", "prominent": None,
+            "children": [first, second]}
+
+
+def brackets_of(node):
+    if node["kind"] == "bracket":
+        yield node
+        for child in node["children"]:
+            yield from brackets_of(child)
+
+
+def rels_of(node):
+    return [b["rel"] for b in brackets_of(node)]
 
 
 def seg_at(segments, index: int):
@@ -422,49 +442,120 @@ def test_participle_as_is_temporal_not_comparative():
 
 
 # ---------------------------------------------------------------------------
-# Where the cue is deliberately NOT applied
+# The contrastive rows — RULING Q1, and δέ is the only trigger that reads them
 
-def test_a_contrastive_de_is_never_acted_on():
+def test_a_contrastive_de_is_an_alternative():
     """Mark 4:11 … | ἐκείνοις δὲ τοῖς ἔξω … — "But to those on the outside".
-    The δέ is contrastive, but WHICH contrary relationship it marks (Neg/Pos,
-    Alternative, Adversative) is expert-questions.md Open #1. Until the expert
-    rules the table carries no "but" row at all: the cue is not merely unused,
-    it is not matched — δέ keeps its Series default and the document is
-    unchanged."""
+
+    RECOMPUTED for RULING Q1. Which contrary relationship a bare "but" marks
+    used to be the open question, and the cue table carried no row for it; the
+    expert's answer is ALTERNATIVE, so the table now has "but"/"yet" rows and
+    a δέ the BSB renders that way joins as Alt instead of Series — sure, like
+    every other δέ call."""
     segs, _ = passage("Mark 4:11")
     de = [s for s in segs if s.opener is not None and s.opener.lemma == "δέ"]
     assert len(de) == 1
     assert segment_english(de[0], load_words()).startswith("but ")
-    assert leading_cue(segment_english(de[0], load_words())) is None
+    assert leading_cue(segment_english(de[0], load_words())) == "Alt"
     doc = build_document(segs, confident_only=True)
     p = [{"kind": "prop", "ref": f"p{i}"} for i in (1, 2, 3)]
-    assert doc["forest"] == [SER(SER(p[0], p[1]), p[2])]
+    # The inner bracket is the speech content of καὶ ἔλεγεν αὐτοῖς· — Ft/In
+    # since RULING Q11 unified the two dicendi tests (the join now asks the
+    # same sentence-level question the seam does, so a "he said to them·"
+    # whose LAST WORD is not the verb still opens its speech).
+    assert doc["forest"] == [ALT(SUB("FtIn", 1, p[0], p[1]), p[2])]
 
 
-def test_bare_alla_with_a_but_cue_stays_out_of_minimal():
+def test_a_plain_de_keeps_its_series_default():
+    """The other half of Q1: the cue has to actually say "but". Mark 1:8's
+    αὐτὸς δὲ βαπτίσει ὑμῖν … is rendered "but He will baptize you", so it IS
+    contrastive; Matt 1:2's Ἀβραὰμ ἐγέννησεν … genealogy δέ is not. The
+    narrative δέ keeps Series."""
+    segs, _ = passage("Matthew 1:2")
+    de = [s for s in segs if s.opener is not None and s.opener.lemma == "δέ"]
+    assert de, "the genealogy is one long δέ chain"
+    assert leading_cue(segment_english(de[0], load_words())) is None
+    doc = build_document(segs, confident_only=True)
+    assert all(b == "Ser" for b in rels_of(doc["forest"][0]))
+
+
+def test_the_but_row_is_read_by_no_other_trigger():
+    """The contrastive rows are per-trigger by construction: only δέ's allowed
+    set contains Alt (_DE_CUE_RELS), so a leading "but" in front of any other
+    trigger is matched and discarded exactly as it was before the rows
+    existed. 1 John 1:7's ἐὰν δέ … reads "But if we walk in the light": the
+    segment's leading cue is now the δέ's "but", and the conditional still
+    comes out of the opener probe's "if"."""
+    segs, _ = passage("1 John 1:7")
+    protasis = segs[opened_by(segs, "ἐάν")]
+    assert leading_cue(segment_english(protasis, load_words())) == "Alt"
+    assert "Alt" not in _PTCP_CUE_RELS and "Alt" not in _HOTI_CUE_RELS
+    # A trigger that cannot carry Alt discards the cue and falls through to
+    # its next probe, exactly as it did when the row did not exist — here the
+    # ἐάν's own cell, "if".
+    assert _cue_call(protasis, load_words(), _PTCP_CUE_RELS) == "CndE"
+    assert opener_english(protasis) == "if"
+    assert call_for(segs, opened_by(segs, "ἐάν"), precedes=True) == ("CndE", True)
+
+
+def test_bare_alla_is_an_alternative_in_minimal():
     """John 7:44 ἤθελον δέ τινες ἐξ αὐτῶν πιάσαι αὐτόν, | ἀλλ' οὐδεὶς ἐπέβαλεν
-    … — "but no one laid a hand on Him". No negation in the preceding clause,
-    so this is the BARE ἀλλά the ruling leaves undecidable, and a "but" would
-    only confirm the contrast we already knew about. Open #1 again: no cue row
-    matches it — Full draws the Neg/Pos, minimal still does not."""
+    … — "but no one laid a hand on Him".
+
+    RECOMPUTED for RULING Q1. No negation in the preceding clause, so this is
+    the BARE ἀλλά that used to be undecidable and out of minimal; its default
+    is now Alternative, and it JOINS MINIMAL. Note the reading is made from
+    the GRAMMAR, not from the "but": the cue rows exist for δέ, and the ἀλλά
+    branch never asks them."""
     segs, _ = passage("John 7:44")
     alla = [s for s in segs if s.opener is not None and s.opener.lemma == "ἀλλά"]
     assert len(alla) == 1
-    assert leading_cue(segment_english(alla[0], load_words())) is None
     p1, p2 = ({"kind": "prop", "ref": "p1"}, {"kind": "prop", "ref": "p2"})
-    assert build_document(segs)["forest"] == [SUB("NegPos", 1, p1, p2)]
-    assert build_document(segs, confident_only=True)["forest"] == [p1, p2]
+    assert build_document(segs)["forest"] == [ALT(p1, p2)]
+    assert build_document(segs, confident_only=True)["forest"] == [ALT(p1, p2)]
 
 
-def test_implicit_proposition_pps_take_no_cue():
+def test_negated_alla_is_still_a_negative_positive():
+    """οὐ … ἀλλά is untouched by Q1. Rom 9:8 οὐ τὰ τέκνα τῆς σαρκὸς ταῦτα
+    τέκνα τοῦ θεοῦ, | ἀλλὰ τὰ τέκνα τῆς ἐπαγγελίας … — a negation stands in the
+    clause in front of the ἀλλά, so the GRAMMAR names it: the textbook Neg/Pos,
+    in minimal as before."""
+    segs, _ = passage("Romans 9:8")
+    i = opened_by(segs, "ἀλλά")
+    assert _has_lemma(segs[i - 1], load_words(), NEGATIVES)
+    p1, p2 = ({"kind": "prop", "ref": "p1"}, {"kind": "prop", "ref": "p2"})
+    assert build_document(segs, confident_only=True)["forest"] == [
+        SUB("NegPos", 1, p1, p2)]
+
+
+# ---------------------------------------------------------------------------
+# Implicit-proposition PPs — the cue applies (Q3) but never makes them sure
+
+def test_implicit_proposition_pps_now_take_a_cue():
     """Eph 1:14 εἰς ἀπολύτρωσιν τῆς περιποιήσεως — the BSB writes "until the
-    redemption of those who are God's possession", a clean Temporal cue. The
-    layer ignores it: expert-questions.md Open #3 is whether the implied
-    PROPOSITION is drawable at all, not which relation it would take, so the
-    PP keeps its by-preposition guess outside minimal."""
+    redemption of those who are God's possession", a clean Temporal cue.
+
+    RECOMPUTED for RULING Q3: the cue layer now applies to PPs, so the
+    relationship is the translators' Temporal rather than the by-preposition
+    guess (εἰς → Means–End). The tier is unchanged — a PP stays OUT of
+    minimal, because what keeps it out is whether the implied PROPOSITION is
+    drawable at all, and the cue says nothing about that."""
     segs, _ = passage("Ephesians 1:14")
     i = [k for k, s in enumerate(segs)
          if s.opener is not None and s.opener.kind == "pp"][0]
     assert segment_english(segs[i]).startswith("until")
+    assert _dependent_call(segs[i], i, segs, load_words(), precedes=False) == \
+        ("Tmp", False)
+
+
+def test_a_pp_with_no_cue_keeps_its_preposition_default():
+    """Eph 1:14's other PP, εἰς ἔπαινον τῆς δόξης αὐτοῦ — "to the praise of His
+    glory". "to" is no cue phrase, so nothing fires and the εἰς default (M/Ed)
+    stands, out of minimal as before."""
+    segs, _ = passage("Ephesians 1:14")
+    pps = [k for k, s in enumerate(segs)
+           if s.opener is not None and s.opener.kind == "pp"]
+    i = pps[-1]
+    assert segment_english(segs[i]).startswith("to the praise")
     assert _dependent_call(segs[i], i, segs, load_words(), precedes=False) == \
         ("MEd", False)

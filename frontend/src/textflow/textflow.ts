@@ -8,6 +8,11 @@
 // one gapless corpus range and no word of the passage can be lost or doubled
 // by an edit. An edit that cannot keep that (or the embedding rules below)
 // changes nothing and returns the flow it was given, unchanged.
+//
+// Where the lines are DIVIDED is not the flow's own: one line per corpus
+// proposition, always, whichever view the analyst divided in. reconcileFlow
+// re-cuts a flow to the propositions after such an edit, keeping the indents
+// and embeddings that still fit; isAligned says whether it need run at all.
 
 import type { CorpusWord, TextFlow, TextFlowEmbedded, TextFlowLine } from '../types';
 
@@ -142,6 +147,46 @@ export function indentLine(flow: TextFlow, lineIdx: number, delta: number): Text
   if (indent === line.indent) return flow;
   const lines = [...flow.lines];
   lines[lineIdx] = { ...line, indent };
+  return { lines };
+}
+
+/**
+ * The flow's line DIVISIONS are the document's: one line per corpus
+ * proposition, in the same order. Is this flow already that?
+ */
+export function isAligned(
+  flow: TextFlow | null,
+  props: readonly { start: number; end: number }[],
+): boolean {
+  if (flow === null || flow.lines.length !== props.length) return false;
+  return props.every((p, i) => flow.lines[i]!.start === p.start && flow.lines[i]!.end === p.end);
+}
+
+/**
+ * Re-cut a flow to the propositions: exactly one line per proposition, in
+ * order. The flow keeps what is its OWN — the indents and the embedded
+ * stretches — as far as they still make sense:
+ *
+ *   * a line's indent is the indent of the old line its first word sat on
+ *     (0 where there was none), so a divided line leaves both halves where
+ *     the reader had put it and a joined one keeps the upper line's place;
+ *   * an embedded stretch survives if it still falls entirely inside ONE new
+ *     line; one that a new division would cut in two is dropped.
+ *
+ * With no flow at all, every line comes back flush left.
+ */
+export function reconcileFlow(
+  flow: TextFlow | null,
+  props: readonly { start: number; end: number }[],
+): TextFlow {
+  const marks = flow === null ? [] : flow.lines.flatMap((l) => l.embedded ?? []);
+  const lines = props.map((p) => {
+    const old = flow === null ? undefined : flow.lines[lineIndexOf(flow, p.start)];
+    return withEmbedded(
+      { start: p.start, end: p.end, indent: old?.indent ?? 0 },
+      marks.filter((e) => e.start >= p.start && e.end <= p.end),
+    );
+  });
   return { lines };
 }
 

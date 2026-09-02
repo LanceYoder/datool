@@ -4,10 +4,12 @@
 into clause propositions (stage 1) and draws the MINIMAL analysis (stage 2 in
 confident-only mode). Since the DA expert's re-tier, "minimal" means every
 grammar-forced call PLUS every sensible default (a reading right ~80%+ of the
-time); only genuinely undecidable joins — a bare ἀλλά, an apposition, an
-implicit-proposition PP, an unknown subordinator, a speculative grouping —
-stay loose. An unaligned paste still splits on punctuation into disconnected
-raw propositions (no morphology, no proposed structure).
+time); only genuinely undecidable joins — an implicit-proposition PP, an
+unknown subordinator, a speculative grouping — stay loose. (The 2026-08-29
+rulings moved two of the old hold-outs in: a bare ἀλλά is an Alternative per
+RULING Q1, an apposition a Ft/In per RULING Q2.) An unaligned paste still
+splits on punctuation into disconnected raw propositions (no morphology, no
+proposed structure).
 
 The analyzer is also tested over hand-built, contract-shaped segments so the
 classifier's calls are pinned independently of live segmentation. Passages
@@ -17,8 +19,10 @@ under the new tiering their minimal analysis IS their full analysis — the
 tests below assert exactly that structure, not merely "more than before".
 
 The focused unit tests at the end pin the individual rulings (ἵνα's asking-verb
-branch, ὥστε ± infinitive, causal ὅτι, the καί/δέ Series defaults and the
-adverbial-participle chart) against real corpus passages. The English-cue layer
+branch and its Q7 sibling rule, ὥστε ± infinitive, causal ὅτι, the καί/δέ
+defaults and their Q1 contrastive branch, appositions, and the
+adverbial-participle chart with Q5's narrowed attendant circumstance) against
+real corpus passages. The English-cue layer
 that now sits over several of those rules has its own suite in
 ``test_english_cues.py``; where a cue changes an expectation here, the comment
 says so.
@@ -29,10 +33,13 @@ from dataclasses import dataclass
 
 from da.corpus import load_words
 from da.corpus.reference import resolve
+from da.corpus.normalize import nfc as _L
 from da.documents import main_point, validate_document
 from da.firstpass import first_pass
 from da.segmentation import segment
-from da.treebuild import _dependent_call, build_document
+from da.treebuild import (COMMUNICATION_VOLITION, COORDINATING, _dependent_call,
+                          _has_lemma, _main_verb, build_document,
+                          segment_english)
 
 
 # ---------------------------------------------------------------------------
@@ -222,13 +229,17 @@ def assert_1john_structure(doc):
     assert b5["prominent"] == 1
     assert ids["5c"] in leaf_refs(b5["children"][0])
 
-    # The three sentences chain at discourse level as Series — and every
-    # bracket is binary, so three sentences nest to the left: Ser[Ser[1,2],3].
+    # The three sentences at discourse level. RECOMPUTED for RULING Q1 and
+    # RULING Q8/Q12: verse 7's ἐὰν δέ is rendered "But if we walk in the
+    # light", so the δέ join is now the Alternative the student drew, and the
+    # 5→6 boundary is a seam (epistolary asyndeton + a cohesion drop + the
+    # English period, three soft indicators), so verse 5 stands as its own
+    # section and the Alternative pair as another: Ser[5, Alt[6, 7]].
     assert tree["kind"] == "bracket" and tree["rel"] == "Ser"
     assert tree["prominent"] is None
     assert len(tree["children"]) == 2
-    inner = tree["children"][0]
-    assert inner["kind"] == "bracket" and inner["rel"] == "Ser"
+    inner = tree["children"][1]
+    assert inner["kind"] == "bracket" and inner["rel"] == "Alt"
     assert inner["prominent"] is None
     assert len(inner["children"]) == 2
 
@@ -255,7 +266,15 @@ def test_first_pass_1john_1_5_7_minimal_tier():
       * 5c/5e/6c/6e/7d καί → Series (RULING: the Series default is sure);
       * 5d, 6b ὅτι after a verbum dicendi → Ft/In;
       * 6a/7a ἐάν → Conditional, 7b ὡς → Comparison;
-      * 5→6 asyndeton and 6→7 δέ (no μέν) → Series (RULING: sure).
+      * 5→6 asyndeton → Series (RULING: sure);
+      * 6→7 δέ rendered "But if we walk …" → ALTERNATIVE (RULING Q1), which
+        is the bracket the student drew between the two conditionals.
+
+    RECOMPUTED for RULING Q8/Q12 as well: the 5→6 boundary now carries three
+    soft indicators (epistolary asyndeton, a lexical-cohesion drop, the
+    English period), and softs combine, so verse 5 is a section of its own —
+    which is why the Series and the Alternative nest the other way round now
+    (Ser[5, Alt[6, 7]] rather than Ser[Ser[5, 6], 7]).
 
     The one call the 1 John student reads differently — 5d/5e as ∴ rather
     than Series — is exactly the kind of default the analyst re-labels in one
@@ -287,7 +306,9 @@ def test_first_pass_1john_1_5_7_minimal_tier():
     verse7 = SUB("CndE", 1,
                  SUB("Cmp", 0, p["7a"], p["7b"], reversed_=True),
                  SER(p["7c"], p["7d"]))
-    assert doc["forest"] == [SER(SER(verse5, verse6), verse7)]
+    alt = {"kind": "bracket", "rel": "Alt", "prominent": None,
+           "children": [verse6, verse7]}
+    assert doc["forest"] == [SER(verse5, alt)]
 
     # Nothing in this passage is undecidable, so minimal == Full here.
     assert doc["forest"] == build_document(segment(J_START, J_END))["forest"]
@@ -336,18 +357,19 @@ def assert_hebrews_structure(doc):
     assert g12.get("flag") is None
 
     # Σπουδάσωμεν οὖν: inference, star on the οὖν side (the new one).
-    # SECTIONING (docs/sectioning.md): οὖν is a strong seam, so v11 OPENS a
-    # section — and the Inference's supported side is that whole section (v11
-    # together with the v12 γάρ grounding it), not the v11 sentence alone.
-    # Located by where the supported side starts; its full extent, and the
-    # extent of the section it is joined to, are asserted with it.
+    # SECTIONING (docs/sectioning.md): οὖν is a strong seam, so v11 opens a
+    # section. RECOMPUTED for RULING Q8/Q12: v12 now opens one too — the
+    # 11→12 boundary carries a lexical-cohesion drop and the English period,
+    # and two softs reach the threshold — so the Inference's supported side is
+    # the v11 sentence alone again and the v12 γάρ grounds everything before
+    # it (see test_build_document_hebrews_hand_segments for the cost).
     inf = the((b for b in brackets(tree)
                if b["rel"] == "Inf"
                and span(doc, b["children"][1])[0] == H_V11[0]),
               "Inf bracket over the οὖν section")
     assert inf["prominent"] == 1
     assert inf.get("flag") is None
-    assert span(doc, inf["children"][1]) == (H_V11[0], H_V12[1])
+    assert span(doc, inf["children"][1]) == (H_V11[0], H_V11[1])
     assert span(doc, inf["children"][0]) == (H_START, H_V10[1])
 
     # ἵνα clause: Means–End, confident, star on the ἵνα (End) child.
@@ -369,22 +391,26 @@ def test_build_document_hebrews_hand_segments():
         ["9", "10a", "10b", "11a", "11b", "12"]
     assert_hebrews_structure(doc)
 
-    # With this segmentation the discourse shape is fully determined. The οὖν
-    # SEAM at v11 splits the passage into two sections — [v9, v10] and
-    # [v11, v12] — so the shape is Inf[Grnd[v9, v10], Grnd[v11, v12]]: each
-    # γάρ grounds the sentence it follows inside its own section, and the
-    # Inference joins the two sections. (Before sectioning the fold ran flat
-    # across the passage and gave Grnd[Inf[Grnd[v9, v10], v11], v12], which
-    # let the v12 γάρ ground the whole argument rather than the exhortation
-    # it actually follows.) The star walk still ends at ἵνα.
+    # With this segmentation the discourse shape is fully determined.
+    # RECOMPUTED for RULING Q8/Q12 — and this is the clearest COST of the new
+    # soft indicators. The οὖν seam still opens a section at v11, but the
+    # 11→12 boundary now seams too: the two sentences share no content lemma
+    # (σπουδάζω/κατάπαυσις/πίπτω against λόγος/μάχαιρα/καρδία) and the BSB
+    # closes an English sentence at v11, which is 0.5 + 0.5. Three sections,
+    # so the fold gives back the flat shape sectioning had fixed —
+    # Grnd[Inf[Grnd[v9, v10], v11], v12], with the v12 γάρ grounding the whole
+    # argument rather than the exhortation it follows. Flagged in
+    # docs/sectioning.md as the calibration question the soft-pair rule
+    # raises. The star walk still ends at ἵνα.
     tree = the_root(doc)
-    assert tree["rel"] == "Inf" and tree["prominent"] == 1
-    first_section = tree["children"][0]
+    assert tree["rel"] == "Grnd" and tree["prominent"] == 0
+    assert span(doc, tree["children"][1]) == H_V12
+    inference = tree["children"][0]
+    assert inference["rel"] == "Inf" and inference["prominent"] == 1
+    first_section = inference["children"][0]
     assert first_section["rel"] == "Grnd" and first_section["prominent"] == 0
     assert span(doc, first_section) == (H_START, H_V10[1])
-    second_section = tree["children"][1]
-    assert second_section["rel"] == "Grnd" and second_section["prominent"] == 0
-    assert span(doc, second_section) == (H_V11[0], H_V12[1])
+    assert span(doc, inference["children"][1]) == H_V11
     assert main_point(doc) == ["p5"]  # ἵνα μὴ … πέσῃ
 
     # The trailing ὥσπερ clause: comparison, reversed so '//' labels it,
@@ -418,21 +444,24 @@ def test_first_pass_hebrews_4_9_12_minimal_tier():
     ]
     ids = by_label(doc)
     p = {l: {"kind": "prop", "ref": i} for l, i in ids.items()}
-    # SECTIONING: the οὖν seam at v11 makes [9, 10] and [11, 12] two sections,
-    # joined by the Inference. Each γάρ grounds inside its own section — the
-    # v12 γάρ now grounds the exhortation it follows rather than the whole
-    # argument (see test_build_document_hebrews_hand_segments).
+    # SECTIONING: the οὖν seam opens a section at v11 and — RECOMPUTED for
+    # RULING Q8/Q12 — the cohesion drop plus the English period opens another
+    # at v12, so the three sentences are three sections and the v12 γάρ
+    # grounds the whole of what precedes it (see
+    # test_build_document_hebrews_hand_segments for the cost, and
+    # docs/sectioning.md for the calibration question it raises).
     assert doc["forest"] == [
-        SUB("Inf", 1,
-            SUB("Grnd", 0, p["9"],
-                SUB("Cmp", 0, p["10a"], p["10b"], reversed_=True)),
-            SUB("Grnd", 0,
-                SUB("MEd", 1, p["11a"], p["11b"]),
-                SUB("WEd", 0, p["12a"], p["12b"], reversed_=True))),
+        SUB("Grnd", 0,
+            SUB("Inf", 1,
+                SUB("Grnd", 0, p["9"],
+                    SUB("Cmp", 0, p["10a"], p["10b"], reversed_=True)),
+                SUB("MEd", 1, p["11a"], p["11b"])),
+            SUB("WEd", 0, p["12a"], p["12b"], reversed_=True)),
     ]
-    # Two sections, so the passage carries one colour block: it opens at the
-    # first proposition of the οὖν section (11a).
-    assert doc["sections"] == [{"start": ids["11a"], "color": 1}]
+    # Three sections, so the passage carries two colour blocks: they open at
+    # the first proposition of the οὖν section (11a) and of the γάρ one (12a).
+    assert doc["sections"] == [{"start": ids["11a"], "color": 1},
+                               {"start": ids["12a"], "color": 2}]
     # Nothing here is undecidable either, so minimal == Full.
     assert doc["forest"] == build_document(segment(H_START, H_END))["forest"]
     roundtrip(doc)
@@ -547,23 +576,61 @@ def test_hina_without_an_asking_verb_is_purpose_med():
         ("MEd", True)
 
 
-def test_hina_english_that_overrides_the_purpose_default():
+def test_hina_that_needs_corroboration_before_it_beats_purpose():
     """John 3:16 … ἔδωκεν, | ἵνα πᾶς ὁ πιστεύων … μὴ ἀπόληται.
 
-    RECOMPUTED for the English-cue layer, and the layer's clearest COST. The
-    verb-list rule reads this ἵνα as purpose (δίδωμι is not an asking verb),
-    which is the right analysis; the BSB renders it with the archaic English
-    purpose-"that" ("that everyone who believes in Him shall not perish"), and
-    the cue table reads a leading "that" as content. Per the approved design
-    the cue overrides the verb list, so the call flips to Ft/In here.
+    RECOMPUTED for RULING Q9 — and this asserts the FIX for what used to be
+    the cue layer's clearest cost. The BSB renders this purpose clause with
+    the archaic English purpose-"that" ("that everyone who believes in Him
+    shall not perish"), and the cue table reads a leading "that" as content,
+    so the call used to flip to Ft/In here against the verb-list rule's
+    correct purpose reading.
 
-    Left as the design specifies rather than patched: it is one bracket for
-    the analyst to re-label, and it is the concrete case to put to the expert
-    when asking whether "that" should require corroboration (an asking verb
-    anywhere in the sentence) before it outranks the purpose default."""
+    The ruling qualifies the "that" half of the ἵνα cue: it outranks the
+    purpose default ONLY WITH CORROBORATION — a communication or volition verb
+    in the preceding clause. δίδωμι is neither, so the cue does not fire and
+    John 3:16 reads Means–End again."""
     segs, _ = passage("John 3:16")
     i = opened_by(segs, "ἵνα")
+    words = load_words()
+    assert segment_english(segs[i], words).startswith("that")
+    assert not _has_lemma(segs[i - 1], words, COMMUNICATION_VOLITION)
+    assert call_for(segs, i, precedes=False) == ("MEd", True)
+
+
+def test_hina_that_with_a_communication_verb_is_still_content():
+    """The other side of RULING Q9: Mark 5:43 καὶ διεστείλατο αὐτοῖς πολλὰ |
+    ἵνα μηδεὶς γνοῖ τοῦτο — "He gave strict orders that no one should know
+    about this". διαστέλλομαι is on the communication/volition list, so the
+    "that" is corroborated and the clause states the CONTENT of the order."""
+    segs, _ = passage("Mark 5:43")
+    i = opened_by(segs, "ἵνα")
+    words = load_words()
+    assert segment_english(segs[i], words).startswith("that")
+    assert _has_lemma(segs[i - 1], words, COMMUNICATION_VOLITION)
     assert call_for(segs, i, precedes=False) == ("FtIn", True)
+
+
+def test_hina_inherits_a_coordinate_siblings_call():
+    """RULING Q7, the sibling rule. John 17:15 οὐκ ἐρωτῶ | ἵνα ἄρῃς αὐτοὺς ἐκ
+    τοῦ κόσμου ἀλλ' | ἵνα τηρήσῃς αὐτοὺς ἐκ τοῦ πονηροῦ — both ἵνα clauses are
+    governed by ἐρωτῶ, but the one-clause look-back in front of the SECOND one
+    sees only the first ἵνα clause, never the verb.
+
+    The ruling: when a coordinating conjunction stands directly before the
+    subordinator (here the ἀλλ᾽, which segmentation leaves at the end of the
+    first ἵνα segment) and an earlier ἵνα stands in the same sentence, the
+    second INHERITS the first's call. Both come out content.
+
+    This is also the case the cue layer used to carry on its own — the BSB
+    writes "that" over both — which RULING Q9 no longer lets it do
+    unaided: ἐρωτάω is on the communication/volition list for the first
+    clause, and the sibling rule carries the second."""
+    segs, _ = passage("John 17:15")
+    words = load_words()
+    assert _L(words[segs[2].opener.index - 1].lemma) in COORDINATING
+    assert call_for(segs, 1, precedes=False) == ("FtIn", True)
+    assert call_for(segs, 2, precedes=False) == ("FtIn", True)
 
 
 # --- ὥστε: sure only with an infinitive ------------------------------------
@@ -619,14 +686,31 @@ def test_bare_kai_clauses_join_as_series_in_minimal():
     assert doc["forest"] == [SER(SER(p1, p2), p3)]
 
 
-def test_de_without_men_joins_as_series_in_minimal():
-    """Mark 1:8 ἐγὼ ἐβάπτισα ὑμᾶς ὕδατι, | αὐτὸς δὲ βαπτίσει ὑμᾶς … — a
-    mid-sentence δέ with no μέν in front of it: Series, sure."""
+def test_a_contrastive_de_joins_as_alternative_in_minimal():
+    """Mark 1:8 ἐγὼ ἐβάπτισα ὑμᾶς ὕδατι, | αὐτὸς δὲ βαπτίσει ὑμᾶς …
+
+    RECOMPUTED for RULING Q1: no μέν stands in front of this δέ, but the BSB
+    writes "but He will baptize you with the Holy Spirit", so the join is the
+    Alternative rather than the Series default — sure either way. A δέ the BSB
+    does NOT render contrastively keeps Series
+    (test_a_narrative_de_keeps_its_series_default)."""
     segs, _ = passage("Mark 1:8")
     assert [s.opener.lemma for s in segs if s.opener] == ["δέ"]
     doc = build_document(segs, confident_only=True)
-    assert doc["forest"] == [SER({"kind": "prop", "ref": "p1"},
-                                {"kind": "prop", "ref": "p2"})]
+    assert doc["forest"] == [{"kind": "bracket", "rel": "Alt",
+                              "prominent": None,
+                              "children": [{"kind": "prop", "ref": "p1"},
+                                           {"kind": "prop", "ref": "p2"}]}]
+
+
+def test_a_narrative_de_keeps_its_series_default():
+    """Matt 1:2 Ἀβραὰμ ἐγέννησεν τὸν Ἰσαάκ, | Ἰσαὰκ δὲ ἐγέννησεν τὸν Ἰακώβ …
+    — the genealogy's δέ carries the account onward and the BSB writes "and",
+    so RULING Q1's contrastive branch does not fire and the Series default
+    stands (sure)."""
+    segs, _ = passage("Matthew 1:2")
+    doc = build_document(segs, confident_only=True)
+    assert all(b["rel"] == "Ser" for b in brackets(doc["forest"][0]))
 
 
 # --- Adverbial participles (docs/participle-rules.md) ----------------------
@@ -680,16 +764,64 @@ def test_participle_rule_4_legon_rides_with_its_dicendi_clause():
     assert call_for(segs, i, precedes=False) == ("WEd", True)
 
 
-def test_participle_rule_7_attendant_circumstance_coordinates():
+def test_participle_rule_7_attendant_circumstance_needs_an_imperative():
     """Matt 2:8 Πορευθέντες | ἐξετάσατε ἀκριβῶς περὶ τοῦ παιδίου — aorist
-    participle before an aorist imperative: the chart's five-feature test.
-    Coordinate, so the bracket has no star."""
+    participle before an aorist IMPERATIVE: the chart's five-feature test, and
+    the shape RULING Q5 keeps. Coordinate, so the bracket has no star."""
     segs = segment(561, 566)
     i = opened_by(segs, "πορεύομαι")
+    words = load_words()
+    assert words[_main_verb(segs[i], segs, True, words).index].mood == "D"
     assert call_for(segs, i, precedes=True) == ("Ser", True)
     doc = build_document(segs, confident_only=True)
     assert doc["forest"] == [SER({"kind": "prop", "ref": "p1"},
                                 {"kind": "prop", "ref": "p2"})]
+
+
+def test_participle_rule_7_no_longer_fires_on_a_narrative_indicative():
+    """Matt 2:11 καὶ ἐλθόντες εἰς τὴν οἰκίαν | εἶδον τὸ παιδίον … — aorist
+    participle before an aorist INDICATIVE.
+
+    RECOMPUTED for RULING Q5. The chart's simplified five-feature test could
+    not tell "on coming to the house they saw" from "they came and saw", so it
+    coordinated every narrative aorist pair as attendant circumstance (240 of
+    them in Matthew–Luke alone with no English cue to correct it, including
+    the chart's own Matt 4:2 νηστεύσας … ἐπείνασεν, which Wallace reads
+    temporally). The expert restricts rule 7 to an aorist IMPERATIVE main
+    verb; this falls through to rule 8, "after …"."""
+    segs, _ = passage("Matthew 2:11")
+    i = opened_by(segs, "ἔρχομαι")
+    words = load_words()
+    main = _main_verb(segs[i], segs, True, words)
+    assert (main.tense, main.mood) == ("A", "I")
+    assert call_for(segs, i, precedes=True) == ("Tmp", True)
+
+
+def test_an_aorist_participle_following_its_clause_is_still_temporal():
+    """RULING Q4, recorded rather than changed: the Wallace/Keating chart has
+    no rule for an aorist participle FOLLOWING its clause, and the expert
+    confirms the residual Temporal as the default (the 1 Thess 1:6 W/Ed
+    reading is the student's, not the rule's). Matt 27:66's σφραγίσαντες reads
+    W/Ed only because the BSB writes "by sealing the stone"; with no cue the
+    residual stands, as here in Mark 1:31 ἤγειρεν αὐτὴν κρατήσας τῆς χειρός."""
+    segs, _ = passage("Mark 1:31")
+    i = opened_by(segs, "κρατέω")
+    assert call_for(segs, i, precedes=False) == ("Tmp", True)
+
+
+def test_an_apposition_joins_minimal():
+    """RULING Q2. Eph 1:13 … τὸν λόγον τῆς ἀληθείας, | τὸ εὐαγγέλιον τῆς
+    σωτηρίας ὑμῶν — the apposition restates what it stands beside, which is
+    what makes it an apposition, so the Ft/In is a sensible default like any
+    other and JOINS MINIMAL (it used to be a Full-only guess). What keeps the
+    IMPLICIT-PROPOSITION PPs of the same passage out of minimal is a different
+    question — whether the proposition is drawable at all."""
+    segs, _ = passage("Ephesians 1:13-14")
+    i = [k for k, s in enumerate(segs)
+         if s.opener is not None and s.opener.kind == "appos"][0]
+    assert call_for(segs, i, precedes=False) == ("FtIn", True)
+    kept = list(brackets(build_document(segs, confident_only=True)["forest"][0]))
+    assert any(b["rel"] == "FtIn" for b in kept)
 
 
 def test_no_document_ever_carries_flags():

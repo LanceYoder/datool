@@ -21,9 +21,11 @@ the minimal analysis**. That covers two kinds of call, not one —
 
 A default that is usually right is worth drawing: the analyst re-labels one
 bracket, which is cheaper than drawing the whole structure by hand. Only
-GENUINELY UNDECIDABLE joins stay out of minimal — a bare ἀλλά, an apposition,
-an implicit-proposition prepositional phrase, an unknown subordinator, and the
-speculative groupings (which clauses of a run belong together).
+GENUINELY UNDECIDABLE joins stay out of minimal — an implicit-proposition
+prepositional phrase, an unknown subordinator, and the speculative groupings
+(which clauses of a run belong together). The 2026-08-29 rulings moved two of
+the old hold-outs in: a bare ἀλλά is an Alternative (Q1) and an apposition a
+Fact–Interpretation (Q2).
 
 The public contract is unchanged: ``build_document(confident_only=True)`` (the
 "minimal" level, API ``maximal=false``) keeps only the maximal all-sure
@@ -35,14 +37,19 @@ THE ENGLISH-CUE LAYER (docs/english-cue-rules.md). Greek connectives and
 adverbial participles are systematically ambiguous, but the aligned BSB
 English says which sense the context carries — the translators already did the
 interpretive work. For the ambiguous triggers (ὅτι, adverbial participles,
-ὥστε + finite verb, ἵνα/ὅπως, ὡς) the segment's own English is assembled in
-BSB word order by :func:`segment_english` and its LEADING phrase matched by
+ὥστε + finite verb, ἵνα/ὅπως, ὡς, and since the rulings δέ and the
+implicit-proposition PPs) the segment's own English is assembled in BSB word
+order by :func:`segment_english` and its LEADING phrase matched by
 :func:`leading_cue`; a hit outranks the grammar-only default. Cue-derived
 calls are ``sure``: a translator's reading is exactly the "sensible default"
 tier — right far more often than not, and one bracket to re-label when it is
-not. Grammar-FORCED calls still outrank the cue (καίπερ, genitive absolute,
-future participle, λέγων), and a segment with no usable English falls back to
-the grammar-only rules unchanged.
+not. (Two exceptions, both ruled: a PP's cue names its relationship but leaves
+it out of minimal (Q3), and ἵνα's "that" needs a communication/volition verb
+in the preceding clause before it may outrank the purpose default (Q9).)
+Grammar-FORCED calls still outrank the cue (καίπερ, genitive absolute, future
+participle, λέγων), each trigger accepts only the senses it can carry — which
+is what fences the contrastive "but"/"yet" rows to δέ — and a segment with no
+usable English falls back to the grammar-only rules unchanged.
 
 Assembly is a deterministic shift-reduce pass:
 
@@ -73,11 +80,12 @@ Within a sentence
 
 Between sentences
   * Sentence packets fold left to right. The join comes from the new
-    sentence's discourse connective (γάρ → Grnd, οὖν-class → Inf, δέ → Ser,
-    ἀλλά → NegPos (never sure), ἤ → Alt, μέν…δέ → Alt); with none, a previous
-    sentence ending in a verbum dicendi + '·' yields FtIn (speech content),
-    and otherwise the default: Ser. A run of Ser-joined sentences nests to the
-    left, one binary Ser bracket per join.
+    sentence's discourse connective (γάρ → Grnd, οὖν-class → Inf, δέ → Ser or
+    Alt when the BSB reads it "but", ἀλλά → NegPos after a negation and Alt
+    bare, ἤ → Alt, μέν…δέ → Alt); with none, a previous sentence that
+    INTRODUCES A SPEECH (:func:`_dicendi_sentence`) yields FtIn (speech
+    content), and otherwise the default: Ser. A run of Ser-joined sentences
+    nests to the left, one binary Ser bracket per join.
 
 Across sections (SECTIONING, docs/sectioning.md — big–small–big)
   * That sentence fold does not run over the whole passage. The expert's
@@ -86,13 +94,18 @@ Across sections (SECTIONING, docs/sectioning.md — big–small–big)
     the sections to each other. A section is a run of WHOLE sentences, so
     within-sentence assembly is untouched.
   * Seams come from a weighted indicator table (:data:`SEAM_WEIGHTS`) read off
-    the BSB structure marks (:mod:`da.corpus.structure`): headings and
-    quotation bounds are hard, paragraph breaks and οὖν strong. The speech
-    verb rides with its speech — a seam before a quotation falls BEFORE the
-    dicendi sentence that introduces it, never between the two.
+    the BSB structure marks (:mod:`da.corpus.structure`) and the morphology:
+    headings and quotation bounds are hard; paragraph breaks, οὖν, διό, a
+    narrative scene-setter, a rhetorical-question opener and an epistolary
+    vocative are strong (each a seam alone); a mood/person shift, epistolary
+    asyndeton, a lexical-cohesion drop and the English period are soft and
+    seam only in pairs. The speech verb rides with its speech — a seam before
+    a quotation falls BEFORE the sentence that introduces it, never between
+    the two.
   * One structure-dependent seam is added after the within-section fold: a
-    sentence-level γάρ Ground whose support develops (a coordinate or a
-    Fact–Interpretation inside it) is section-sized and gets promoted to its
+    "because" whose support develops ACROSS A SENTENCE BOUNDARY — a
+    sentence-level γάρ Ground, or a causal ὅτι inside the sentence, plus the
+    sentences Ser-chained onto it — is section-sized and gets promoted to its
     own section (:func:`_promoted`).
   * The section packets then fold left to right through the SAME
     :func:`_sentence_join` table, the new section's first sentence deciding
@@ -104,6 +117,15 @@ Star placement is derived from the taxonomy: for each relationship we know
 which label index the grammatically marked (dependent) side carries;
 ``reversed`` is set whenever that side is not ``children[0]``'s default, and
 ``prominent`` is the child that ends up carrying the starred label.
+
+THE TEXT FLOW (:func:`build_text_flow`) falls out of that same assembly. The
+course's flow is a GRAMMATICAL reading — one clause per line, dependents
+indented under what they modify — and the shift-reduce pass already knows, at
+every join, which clause a segment attached to and how. So an
+:class:`_IndentRecorder` rides through :func:`_assemble_sentence` and notes each
+segment's indent as the join is made; there is no second walk, and the flow's
+lines are the analysis's own propositions. The first pass ships one with every
+document (:func:`da.firstpass._analyzed`).
 
 ``segmentation.py`` is developed concurrently; this module codes against the
 SEGMENT CONTRACT (``Segment``/``Opener`` attribute shapes) and only imports it
@@ -121,7 +143,7 @@ from .corpus.loader import TRAILING_CLOSERS
 from .corpus.normalize import nfc as _L, nfc_set as _lset
 from .corpus.structure import marks_for
 from .corpus.translation import load_translation
-from .documents import SCHEMA_VERSION, validate_document
+from .documents import MAX_INDENT, SCHEMA_VERSION, validate_document
 from .taxonomy import COORDINATE_CODES, RELATIONSHIPS
 
 if TYPE_CHECKING:  # pragma: no cover — written concurrently, contract-typed
@@ -160,10 +182,16 @@ MH_NEGATIVES = _lset("μή", "μηδέ", "μηδείς", "μήτε", "μηκέτ
 CONCESSIVE_PARTICLES = _lset("καίπερ", "καίτοιγε", "καίτοι")
 
 # Verbs of saying / perceiving / knowing that take ὅτι-content (Ft/In).
+# RULING Q11(a): the βοάω/κράζω class — verbs of CRYING OUT — belongs here
+# too. They introduce speech exactly as λέγω does, so they now feed both the
+# ὅτι-content rule and the speech machinery of sectioning (Matt 3:3's
+# "Φωνὴ βοῶντος ἐν τῇ ἐρήμῳ·" is a speech introduction, and its seam rides
+# with the speech it opens).
 VERBA_DICENDI = _lset(
     "λέγω", "εἶπον", "φημί", "ἀκούω", "οἶδα", "γινώσκω", "πιστεύω",
     "ὁμολογέω", "μαρτυρέω", "γράφω", "ἀποκρίνομαι", "βλέπω", "ὁράω",
     "θεωρέω", "ἀναγγέλλω", "ἀπαγγέλλω", "λαλέω",
+    "βοάω", "κράζω", "ἀνακράζω", "κραυγάζω", "φωνέω", "ἐπιφωνέω",  # Q11(a)
 )
 
 # Verbs of asking / praying / exhorting. After one of these, a following ἵνα
@@ -175,6 +203,25 @@ ASKING_VERBS = _lset(
     "ἐρωτάω", "αἰτέω", "παρακαλέω", "δέομαι", "προσεύχομαι", "εὔχομαι",
     "ἀξιόω",
 )
+
+# RULING Q9: the English "that" cue outranks the ἵνα purpose default ONLY WITH
+# CORROBORATION — a communication or volition verb in the preceding clause.
+# The archaic English purpose-"that" ("that everyone who believes … shall not
+# perish", John 3:16) is indistinguishable from the content "that" by the
+# phrase alone; what distinguishes them is the governing verb, which is a
+# verb of saying, asking, commanding or willing whenever the clause really is
+# content. This list is the asking verbs and the verba dicendi (a "that" after
+# "he said/told/commanded" is content) widened by the volition verbs.
+# DRAFT: like ASKING_VERBS, our own compilation and awaiting expert review.
+COMMUNICATION_VOLITION = VERBA_DICENDI | ASKING_VERBS | _lset(
+    "θέλω", "βούλομαι", "ζητέω", "ἐντέλλομαι", "ἐπιτάσσω", "διαστέλλομαι",
+    "παραγγέλλω", "συμβουλεύω", "ἀφίημι",
+)
+
+# The coordinators that can stand directly in front of a subordinator
+# (ἀλλ' ἵνα, καὶ ἵνα) — RULING Q7's look-back widening. δέ/γάρ are
+# postpositive and can never occupy that slot, so they are not here.
+COORDINATING = SERIAL | ADVERSATIVE | ALTERNATIVE
 
 # The redundant participle of saying (λέγων / λέγοντες) — chart rule 4.
 LEGO = _L("λέγω")
@@ -254,6 +301,13 @@ _CUE_ENTRIES: tuple[tuple[str, str, _Guard | None], ...] = (
     ("because", "Grnd", None),
     ("since", "Grnd", None),
     ("for", "Grnd", None),
+    # RULING Q3's PP phrases. "because of" and "for the sake of" only spell
+    # out what the shorter "because"/"for" rows already say; "on account of"
+    # is genuinely new, and all three are here so the table reads as the
+    # ruling wrote them.
+    ("because of", "Grnd", None),
+    ("on account of", "Grnd", None),
+    ("for the sake of", "Grnd", None),
     ("therefore", "Inf", None),
     ("so then", "Inf", None),
     ("although", "Adv", None),
@@ -277,13 +331,15 @@ _CUE_ENTRIES: tuple[tuple[str, str, _Guard | None], ...] = (
     ("and", "Ser", None),
     ("also", "Ser", None),
     ("now", "Ser", None),
-    # NO CONTRASTIVE ROWS. The BSB's "but"/"yet" would be easy to spot, but
-    # spotting it buys nothing: οὐ … ἀλλά is already a sure Neg/Pos from the
-    # grammar, and a bare "but" (bare ἀλλά, or δέ rendered "but") says there is
-    # a contrast without saying WHICH contrary relationship carries it
-    # (Neg/Pos, Alternative, Adversative). That is expert-questions.md Open #1;
-    # until it is ruled, δέ keeps its Series default and a bare ἀλλά stays out
-    # of minimal, so a "but" row would only ever be matched and discarded.
+    # THE CONTRASTIVE ROWS (RULING Q1). Which contrary relationship a bare
+    # "but" marks used to be the open question; the expert's answer is
+    # ALTERNATIVE. The rows exist for ONE trigger, δέ (:data:`_DE_CUE_RELS`) —
+    # every other trigger's allowed set excludes Alt, so a leading "but" is
+    # matched and discarded there exactly as it was before these rows existed.
+    # Bare ἀλλά does not consult them: its Alternative is read off the GRAMMAR
+    # (no negation in front of it), not off the translation.
+    ("but", "Alt", None),
+    ("yet", "Alt", None),
 )
 _CUE_TABLE: tuple[tuple[str, str, _Guard | None], ...] = tuple(
     sorted(_CUE_ENTRIES, key=lambda entry: -len(entry[0])))
@@ -315,6 +371,16 @@ _HOS_PRECEDING_CUE_RELS = _HOS_CUE_RELS - {"FtIn"}
 # for it, and rule 7 already owns that call.
 _PTCP_CUE_RELS = frozenset({"CndE", "MEd", "CE", "Grnd", "Adv", "Tmp",
                             "WEd", "Cmp"})
+# RULING Q3: the cue layer now reaches implicit-proposition PPs. The senses a
+# bare prepositional phrase can carry are the adverbial ones — a PP never
+# states a Series, an Inference or a Fact–Interpretation — so the allowed set
+# is exactly the relationships :data:`_PP_REL` itself hands out plus the
+# conditional. The call stays OUT of minimal either way (see _dependent_call).
+_PP_CUE_RELS = frozenset({"Grnd", "MEd", "Tmp", "Loc", "WEd", "CndE"})
+# RULING Q1: δέ, and δέ alone, reads the contrastive rows. "but"/"yet" is the
+# BSB saying this δέ is not carrying the narrative onward but setting one
+# thing against another — an Alternative.
+_DE_CUE_RELS = frozenset({"Alt"})
 
 HOS = _L("ὡς")   # the one comparative the cue layer disambiguates
 
@@ -639,12 +705,19 @@ def _participle_call(seg, j: int, segs: Sequence, words,
     if (lemmas & OU_NEGATIVES) and not (lemmas & MH_NEGATIVES):
         return "Grnd", True
     # 7. Attendant circumstance — the chart's five-feature test, "90% of the
-    #    time": aorist participle before an aorist imperative/indicative main
-    #    verb. Coordinate, so the two actions stand side by side. (The main
-    #    verb is looked up only here, inside the guard: no other rule reads it.)
+    #    time": aorist participle before an aorist main verb. Coordinate, so
+    #    the two actions stand side by side. (The main verb is looked up only
+    #    here, inside the guard: no other rule reads it.)
+    #    RULING Q5: restricted to an aorist IMPERATIVE main verb (mood 'D').
+    #    The chart's own example Matt 4:2 (νηστεύσας … ἐπείνασεν) and Acts
+    #    2:37 (Ἀκούσαντες δὲ κατενύγησαν) are aorist + aorist INDICATIVE, and
+    #    Wallace reads both as temporal; the expert's ruling is that the
+    #    narrative indicative case falls through to rule 8 ("after …") and
+    #    attendant circumstance keeps the imperative shape it is safe on
+    #    (Matt 2:8 Πορευθέντες ἐξετάσατε).
     if precedes and tense == "A":
         main = _main_verb(seg, segs, precedes, words)
-        if main is not None and main.tense == "A" and main.mood in "ID":
+        if main is not None and main.tense == "A" and main.mood == "D":
             return "Ser", True
     # 8. Aorist participle before its clause: antecedent time, "after …".
     if tense == "A" and precedes:
@@ -661,6 +734,78 @@ def _participle_call(seg, j: int, segs: Sequence, words,
     #     its clause is its largest member), and we join it to minimal like
     #     every other default rather than leaving it loose.
     return "Tmp", True
+
+
+def _coordinator_before_opener(seg, words) -> bool:
+    """Does a coordinating conjunction stand DIRECTLY in front of this
+    segment's opener word — ``ἀλλ' ἵνα``, ``καὶ ἵνα``? (RULING Q7.)
+
+    The word is looked up by index rather than inside the segment, because
+    segmentation puts it on whichever side of the boundary it fell: John
+    17:15's ἀλλ᾽ closes the FIRST ἵνα segment and the second one starts at its
+    own ἵνα, while a ``καὶ ἵνα`` is usually the new segment's own first word.
+    Either way the coordinator is the word before the subordinator."""
+    op = seg.opener
+    if op is None or op.index <= 0:
+        return False
+    return _L(words[op.index - 1].lemma) in COORDINATING
+
+
+def _purpose_sibling(j: int, segs: Sequence) -> int | None:
+    """The nearest EARLIER ἵνα/ὅπως segment in the same sentence, or None."""
+    for k in range(j - 1, -1, -1):
+        if segs[k].sentence != segs[j].sentence:
+            return None
+        op = segs[k].opener
+        if (op is not None and op.kind == "sub_conj"
+                and _L(op.lemma) in PURPOSE):
+            return k
+    return None
+
+
+def _purpose_call(seg, j: int, segs: Sequence, words) -> tuple[str, bool]:
+    """(relationship, sure) for a ἵνα / ὅπως clause.
+
+    RULING (the ἵνα conditional rule): after a verb of asking/praying/
+    exhorting the clause states the CONTENT of the request (Ft/In, as the
+    Philippians student reads Phil 1:9); otherwise it states purpose (M/Ed).
+    Both branches are sure.
+
+    RULING Q7 — THE SIBLING RULE, first. When a coordinating conjunction
+    stands in front of this ἵνα (ἀλλ' ἵνα, καὶ ἵνα) and an earlier ἵνα/ὅπως
+    clause stands in the same sentence, the two are COORDINATE clauses under
+    one governing verb: the second inherits the first's call outright instead
+    of running a look-back that can only see the clause immediately in front
+    of it — which is its own sibling, never the verb. John 17:15 (οὐκ ἐρωτῶ
+    ἵνα ἄρῃς … ἀλλ' ἵνα τηρήσῃς …) is the case: ἐρωτῶ governs both, and the
+    inheritance carries the content reading onto the second. The recursion
+    terminates because the sibling is strictly earlier.
+
+    THE ENGLISH CUE then outranks the verb list in both directions: the BSB's
+    "so that"/"in order that" is purpose, its "that" is content — read from
+    the clause itself rather than inferred from the verb in front of it.
+    RULING Q9 QUALIFIES THE "that" HALF: English writes purpose clauses with
+    an archaic "that" too ("that everyone who believes in Him shall not
+    perish", John 3:16), so the content reading needs CORROBORATION — a
+    communication or volition verb in the preceding clause
+    (:data:`COMMUNICATION_VOLITION`). Without one the cue does not fire and
+    the purpose default stands. The "so that"/"in order that" half is
+    unaffected: no English purpose clause is written that way by accident."""
+    if _coordinator_before_opener(seg, words):
+        sibling = _purpose_sibling(j, segs)
+        if sibling is not None:
+            return _purpose_call(segs[sibling], sibling, segs, words)
+
+    prev = segs[j - 1] if j > 0 else None
+    cue = _cue_call(seg, words, _PURPOSE_CUE_RELS, _PURPOSE_CUE_OVERRIDES)
+    if cue == "FtIn" and not (
+            prev is not None and _has_lemma(prev, words, COMMUNICATION_VOLITION)):
+        cue = None                                    # Q9: uncorroborated
+    if cue is not None:
+        return cue, True
+    if prev is not None and _has_lemma(prev, words, ASKING_VERBS):
+        return "FtIn", True
+    return "MEd", True
 
 
 def _dependent_call(seg, j: int, segs: Sequence, words,
@@ -685,17 +830,25 @@ def _dependent_call(seg, j: int, segs: Sequence, words,
         return "FtIn", True
     if op.kind == "appos":
         # Apposition / attributive-article phrase restates: Ft → In*.
-        # NOT sure: the expert has not ruled on apposition, so it stays a
-        # Full-only best guess until they do.
-        return "FtIn", False
+        # RULING Q2: Ft/In, AND IT JOINS MINIMAL. An apposition restates what
+        # it stands beside — that is what makes it an apposition — so the
+        # relationship is not the interpretive call the old comment took it
+        # for; only the implicit PROPOSITION beside it ever was.
+        return "FtIn", True
     if op.kind == "pp":
-        # Implicit-proposition prepositional phrase: guess by preposition.
-        # NOT sure: also unruled — which proposition a bare PP implies is the
-        # interpretive call, and the preposition only hints at it. NO ENGLISH
-        # CUE HERE: the cue would name a relationship confidently ("until the
-        # redemption …" → Tmp for Eph 1:14's εἰς ἀπολύτρωσιν), but the open
-        # question is whether the implied PROPOSITION is drawable at all, not
-        # which relation it takes — expert-questions.md Open #3.
+        # Implicit-proposition prepositional phrase: guess by preposition,
+        # ENGLISH CUE FIRST (RULING Q3). The per-preposition defaults are
+        # right and stay, and the cue layer applies here too — "because of
+        # …" → Ground, "in order to …" → Means–End, "until …" → Temporal —
+        # read off the phrase itself instead of guessed from the preposition
+        # (Eph 1:14's εἰς ἀπολύτρωσιν is "until the redemption", Temporal,
+        # where εἰς alone says purpose).
+        # STILL NEVER SURE, by the same ruling: what keeps a PP out of minimal
+        # is not which relationship it takes but whether the implied
+        # PROPOSITION is drawable at all, and the cue does not speak to that.
+        cue = _cue_call(seg, words, _PP_CUE_RELS)
+        if cue is not None:
+            return cue, False
         return _PP_REL.get(lemma, "WEd"), False
     if op.kind == "ptcp":
         return _participle_call(seg, j, segs, words, precedes)
@@ -709,25 +862,7 @@ def _dependent_call(seg, j: int, segs: Sequence, words,
         return "MEd", True
     if op.kind == "sub_conj":
         if lemma in PURPOSE:
-            # ἵνα / ὅπως. RULING (the ἵνα conditional rule): after a verb of
-            # asking/praying/exhorting the clause states the CONTENT of the
-            # request (Ft/In, as the Philippians student reads Phil 1:9);
-            # otherwise it states purpose (M/Ed). Both branches are sure.
-            # The ENGLISH CUE outranks the verb list in both directions: the
-            # BSB's "so that"/"in order that" is purpose, its "that" is
-            # content — read from the clause itself rather than inferred from
-            # the verb in front of it. (It also reaches where the verb list
-            # cannot: the second ἵνα of John 17:15 is still governed by ἐρωτῶ,
-            # which the one-clause look-back of expert-questions.md Open #8
-            # cannot see, but which the BSB's "that" states outright.)
-            cue = _cue_call(seg, words, _PURPOSE_CUE_RELS,
-                            _PURPOSE_CUE_OVERRIDES)
-            if cue is not None:
-                return cue, True
-            prev = segs[j - 1] if j > 0 else None
-            if prev is not None and _has_lemma(prev, words, ASKING_VERBS):
-                return "FtIn", True
-            return "MEd", True
+            return _purpose_call(seg, j, segs, words)
         if lemma in RESULT:
             # ὥστε + INFINITIVE is the textbook result clause: 2/2 exact
             # (1 Thess 1:7, 1:8) and grammatically unambiguous — sure.
@@ -801,8 +936,165 @@ def _men_before(segs: Sequence, words) -> bool:
     return any(_has_lemma(s, words, MEN) for s in segs)
 
 
+def _de_call(seg, prev_segs: Sequence, words) -> str:
+    """The relationship a δέ join carries (RULING Q1).
+
+    μέν … δέ is the Alternative, as before. A δέ with no μέν is Series — the
+    narrative "and then", the default — UNLESS the BSB renders it "but" or
+    "yet", which says the translators heard this δέ setting one thing against
+    another rather than carrying the account onward. The expert's ruling names
+    that contrast: Alternative. Both readings are sure.
+
+    The cue is asked of δέ and of nothing else (:data:`_DE_CUE_RELS`), through
+    the ordinary cue machinery — so the postpositive's own cell is the
+    fallback probe when the segment's assembled English starts elsewhere."""
+    if _men_before(prev_segs, words):
+        return "Alt"
+    if _cue_call(seg, words, _DE_CUE_RELS) == "Alt":
+        return "Alt"
+    return "Ser"
+
+
+def _alla_call(prev_seg, words) -> str:
+    """The relationship a bare/negated ἀλλά join carries (RULING Q1).
+
+    οὐ … ἀλλά is the textbook Neg/Pos and is unchanged. A BARE ἀλλά — nothing
+    negated in front of it — used to be the undecidable case kept out of
+    minimal; the expert's ruling is that its default is ALTERNATIVE, and that
+    the call joins minimal like any other sensible default. No English cue is
+    consulted: the BSB's "but" only restates the contrast the ἀλλά already
+    announced, and it is the GRAMMAR (is there a negation in front of it?)
+    that picks between the two readings."""
+    return "NegPos" if _has_lemma(prev_seg, words, NEGATIVES) else "Alt"
+
+
 # ---------------------------------------------------------------------------
 # Within-sentence assembly
+
+class _Level:
+    """One packet's Text Flow bookkeeping, for :class:`_IndentRecorder`.
+
+    ``head`` is the indent of the packet's OWN clause — the one a dependent
+    indents under. ``path`` is the packet's RIGHT-EDGE SPINE, outermost first:
+    the clauses :func:`_edge_join` would descend past, each with its indent and
+    the mood of its finite verb. A coordinator picks its level off that spine.
+    """
+
+    __slots__ = ("head", "path")
+
+    def __init__(self, head: int, path: list[tuple[int, int, str | None]]):
+        self.head = head
+        self.path = path
+
+
+def _clause_mood(seg, words) -> str | None:
+    """The mood of this clause's own finite verb ('I', 'D', 'S', 'O'), or None
+    for a clause with none (an infinitive or verbless one)."""
+    for i in range(seg.start, seg.end + 1):
+        if words[i].is_finite_verb:
+            return words[i].mood
+    return None
+
+
+class _IndentRecorder:
+    """The TEXT FLOW's indents, recorded as :func:`_assemble_sentence` joins.
+
+    Not a second copy of the assembly: the recorder is threaded through the one
+    pass and mirrors its stack, so every indent is read off the join the
+    classifier actually made. The Text Flow's rules (documents/"Text Flow
+    Instructions.pdf", rules 3–9) map onto those joins directly —
+
+      * an INDEPENDENT clause stands at the sentence's base indent;
+      * a DEPENDENT unit — a subordinate clause, a relative, an adverbial
+        participle or infinitive, held forward or attaching backward — stands
+        one deeper than the clause it modifies, which is the target packet's
+        own clause (``head``). Several dependents of one clause therefore share
+        that one step, and a dependent of a dependent nests another;
+      * a COORDINATING conjunction joins clauses of the SAME level, so its
+        clause takes the indent of the clause it coordinates with — found by
+        walking the target's right-edge spine inward-out and taking the first
+        clause whose finite verb agrees in MOOD (the grammatical level marker).
+        That is what puts Matt 8:24's αὐτὸς δὲ ἐκάθευδεν back beside the
+        indicative ἐγένετο rather than under the ὥστε infinitive standing
+        between them, and 1 John 1:6's καὶ … περιπατῶμεν beside the subjunctive
+        εἴπωμεν rather than under its indicative ὅτι content. With no agreement
+        anywhere the structural right edge wins.
+
+    ``base`` is the sentence's own left margin — 0, except for a sentence that
+    is the CONTENT OF A SPEECH, which stands under the clause that introduced
+    it (see :func:`build_text_flow`).
+    """
+
+    def __init__(self, base: int = 0):
+        self.base = min(base, MAX_INDENT)
+        self.stack: list[_Level] = []
+        self.held: _Level | None = None
+        self.indents: dict[int, int] = {}
+
+    def _target(self) -> _Level:
+        """The packet a join lands on — the stack top, else the held one.
+        Mirrors :func:`_assemble_sentence`'s own choice exactly."""
+        if self.stack:
+            return self.stack[-1]
+        assert self.held is not None, "no packet to join"
+        return self.held
+
+    def independent(self, gi: int, seg, words) -> None:
+        """A clause pushed onto the stack: flush at the sentence's margin."""
+        self.stack.append(
+            _Level(self.base, [(gi, self.base, _clause_mood(seg, words))]))
+        self.indents[gi] = self.base
+
+    def dependent(self, gi: int, seg, words) -> None:
+        """A dependent unit: one step under the clause it modifies. With no
+        clause yet in the sentence it is HELD, and the step is off ``base``."""
+        entry = _clause_mood(seg, words)
+        if self.stack or self.held is not None:
+            level = self._target()
+            indent = min(level.head + 1, MAX_INDENT)
+            level.path.append((gi, indent, entry))
+        else:
+            indent = min(self.base + 1, MAX_INDENT)
+            self.held = _Level(indent, [(gi, indent, entry)])
+        self.indents[gi] = indent
+
+    def coordinate(self, gi: int, seg, words) -> None:
+        """A καί/δέ/ἤ/ἀλλά clause: level with the clause it coordinates with."""
+        level = self._target()
+        mood = _clause_mood(seg, words)
+        k = len(level.path) - 1
+        if mood is not None:
+            for probe in range(k, -1, -1):
+                if level.path[probe][2] == mood:
+                    k = probe
+                    break
+        indent = level.path[k][1]
+        # Joining at level k closes everything inside it: this clause is now
+        # the packet's right edge there.
+        level.path[k:] = [(gi, indent, mood)]
+        self.indents[gi] = indent
+
+    def ground(self, gi: int, seg, words) -> None:
+        """Mid-sentence postpositive γάρ/οὖν. The assembly relates the new
+        clause to the WHOLE packet (collapsing the stack first); the clause is
+        an independent one, so it stands at that packet's own indent."""
+        if self.stack:
+            level = _Level(self.stack[0].head, self.stack[-1].path)
+            self.stack[:] = [level]
+        else:
+            level = self._target()
+        indent = level.head
+        level.path.append((gi, indent, _clause_mood(seg, words)))
+        self.indents[gi] = indent
+
+    def held_only(self) -> None:
+        """The sentence turned out to be nothing but its held dependent — no
+        main clause ever arrived — so that unit IS the sentence's own clause
+        and stands flush (Text Flow: a sentence's own clause is left-justified,
+        and there is nothing here for it to be indented under)."""
+        self.indents = {gi: max(self.base, indent - 1)
+                        for gi, indent in self.indents.items()}
+
 
 class _Held:
     """A forward-attaching packet (protasis or sentence-initial dependent),
@@ -817,10 +1109,19 @@ class _Held:
 
 
 def _assemble_sentence(indexed_segs: list[tuple[int, "Segment"]],
-                       segs: Sequence, words) -> dict:
+                       segs: Sequence, words,
+                       recorder: _IndentRecorder | None = None) -> dict:
     """Reduce one sentence's segments to a single packet (tree node). ``segs``
     is ``indexed_segs`` without the global indexes, which the caller already
-    has to hand."""
+    has to hand.
+
+    ``recorder`` rides along and notes each segment's TEXT FLOW indent as the
+    joins are made (:class:`_IndentRecorder`) — :func:`build_text_flow` passes
+    one and reads it afterwards; :func:`build_document` ignores it. There is
+    only ever this one pass: the flow is derived from the same assembly the
+    classifier runs, never from a second walk."""
+    if recorder is None:
+        recorder = _IndentRecorder()
     stack: list[dict] = []
     held: _Held | None = None
 
@@ -852,6 +1153,7 @@ def _assemble_sentence(indexed_segs: list[tuple[int, "Segment"]],
         # ``and kind != "coord"`` guard was dead.)
         call = _dependent_call(seg, j, segs, words, precedes=fresh)
         if call is not None:
+            recorder.dependent(gi, seg, words)
             rel, sure = call
             if stack:
                 top = stack.pop()
@@ -870,7 +1172,10 @@ def _assemble_sentence(indexed_segs: list[tuple[int, "Segment"]],
 
         if kind == "coord" and not fresh:
             assert lemma is not None
-            if lemma in GROUND or lemma in INFERENCE:
+            grounding = lemma in GROUND or lemma in INFERENCE
+            # The indent is read off the packet BEFORE the join rearranges it.
+            (recorder.ground if grounding else recorder.coordinate)(gi, seg, words)
+            if grounding:
                 # Postpositive γάρ/οὖν mid-sentence: relate the new clause to
                 # the packet so far with the table relation. γάρ is sure
                 # (4/4 exact across 1 Thess and Hebrews) and so, by the
@@ -887,26 +1192,20 @@ def _assemble_sentence(indexed_segs: list[tuple[int, "Segment"]],
                     held.packet = _sub(rel, held.packet, leaf, dep_child=1,
                                        sure=True)
             elif lemma in ADVERSATIVE:
-                # οὐ … ἀλλά is the textbook -/+ (1/1 exact, 1 Thess). A bare
-                # ἀλλά stays NEVER SURE by the expert's ruling: which of the
-                # many contrastive readings it carries is undecidable. NO
-                # ENGLISH CUE: the BSB's "but" here only confirms the contrast
-                # we already know about — expert-questions.md Open #1 is which
-                # relationship carries it, so this join is unchanged.
-                # NegPos is subordinate, so the edge join wraps the negated
-                # clause it contrasts with.
-                confident = _has_lemma(segs[j - 1], words, NEGATIVES)
-                join_target_edge(leaf, "NegPos", sure=confident)
+                # οὐ … ἀλλά is the textbook -/+ (1/1 exact, 1 Thess); a bare
+                # ἀλλά is the Alternative (RULING Q1). Both sure. Neg/Pos is
+                # subordinate, so the edge join wraps the negated clause it
+                # contrasts with; Alternative is coordinate and brackets from
+                # the centre — :func:`_dep_bracket` makes that choice.
+                join_target_edge(leaf, _alla_call(segs[j - 1], words),
+                                 sure=True)
             elif lemma in ALTERNATIVE:
                 join_target_edge(leaf, "Alt", sure=True)
             elif lemma in DE:
-                # μέν … δέ is the Alternative; a δέ with no μέν in front of it
-                # is the default Series (RULING: sure). NO ENGLISH CUE: a δέ
-                # the BSB renders "but" is contrastive rather than serial, but
-                # which contrary relationship it marks is expert-questions.md
-                # Open #1 — so δέ keeps Series until the expert rules.
-                rel = "Alt" if _men_before(segs[:j], words) else "Ser"
-                join_target_edge(leaf, rel, sure=True)
+                # μέν … δέ → Alternative; a "but"/"yet" δέ → Alternative
+                # (RULING Q1); otherwise the Series default. All sure.
+                join_target_edge(leaf, _de_call(seg, segs[:j], words),
+                                 sure=True)
             elif lemma in SERIAL:
                 # καί / οὐδέ / τε: Series — RULING, sure. (The 1 John student
                 # hears one of these καί as ∴; a Series default the analyst
@@ -920,10 +1219,14 @@ def _assemble_sentence(indexed_segs: list[tuple[int, "Segment"]],
 
         if call is None and kind == "sub_conj" and not fresh:
             # Unknown subordinator: keep the structure, stay out of minimal.
+            # For the Text Flow it is still a plainly DEPENDENT clause — the
+            # subordinator is right there — so it indents like any other.
+            recorder.dependent(gi, seg, words)
             join_target_edge(leaf, "Ser")
             continue
 
         # Independent clause: sentence-initial (any opener) or asyndeton.
+        recorder.independent(gi, seg, words)
         stack.append(leaf)
 
     main: dict | None = None
@@ -938,6 +1241,7 @@ def _assemble_sentence(indexed_segs: list[tuple[int, "Segment"]],
         return _dep_bracket(held.rel, held.packet, main, held.sure,
                             dep_child=0)
     if held is not None:
+        recorder.held_only()
         return held.packet
     assert main is not None, "sentence produced no packet"
     return main
@@ -946,24 +1250,34 @@ def _assemble_sentence(indexed_segs: list[tuple[int, "Segment"]],
 # ---------------------------------------------------------------------------
 # Inter-sentence assembly
 
+def _sentence_connective(cur_segs: list, words) -> str | None:
+    """The discourse connective NAMING the join into this sentence, or None
+    for asyndeton — the opener's own lemma when it is a coordinator, else the
+    scan over the sentence's first three words (a postpositive may stand
+    second or third; a serial/adversative connective only counts first).
+
+    Factored out of :func:`_sentence_join` because the seam scorer asks the
+    same question: RULING Q8(f)'s epistolary asyndeton is exactly "this scan
+    finds nothing"."""
+    first = cur_segs[0]
+    lemma = _opener_lemma(first)
+    if lemma in _DISCOURSE and first.opener.kind == "coord":
+        return lemma
+    for i, w in enumerate(_seg_words(first, words)[:3]):
+        wl = _L(w.lemma)
+        if i == 0 and wl in _DISCOURSE and wl not in _POSTPOSITIVE:
+            return wl
+        if i >= 1 and wl in _POSTPOSITIVE:
+            return wl
+    return None
+
+
 def _sentence_join(prev_segs: list, cur_segs: list, words) -> tuple[str, bool]:
     """(relationship, sure) joining the accumulated packet to the new
     sentence. Ser is the default when nothing marks the join — and by the
     expert's ruling it is a SURE default: sentences laid side by side each
     make their own contribution until the analyst says otherwise."""
-    first = cur_segs[0]
-    lemma = _opener_lemma(first)
-    conn = lemma if (lemma in _DISCOURSE and first.opener.kind == "coord") else None
-    if conn is None:
-        ws = _seg_words(first, words)[:3]
-        for i, w in enumerate(ws):
-            wl = _L(w.lemma)
-            if i == 0 and wl in _DISCOURSE and wl not in _POSTPOSITIVE:
-                conn = wl
-                break
-            if i >= 1 and wl in _POSTPOSITIVE:
-                conn = wl
-                break
+    conn = _sentence_connective(cur_segs, words)
 
     if conn is not None:
         if conn in GROUND:
@@ -975,22 +1289,28 @@ def _sentence_join(prev_segs: list, cur_segs: list, words) -> tuple[str, bool]:
             # the Acts 2:41 μὲν οὖν, which that diagram draws as C/E.)
             return "Inf", True
         if conn in DE:
-            # μέν … δέ → Alternative; a δέ with no μέν → Series. Both sure.
-            # A "but" cue is not consulted here either — Open #1, as within a
-            # sentence.
-            return ("Alt", True) if _men_before(prev_segs, words) else ("Ser", True)
+            # RULING Q1, across a sentence boundary exactly as within one:
+            # μέν … δέ → Alternative, a "but"/"yet" δέ → Alternative, else the
+            # Series default. All sure.
+            return _de_call(cur_segs[0], prev_segs, words), True
         if conn in ADVERSATIVE:
-            # Bare ἀλλά: NEVER sure (expert — undecidable; Open #1).
-            return "NegPos", False
+            # RULING Q1: οὐ … ἀλλά → Neg/Pos, a bare ἀλλά → Alternative — and
+            # both now JOIN MINIMAL, where the bare one never used to. The
+            # negation is looked for in the previous sentence's closing
+            # clause, the same one-clause look-back the mid-sentence join uses.
+            return _alla_call(prev_segs[-1], words), True
         if conn in ALTERNATIVE:
             return "Alt", True
         return "Ser", True   # bare καί / τε chain: sure default
 
-    # Speech content: previous sentence ends with a verbum dicendi + '·'.
-    # RULING: sure. The Acts diagram frames some speeches as S/R instead, but
-    # Ft/In is the right starting point and re-marking it is one click.
-    last_word = words[prev_segs[-1].end]
-    if _closes_on_raised_dot(last_word) and _L(last_word.lemma) in VERBA_DICENDI:
+    # Speech content: the previous sentence INTRODUCES a speech (a verbum
+    # dicendi + '·', or RULING Q11(b)'s elided speech verb in front of a
+    # quotation). RULING: sure. The Acts diagram frames some speeches as S/R
+    # instead, but Ft/In is the right starting point and re-marking it is one
+    # click. One test serves the join and the seam alike
+    # (:func:`_dicendi_sentence`), so "Πέτρος δὲ πρὸς αὐτούς·" now opens its
+    # speech in the tree as well as in the sectioning.
+    if _dicendi_sentence(prev_segs, words, cur_segs):
         return "FtIn", True
     # Asyndeton between sentences: Series, the sensible default (RULING: sure).
     return "Ser", True
@@ -1053,6 +1373,45 @@ def _fold_sentences(packets: Sequence[_Packet], words) -> dict:
 # sentence list and within-sentence assembly never sees it.
 
 OUN = _L("οὖν")
+DIO = _L("διό")
+DIA = _L("διά")
+HOUTOS = _L("οὗτος")
+TOTE = _L("τότε")
+META = _L("μετά")
+EN = _L("ἐν")
+EKEINOS = _L("ἐκεῖνος")
+HEMERA = _L("ἡμέρα")
+GINOMAI = _L("γίνομαι")
+KAI = _L("καί")
+DE_L = _L("δέ")
+
+#: Interrogatives that open a question (RULING Q8(g)). MorphGNT spells the
+#: interrogative τίς with the accent and the indefinite τις without, so the
+#: two never collide; "διὰ τί" is covered by τίς standing second.
+INTERROGATIVE = _lset("τίς", "πῶς", "ποῦ", "πότε")
+
+#: The connective lemmas, all tables together — subtracted from the content
+#: vocabulary of RULING Q8(h)'s cohesion test, since a shared "and" says
+#: nothing about shared subject matter.
+_CONNECTIVE_LEMMAS = (GROUND | INFERENCE | PURPOSE | RESULT | CONDITIONAL
+                      | TEMPORAL | LOCATIVE | COMPARATIVE | SERIAL
+                      | ALTERNATIVE | ADVERSATIVE | DE | MEN | HOTI
+                      | NEGATIVES)
+#: Content words for the same test: nouns, verbs and adjectives. The other
+#: part-of-speech codes (RA articles, RP/RD/RR pronouns, C-/D-/P-/X-) are
+#: function words and carry no cohesion.
+_CONTENT_POS = ("N-", "V-", "A-")
+
+#: BOOK NUMBER → GENRE, for the genre-sensitive seam indicators (RULING Q8).
+#: NARRATIVE is the four Gospels and Acts (books 1–5) plus Revelation (27):
+#: an apocalypse, but for these signals it counts narrative — μετὰ ταῦτα and
+#: καὶ εἶδον scene-setters run through it, and epistolary asyndeton is not a
+#: division marker there (the seven letters of chapters 2–3 are the exception
+#: that costs). EPISTLE is Romans through Jude (6–26).
+NARRATIVE, EPISTLE = "narrative", "epistle"
+GENRE: dict[int, str] = ({b: NARRATIVE for b in range(1, 6)}
+                         | {b: EPISTLE for b in range(6, 27)}
+                         | {27: NARRATIVE})
 
 
 class _SentenceMarks(NamedTuple):
@@ -1060,7 +1419,11 @@ class _SentenceMarks(NamedTuple):
 
     Reading these off the corpus (:func:`_sentence_marks`) is kept apart from
     scoring them (:func:`_seams`) so that the scorer is a pure function —
-    marks in, seams out — and can be pinned on its own."""
+    marks in, seams out — and can be pinned on its own. The last four fields
+    are not indicators by themselves: they are what a boundary needs from BOTH
+    of the sentences it stands between (RULING Q8's mood/person shift and
+    lexical-cohesion drop), so :func:`_indicators` compares them across the
+    pair rather than reading them off one sentence."""
 
     heading: bool         # a BSB pericope heading stands before its first word
     paragraph: bool       # a BSB paragraph begins at its first word
@@ -1069,25 +1432,54 @@ class _SentenceMarks(NamedTuple):
     oun: bool             # οὖν stands within its first three words
     dicendi: bool         # it INTRODUCES a speech (verbum dicendi + '·')
     english_period: bool  # the BSB closes an English sentence with it
+    epistle: bool         # it stands in an epistle (books 6–26)
+    vocative: bool        # a vocative noun/adjective in its first three words
+    dio: bool             # διό / διὰ τοῦτο in its first three words
+    scene_setter: bool    # a narrative scene-setter opens it (narrative only)
+    asyndeton: bool       # no discourse connective at its start (epistles only)
+    question: bool        # an interrogative opens it and it ends on ';'
+    first_mood: str | None    # mood of its FIRST finite verb
+    first_person: str | None  # person of its FIRST finite verb
+    imperative: bool          # any imperative finite verb in it
+    all_third: bool           # it has finite verbs and every one is 3rd person
+    content: frozenset        # its content lemmas (nouns/verbs/adjectives)
 
 
 #: THE SEAM SCORER, one entry per indicator. A sentence boundary is a seam
 #: when the indicators firing on it reach :data:`SEAM_THRESHOLD` — so adding
-#: an indicator (Open #8's vocatives, διό/διὰ τοῦτο, scene-setters, mood
-#: shifts, epistolary asyndeton, rhetorical questions) is a line here plus its
-#: detection in :func:`_sentence_marks`, and re-weighting one is a one-line
-#: change. The initial weights are the expert's own grading: headings and
-#: quotation bounds are HARD, paragraph breaks and οὖν STRONG, both of which
-#: seam on their own; the English period is the one SOFT vote, and per the
-#: ruling it is not yet a seam by itself — weight 0 until it is calibrated as
-#: a tie-breaker for the indicators still awaiting a ruling.
-SEAM_WEIGHTS: dict[str, int] = {
-    "heading": 2,         # hard — the translators' own pericope division
-    "quote_begin": 2,     # hard — direct/indirect discourse opens
-    "quote_end": 2,       # hard — the speech closes, its frame resumes
-    "paragraph": 1,       # strong — the translators' paragraphing
-    "oun": 1,             # strong — "basically always a transition"
-    "english_period": 0,  # soft — a vote, never a seam on its own
+#: an indicator is a line here plus its detection in :func:`_sentence_marks`,
+#: and re-weighting one is a one-line change.
+#:
+#: The grading is the expert's own, across both rounds. HARD (2) and STRONG
+#: (1) indicators seam on their own; SOFT ones (0.5) never do — by RULING Q12
+#: a soft signal "needs a companion indicator", and two of them are exactly
+#: that: 0.5 + 0.5 reaches the threshold, which is also the answer to how the
+#: softs combine. The b–h indicators of RULING Q8 are graded here:
+#:
+#:   * vocative — STRONG in the epistles, where "Ἀδελφοί," is how a letter
+#:     turns to its next topic; SOFT elsewhere, where a vocative is usually
+#:     just someone being addressed inside a scene;
+#:   * διό / διὰ τοῦτο — STRONG, the inferential transition οὖν also marks;
+#:   * narrative scene-setter — STRONG, and only in narrative books;
+#:   * mood/person shift, epistolary asyndeton, lexical-cohesion drop and the
+#:     English period — SOFT, each a hint that needs a second one;
+#:   * rhetorical-question opener — STRONG (a diatribe's "Τί οὖν ἐροῦμεν;"
+#:     opens a move in the argument).
+SEAM_WEIGHTS: dict[str, float] = {
+    "heading": 2,            # hard — the translators' own pericope division
+    "quote_begin": 2,        # hard — direct/indirect discourse opens
+    "quote_end": 2,          # hard — the speech closes, its frame resumes
+    "paragraph": 1,          # strong — the translators' paragraphing
+    "oun": 1,                # strong — "basically always a transition"
+    "dio": 1,                # strong — Q8(c), the inferential transition
+    "scene_setter": 1,       # strong — Q8(d), narrative books only
+    "question": 1,           # strong — Q8(g), a rhetorical-question opener
+    "vocative": 1,           # strong — Q8(b), in the EPISTLES
+    "vocative_soft": 0.5,    # soft  — Q8(b), the same signal elsewhere
+    "mood_shift": 0.5,       # soft  — Q8(e), imperative or person shift
+    "asyndeton": 0.5,        # soft  — Q8(f), epistles only
+    "cohesion": 0.5,         # soft  — Q8(h), no shared content lemma
+    "english_period": 0.5,   # soft  — Q12, no longer a seam on its own
 }
 SEAM_THRESHOLD = 1
 
@@ -1098,7 +1490,8 @@ def _english_period(words, index: int) -> bool:
     signal is read at VERSE granularity from the BSB verse text: true when the
     sentence ends on the last word of its verse and that verse's English ends
     on a full stop. Coarser than the design's "English sentence period", which
-    is why it is the indicator carrying weight 0."""
+    is part of why it is a SOFT indicator (RULING Q12: weight 0.5, never a
+    seam alone, but it combines with the other softs)."""
     word = words[index]
     verse = (word.book, word.chapter, word.verse)
     if index + 1 < len(words):
@@ -1109,7 +1502,7 @@ def _english_period(words, index: int) -> bool:
     return text.rstrip().rstrip("”\"’')]").endswith(".")
 
 
-def _dicendi_sentence(segs: Sequence, words) -> bool:
+def _dicendi_sentence(segs: Sequence, words, nxt: Sequence | None = None) -> bool:
     """Does this sentence INTRODUCE a speech?
 
     The existing dicendi machinery, read over a whole sentence: it closes on
@@ -1118,13 +1511,96 @@ def _dicendi_sentence(segs: Sequence, words) -> bool:
     test, widened from the last WORD to the last SEGMENT so that Matt 3:7's
     "εἶπεν αὐτοῖς·" and Matt 3:3's "λέγοντος·" both count). λέγων/λέγοντες
     need no branch of their own: λέγω is a verbum dicendi, so a λέγων segment
-    closing on '·' is already a hit."""
+    closing on '·' is already a hit — and since RULING Q11(a) so is Matt 3:3's
+    "Φωνὴ βοῶντος ἐν τῇ ἐρήμῳ·".
+
+    RULING Q11(b) — THE ELIDED SPEECH VERB. Greek can drop the verb of saying
+    outright: Acts 2:38's "Πέτρος δὲ πρὸς αὐτούς·" is "And Peter [said] to
+    them". Such a sentence ends on the raised dot and has NO FINITE VERB AT
+    ALL, which is the signal — but only half of it, because a verbless clause
+    is not evidence of speech by itself. The ruling supplies the other half:
+    it counts ONLY WHEN DIRECT SPEECH FOLLOWS, i.e. when the NEXT sentence
+    (``nxt``) carries a BSB quotation-open mark. With no next sentence to
+    hand, the elided case simply does not fire."""
     if not _closes_on_raised_dot(words[segs[-1].end]):
         return False
-    return _has_lemma(segs[-1], words, VERBA_DICENDI)
+    if _has_lemma(segs[-1], words, VERBA_DICENDI):
+        return True
+    if nxt is None:
+        return False
+    if any(w.is_finite_verb for s in segs for w in _seg_words(s, words)):
+        return False
+    return any(marks_for(i).quote_opens
+               for i in range(nxt[0].start, nxt[-1].end + 1))
 
 
-def _sentence_marks(segs: Sequence, words) -> _SentenceMarks:
+def _vocative_opening(head) -> bool:
+    """RULING Q8(b): a vocative in the sentence's first three words — "Ἀδελφοί
+    μου, …", "Ὦ ἀνόητοι Γαλάται, …". MorphGNT writes the case as 'V' in the
+    fifth parsing position (verified against James 1:2's ἀδελφοί); adjectives
+    count with nouns, since the epistles address their readers as often with
+    Ἀγαπητοί as with Ἀδελφοί."""
+    return any(w.case == "V" and w.pos in ("N-", "A-") for w in head)
+
+
+def _dio_opening(lemmas: Sequence[str]) -> bool:
+    """RULING Q8(c): διό, or διὰ τοῦτο, in the first three words — the same
+    detection style as οὖν, since these too can sit behind a postpositive."""
+    if DIO in lemmas:
+        return True
+    return any(a == DIA and b == HOUTOS for a, b in zip(lemmas, lemmas[1:]))
+
+
+def _scene_setter(segs: Sequence, words, lemmas: Sequence[str]) -> bool:
+    """RULING Q8(d): a NARRATIVE scene-setter opens the sentence — the formulae
+    that move a Gospel or Acts to a new scene:
+
+      μετὰ ταῦτα / μετὰ δὲ ταῦτα · ἐν ἐκείναις ταῖς ἡμέραις (either order) ·
+      καὶ ἐγένετο / ἐγένετο δέ · τότε
+
+    … or the sentence opens with a GENITIVE ABSOLUTE, the participial way of
+    setting a scene ("Ταῦτα αὐτοῦ λαλοῦντος …"). That last one reuses the
+    participle chart's own detector (:func:`_genitive_absolute`) on the
+    sentence's first segment, which is exactly where such a construction
+    stands."""
+    if lemmas[:1] == [TOTE]:
+        return True
+    if lemmas[:1] == [META] and HOUTOS in lemmas[1:3]:
+        return True
+    if lemmas[:1] == [EN] and EKEINOS in lemmas[1:5] and HEMERA in lemmas[1:5]:
+        return True
+    if lemmas[:2] == [KAI, GINOMAI] or lemmas[:2] == [GINOMAI, DE_L]:
+        return True
+    first = segs[0]
+    if first.opener is not None and first.opener.kind == "ptcp":
+        ptcp = _segment_participle(first, words)
+        if ptcp is not None and _genitive_absolute(first, words, ptcp):
+            return True
+    return False
+
+
+def _question_opening(segs: Sequence, words, lemmas: Sequence[str]) -> bool:
+    """RULING Q8(g): a rhetorical-question opener — the sentence ENDS on the
+    Greek question mark and BEGINS with an interrogative in its first two
+    words ("Τί οὖν ἐροῦμεν;", "διὰ τί;"). Both halves are required: the
+    question mark alone catches every ordinary question inside a dialogue."""
+    last = words[segs[-1].end].text.rstrip().rstrip(TRAILING_CLOSERS)
+    return last.endswith(";") and any(w in INTERROGATIVE for w in lemmas[:2])
+
+
+def _content_lemmas(segs: Sequence, words) -> frozenset:
+    """RULING Q8(h): the sentence's content vocabulary — the lemmas of its
+    nouns, verbs and adjectives, minus the connective tables'. Computed ONCE
+    per sentence and intersected at the boundary, which is what keeps the
+    cohesion test cheap."""
+    return frozenset(
+        _L(w.lemma)
+        for s in segs for w in _seg_words(s, words)
+        if w.pos in _CONTENT_POS and _L(w.lemma) not in _CONNECTIVE_LEMMAS)
+
+
+def _sentence_marks(segs: Sequence, words,
+                    nxt: Sequence | None = None) -> _SentenceMarks:
     """Read one sentence's seam indicators off the corpus.
 
     Heading and paragraph are asked of the sentence's FIRST WORD (a section a
@@ -1134,7 +1610,14 @@ def _sentence_marks(segs: Sequence, words) -> _SentenceMarks:
     dicendi opener and all. Quote REOPENS inside a long speech are recorded as
     opens like any other (see da/corpus/structure.py), so they too begin a
     section; in practice they sit at paragraph starts, which are seams
-    anyway."""
+    anyway. ``nxt`` is the FOLLOWING sentence's segments, which only the
+    elided-speech-verb test needs (:func:`_dicendi_sentence`, RULING Q11(b)).
+
+    THE GENRE-SENSITIVE INDICATORS are switched off here rather than in the
+    scorer: a scene-setter is not an indicator at all outside narrative, and
+    asyndeton is not one outside the epistles (:data:`GENRE`). The vocative is
+    the one that fires in both genres at different strengths, so it is the
+    scorer that grades it, off the ``epistle`` flag."""
     start, end = segs[0].start, segs[-1].end
     first = marks_for(start)
     opens = closes = False
@@ -1142,6 +1625,10 @@ def _sentence_marks(segs: Sequence, words) -> _SentenceMarks:
         mark = marks_for(i)
         opens = opens or mark.quote_opens
         closes = closes or mark.quote_closes
+    head = words[start:min(end, start + 2) + 1]      # the first three words
+    lemmas = [_L(w.lemma) for w in words[start:min(end, start + 4) + 1]]
+    finite = [w for s in segs for w in _seg_words(s, words) if w.is_finite_verb]
+    genre = GENRE.get(words[start].book)
     return _SentenceMarks(
         heading=first.heading is not None,
         paragraph=first.paragraph,
@@ -1150,15 +1637,29 @@ def _sentence_marks(segs: Sequence, words) -> _SentenceMarks:
         # "Sentence-initial οὖν, or postpositive οὖν in the first three
         # words" — οὖν is a postpositive, so it is the position of its clause
         # that matters, not of the particle.
-        oun=any(_L(w.lemma) == OUN for w in words[start:min(end, start + 2) + 1]),
-        dicendi=_dicendi_sentence(segs, words),
+        oun=any(_L(w.lemma) == OUN for w in head),
+        dicendi=_dicendi_sentence(segs, words, nxt),
         english_period=_english_period(words, end),
+        epistle=genre == EPISTLE,
+        vocative=_vocative_opening(head),
+        dio=_dio_opening(lemmas[:3]),
+        scene_setter=(genre == NARRATIVE
+                      and _scene_setter(segs, words, lemmas)),
+        asyndeton=(genre == EPISTLE
+                   and _sentence_connective(segs, words) is None),
+        question=_question_opening(segs, words, lemmas),
+        first_mood=finite[0].mood if finite else None,
+        first_person=finite[0].person if finite else None,
+        imperative=any(w.mood == "D" for w in finite),
+        all_third=bool(finite) and all(w.person == "3" for w in finite),
+        content=_content_lemmas(segs, words),
     )
 
 
 def _indicators(marks: Sequence[_SentenceMarks], i: int) -> tuple[str, ...]:
     """The indicators firing at the boundary BEFORE sentence ``i``. Openers
-    are read off the new sentence, closers off the one it follows."""
+    are read off the new sentence, closers off the one it follows — and the
+    two RELATIONAL indicators (RULING Q8(e), Q8(h)) off the pair."""
     here, before = marks[i], marks[i - 1]
     fired: list[str] = []
     if here.heading:
@@ -1171,12 +1672,32 @@ def _indicators(marks: Sequence[_SentenceMarks], i: int) -> tuple[str, ...]:
         fired.append("paragraph")
     if here.oun:
         fired.append("oun")
+    if here.dio:
+        fired.append("dio")
+    if here.scene_setter:
+        fired.append("scene_setter")
+    if here.question:
+        fired.append("question")
+    if here.vocative:
+        fired.append("vocative" if here.epistle else "vocative_soft")
+    # Q8(e): the writer turns to address the reader — an imperative where the
+    # previous sentence had none, or a SUSTAINED person shift (everything
+    # third person, then a second-person verb).
+    if ((here.first_mood == "D" and not before.imperative)
+            or (before.all_third and here.first_person == "2")):
+        fired.append("mood_shift")
+    if here.asyndeton:
+        fired.append("asyndeton")
+    # Q8(h): not one content lemma in common. Only measurable when both
+    # sentences have content words at all.
+    if here.content and before.content and not (here.content & before.content):
+        fired.append("cohesion")
     if before.english_period:
         fired.append("english_period")
     return tuple(fired)
 
 
-def _seam_score(fired: Iterable[str]) -> int:
+def _seam_score(fired: Iterable[str]) -> float:
     return sum(SEAM_WEIGHTS[name] for name in fired)
 
 
@@ -1210,38 +1731,52 @@ def _section_bounds(count: int, seams: Sequence[int]) -> list[tuple[int, int]]:
     return [(lo, hi - 1) for lo, hi in zip(starts, starts[1:] + [count])]
 
 
-#: What it takes for a because-span to count as DEVELOPED (step 3): the
-#: expert's "at least one coordinate relation or a Fact–Interpretation".
-_DEVELOPED_CODES = COORDINATE_CODES | {"FtIn"}
+def _causal_hoti_sentence(segs: Sequence, words) -> bool:
+    """Does this sentence carry a CAUSAL ὅτι — a ὅτι clause the classifier
+    reads as Ground (RULING Q10)?
 
-
-def _develops(node: dict) -> bool:
-    """Does this packet develop — is there a coordinate (Ser/Prog/Alt) or a
-    Fact–Interpretation bracket anywhere inside it?"""
-    if node["kind"] != "bracket":
-        return False
-    return (node["rel"] in _DEVELOPED_CODES
-            or any(_develops(child) for child in node["children"]))
+    Asked of the SEGMENTS rather than of the folded packet, because a bracket
+    does not record which trigger produced it: the same ``_dependent_call``
+    the assembly runs is asked again for each ὅτι segment, so the answer is
+    the fold's own — cue, dicendi look-back and all."""
+    for j, seg in enumerate(segs):
+        op = seg.opener
+        if op is None or op.kind != "sub_conj" or _L(op.lemma) not in HOTI:
+            continue
+        call = _dependent_call(seg, j, segs, words, precedes=(j == 0))
+        if call is not None and call[0] == "Grnd":
+            return True
+    return False
 
 
 def _promoted(bounds: Sequence[tuple[int, int]], packets: Sequence[_Packet],
               words) -> list[tuple[int, int]]:
     """The promotion pass — the one structure-dependent indicator.
 
-    A "because" join made at the SENTENCE level (a Ground from
-    :func:`_sentence_join`; in practice γάρ, since a causal ὅτι is a
-    subordinator and never reaches the inter-sentence table) whose support
-    DEVELOPS is not a supporting clause but a section: the ground's block is
-    cut out as its own section and both sides are re-folded. The block is the
-    because-sentence plus the Ser-joined sentences that continue it — exactly
-    the run the fold would hang off it — and it qualifies when that run's own
-    packet holds a coordinate or a Fact–Interpretation.
+    A "because" whose support DEVELOPS ACROSS SENTENCES is not a supporting
+    clause but a section: its block is cut out as its own section and both
+    sides are re-folded. The block is the because-sentence plus the sentences
+    the fold would Ser-chain onto it — exactly the run that hangs off it —
+    and BOTH its ends become seams.
 
-    "That run develops" needs no fold to answer: a run of MORE THAN ONE
-    sentence always does, because the Ser joining them is itself coordinate, so
-    only the single-sentence case has to look inside — ``end > i or
-    _develops(packets[i].node)``. (Folding a throwaway probe per candidate made
-    this quadratic in the run length for no extra information.)
+    TWO KINDS OF BECAUSE QUALIFY (RULING Q10):
+
+      * a Ground made at the SENTENCE level by :func:`_sentence_join` — in
+        practice γάρ, the only "because" that reaches the inter-sentence table;
+      * a CAUSAL ὅτι inside the sentence (:func:`_causal_hoti_sentence`). Its
+        ground runs to the sentence's end by construction: a ὅτι clause is
+        subordinate, and :func:`_edge_join` descends the right edge, so every
+        coordinate clause after it lands INSIDE the ground. The sentences
+        Ser-chained after that sentence therefore continue that same ground,
+        which is what makes the block one developed support.
+
+    THE DEVELOPMENT MUST CROSS A SENTENCE BOUNDARY (RULING Q10 again). The
+    first implementation also promoted a single sentence whose own packet held
+    a coordinate or a Ft/In, which in argumentative prose is nearly every γάρ
+    (a Pauline ground almost always coordinates something), and Romans 8 came
+    out in 20 sections. The ruling replaces that test with ``end > i``: mere
+    within-sentence coordination is not a section, a because-block that runs
+    on into the next sentence is.
 
     One level is enough: the promoted sections are not re-examined."""
     out: list[tuple[int, int]] = []
@@ -1250,16 +1785,20 @@ def _promoted(bounds: Sequence[tuple[int, int]], packets: Sequence[_Packet],
             i: _sentence_join(packets[i - 1].closing, packets[i].opening, words)[0]
             for i in range(lo + 1, hi + 1)
         }
+        hoti = {i: _causal_hoti_sentence(packets[i].opening, words)
+                for i in range(lo, hi + 1)}
         cuts: set[int] = set()
-        for i in range(lo + 1, hi + 1):
-            if rels[i] != "Grnd":
+        for i in range(lo, hi + 1):
+            because = (i > lo and rels[i] == "Grnd") or hoti[i]
+            if not because:
                 continue
             end = i
             while end + 1 <= hi and rels[end + 1] == "Ser":
                 end += 1
-            if not (end > i or _develops(packets[i].node)):
-                continue
-            cuts.add(i)                     # the because-block opens here
+            if end == i:
+                continue                    # within one sentence: not a section
+            if i > lo:
+                cuts.add(i)                 # the because-block opens here
             if end + 1 <= hi:
                 cuts.add(end + 1)           # … and closes here
         starts = [lo] + sorted(cuts)
@@ -1269,8 +1808,13 @@ def _promoted(bounds: Sequence[tuple[int, int]], packets: Sequence[_Packet],
 
 def _sections(packets: Sequence[_Packet], words) -> list[tuple[int, int]]:
     """The passage's sections as inclusive sentence runs: seam detection over
-    the surface marks, then the promotion pass."""
-    marks = [_sentence_marks(p.opening, words) for p in packets]
+    the surface marks, then the promotion pass. Each sentence's marks are read
+    with the FOLLOWING sentence to hand, which RULING Q11(b)'s elided speech
+    verb needs (does direct speech actually follow?)."""
+    marks = [_sentence_marks(p.opening, words,
+                             packets[i + 1].opening if i + 1 < len(packets)
+                             else None)
+             for i, p in enumerate(packets)]
     return _promoted(_section_bounds(len(packets), _seams(marks)), packets, words)
 
 
@@ -1371,6 +1915,68 @@ def _sentences(segments: Sequence) -> list[list[tuple[int, "Segment"]]]:
         else:
             sentences.append([(gi, seg)])
     return sentences
+
+
+def build_text_flow(segments: Sequence["Segment"], words=None) -> dict:
+    """The passage as a TEXT FLOW — the document's optional ``textFlow``
+    (docs/DESIGN.md §3), derived from the very same assembly the classifier
+    runs (:func:`_assemble_sentence` + :class:`_IndentRecorder`).
+
+    ONE LINE PER SEGMENT, so the flow's lines are the analysis's own clause
+    division and are contiguous by construction (the segments tile the range).
+    The indents follow the course's rules — independent clauses flush,
+    dependent clauses one step under what they modify, coordinated clauses
+    level with what they coordinate with — as :class:`_IndentRecorder`
+    documents them.
+
+    SPEECH is the one join that carries an indent ACROSS a sentence break.
+    Inter-sentence relations are discourse-logical, and the Text Flow is
+    grammatical, so they never indent — but a quotation is not a relation
+    between two sentences, it is the OBJECT of the verb that introduced it. The
+    raised dot that opens a quotation is a Greek sentence end, so a speech
+    would otherwise fall back to the margin; instead the sentences of the
+    speech start one step under the dicendi clause (:func:`_dicendi_sentence`),
+    exactly as the PDF's Matt 8:25 draws Κύριε, σῶσον two steps in, under
+    λέγοντες, under ἤγειραν. Only the sentence DIRECTLY after the introduction
+    is placed this way: where a speech runs on for further sentences the flow
+    returns to the margin (Matt 8:29's ἦλθες ὧδε πρὸ καιροῦ, which the PDF
+    keeps at the speech's depth — see the goldens).
+
+    ``embedded`` ranges come straight from the segments (interrupting relative
+    clauses the segmenter kept in place) and are set off with parentheses, the
+    PDF's first-choice mark.
+    """
+    if not segments:
+        raise ValueError("build_text_flow needs at least one segment")
+    if words is None:
+        words = load_words()
+
+    indents: dict[int, int] = {}
+    base = 0
+    groups = _sentences(segments)
+    for k, group in enumerate(groups):
+        segs = [s for _, s in group]
+        recorder = _IndentRecorder(base)
+        _assemble_sentence(group, segs, words, recorder=recorder)
+        indents.update(recorder.indents)
+        # The next sentence is passed for the same reason the sectioning
+        # passes it (RULING Q11(b)): an ELIDED speech verb only introduces a
+        # speech when direct speech actually follows — and when it does, its
+        # speech indents under it exactly as "εἶπεν αὐτοῖς·" would.
+        nxt = [s for _, s in groups[k + 1]] if k + 1 < len(groups) else None
+        base = (min(indents[group[-1][0]] + 1, MAX_INDENT)
+                if _dicendi_sentence(segs, words, nxt) else 0)
+
+    lines: list[dict] = []
+    for gi, seg in enumerate(segments):
+        line: dict = {"start": seg.start, "end": seg.end,
+                      "indent": max(0, min(indents.get(gi, 0), MAX_INDENT))}
+        marks = [{"start": a, "end": b, "style": "paren"}
+                 for a, b in getattr(seg, "embedded", ())]
+        if marks:
+            line["embedded"] = marks
+        lines.append(line)
+    return {"lines": lines}
 
 
 def build_document(segments: list["Segment"], *,

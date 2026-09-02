@@ -176,12 +176,20 @@ IMAGE_CASES = [
 # divergences — the improvement backlog for stage 2).
 EXPECTED = {
     "1 John 1:5–7": {
-        # Missing: top-inf + alt (asyndeton between sentences folds to a flat
-        # Ser default) and the student's Adv reading of 6c (v6-adv, v6-ftin).
-        "exact": {"v5-ftin", "v5-ftin-inner", "v5-ser", "v6-cnde", "v6-ser",
-                  "v7-cnde", "v7-cmp", "v7-ser"},
+        # ALT GAINED by RULING Q1: the ἐὰν δέ of verse 7 is rendered "But if
+        # we walk in the light", so the δέ join is the Alternative the student
+        # drew between the two conditionals instead of the old Series default.
+        # (RULING Q8/Q12 puts the seam that makes it the top-level pairing:
+        # the 5→6 boundary carries asyndeton + a cohesion drop + the English
+        # period, so verse 5 is a section and verses 6–7 another.)
+        # Still missing: the student's Adv reading of 6c (v6-adv, v6-ftin).
+        "exact": {"alt", "v5-ftin", "v5-ftin-inner", "v5-ser", "v6-cnde",
+                  "v6-ser", "v7-cnde", "v7-cmp", "v7-ser"},
         # 5d-5e: student hears "and THEREFORE" (∴); the tool's καί says Ser.
-        "grouped": {"v5-inf"},
+        # top-inf: the same grouping now that the Alternative closed verses
+        # 6–7 into one packet, but the tool reads the 5→6 asyndeton as Series
+        # where the student hears the inference.
+        "grouped": {"v5-inf", "top-inf"},
     },
     "Philippians 1:9–11": {
         # ftin-9 GAINED by the expert's ἵνα conditional rule: προσεύχομαι is
@@ -325,10 +333,14 @@ def test_relationing_scorecard(filename, ref):
 MINIMAL_SCORECARD = {
     "1 John 1:5–7": {
         "kept": 13,
-        "exact": {"v5-ftin", "v5-ftin-inner", "v5-ser", "v6-cnde", "v6-ser",
-                  "v7-cnde", "v7-cmp", "v7-ser"},
+        # alt GAINED by RULING Q1 (the "but" δέ of verse 7 → Alternative), and
+        # it is sure, so it reaches minimal.
+        "exact": {"alt", "v5-ftin", "v5-ftin-inner", "v5-ser", "v6-cnde",
+                  "v6-ser", "v7-cnde", "v7-cmp", "v7-ser"},
         # 5d-5e: the student hears "and THEREFORE" (∴); the καί says Series.
-        "contradicts": {"v5-inf"},
+        # top-inf: the student's inference over the 5→6 boundary, where the
+        # tool now draws the section fold's Series over the same two packets.
+        "contradicts": {"v5-inf", "top-inf"},
     },
     "Philippians 1:9–11": {
         # Only the ἵνα content bracket: the 10b-11b tail is built out of
@@ -345,14 +357,26 @@ MINIMAL_SCORECARD = {
         "contradicts": {"wed-6"},
     },
     "Ephesians 1:13–14": {
-        # The relative clause of 13b (ἐν ᾧ καὶ πιστεύσαντες …) is the only
-        # sure join; the student's own bracket there spans different rows.
-        "kept": 1,
-        "exact": set(),
-        "contradicts": set(),
+        # 1 → 3 with RULING Q2: an apposition's Ft/In now JOINS MINIMAL, and
+        # this passage is built out of them (τὸ εὐαγγέλιον τῆς σωτηρίας ὑμῶν,
+        # ὅ ἐστιν ἀρραβὼν …). The relative clause of 13b is the third.
+        "kept": 3,
+        "exact": {"ftin-13ab"},
+        # prog: the student coordinates 13c as a Progression where the tool's
+        # apposition subordinates it — the same grouping, a different label,
+        # and now it is in minimal rather than Full alone.
+        "contradicts": {"prog"},
     },
     "Acts 2:37–41": {
-        "kept": 12,
+        # 12 → 16 across the 2026-08-29 rulings. RULING Q11(b) makes "Πέτρος
+        # δὲ πρὸς αὐτούς·" (the ELIDED speech verb of 2:38) a speech
+        # introduction, so its seam rides back over it and the speech joins as
+        # Ft/In instead of Series; RULING Q8/Q12 adds a seam before the γάρ of
+        # 2:39 (cohesion drop + English period). Five sections instead of
+        # four, so the section fold draws brackets where a flat Series chain
+        # used to run — none of which the drawing pairs, so the exact and
+        # contradicting sets are unchanged.
+        "kept": 16,
         # tmp-37 GAINED by the English cue: the BSB's "When the people heard
         # this" overrides the attendant-circumstance Series of chart rule 7.
         # ftin-40 GAINED by SECTIONING: the v40 quote seam rides back over the
