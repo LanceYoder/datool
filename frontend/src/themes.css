@@ -51,6 +51,17 @@
   --tree-dot-stroke: #8a6a18;
   --tree-muted: #b09a70;
   --tree-accent: var(--rubric);
+  /* The ring around a label is ruled in the page's own ink, thinned the way
+     a scribe thins it for a guide line — and it is filled with the vellum it
+     stands on, at a wash, so the letters sit in a cleared space rather than
+     over the grain of the leaf. */
+  --tree-labelbox: rgb(107 74 42 / 42%);
+  --tree-labelbox-fill: rgb(242 234 215 / 40%);
+  /* Aiming (§5.2): the span a dot names is washed in the leaf's own shadow —
+     a scribe's guide line, not a highlighter — and what a join would break is
+     written in the deeper madder this page keeps for its warnings, so it
+     reads apart from the rubric the tree is titled in. */
+  --tree-endangered: #8c1c14;
 }
 
 [data-theme='book'] body {
@@ -595,6 +606,15 @@
   /* Nobody fills a circle in with a pen — they scribble it, and the scribble
      is drawn over the ring (BracketLayer), so the ring itself stays empty. */
   --tree-dot-selected-fill: transparent;
+  /* A box drawn round a label is the lighter of the two passes a pen makes:
+     the letters first, the ring after, and the ruled sheet still shows
+     through it. */
+  --tree-labelbox: var(--pen-light);
+  /* Aiming (§5.2): the span a dot names is washed in the blue pen at its
+     faintest — the way a finger held under a line marks it — and what a join
+     would break is gone over in the red pen, which is the mark this desk
+     already makes for "not this". Both stay this side of the ruling. */
+  --tree-endangered: var(--red-pen);
 }
 
 [data-theme='notebook'] body {
@@ -848,6 +868,13 @@
   font-weight: 700;
 }
 
+/* Nobody draws a square box round a word in a hurry: the corners come out
+   looped, and the ring is laid on a little heavier than a ruled one. */
+[data-theme='notebook'] .label-box {
+  rx: 7;
+  stroke-width: 1.3;
+}
+
 /* ---- The analyst's blocks, as a pass of highlighter ----
    Drawn ON the ruled sheet, not under it: the rules and the red margin have
    to run straight through a block. A marker never lays down evenly either,
@@ -1035,6 +1062,15 @@
   --tree-dot-stroke: #3c424b;
   --tree-muted: #c3c7cc;
   --tree-accent: var(--slate-900);
+  /* A field around the label rather than a border on it: the lightest rule
+     in the system, filled with the ground the panel already sits on. */
+  --tree-labelbox: #dcdfe3;
+  --tree-labelbox-fill: var(--slate-100);
+  /* Aiming (§5.2): a system with no colour in it says "here" with a step of
+     grey — the span wash is the same field the label boxes stand in, one
+     shade down — and keeps its single warm ink for the one thing that is
+     actually at stake, the brackets a join would break. */
+  --tree-endangered: #8d2c22;
 }
 
 [data-theme='slate'] body {
@@ -1303,6 +1339,11 @@
   font-size: 17px;
   font-weight: 600;
   letter-spacing: 0;
+}
+
+/* Squared off, like the section stripe and everything else in this skin. */
+[data-theme='slate'] .label-box {
+  rx: 2;
 }
 
 /* ---- The analyst's blocks, quieted ----

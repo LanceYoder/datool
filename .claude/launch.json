@@ -3,8 +3,12 @@
   "configurations": [
     {
       "name": "frontend",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "/Users/lanceyoder/datool/frontend"],
+      "runtimeExecutable": "/Users/lanceyoder/.local/node22x64/bin/node",
+      "runtimeArgs": [
+        "/Users/lanceyoder/datool/frontend/node_modules/vite/bin/vite.js",
+        "--port", "5173",
+        "--config", "/Users/lanceyoder/datool/frontend/vite.config.ts"
+      ],
       "port": 5173
     }
   ]

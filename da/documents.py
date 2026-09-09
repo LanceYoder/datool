@@ -22,8 +22,10 @@ The document shape (see docs/DESIGN.md §3, §7):
                            "style": "paren" | "bracket"}, ...]?}
 
     node := {"kind": "prop", "ref": str}
-          | {"kind": "bracket", "rel": str, "prominent": int | None,
-             "reversed": bool?, "flag": "review"?, "children": [node, ...]}
+          | {"kind": "bracket", "rel": str, "prominent": 0 | 1 | None,
+             "reversed": bool?, "flag": "review"?, "children": [node, node]}
+          | {"kind": "hole", "children": [node, ...]}   # >= 1, and only as a
+                                                       # bracket's child
 
 A document holds an ORDERED FOREST of trees, not a single tree: propositions
 the user has not connected yet stand as their own roots, and a fully connected
@@ -31,11 +33,43 @@ analysis is a forest of one. Legacy v1 documents ({"schemaVersion": 1,
 "tree": node}) are still accepted and read as a forest of one;
 :func:`normalize_document` returns the v2 shape of either.
 
+A HOLE holds units an edit left unattached — deleting one relationship inside
+a tree leaves what it held waiting there, so the structure above it survives
+(see frontend/src/editor/commands.ts). A document with a hole in it is an
+editing state, sound but unfinished: it validates, it stores, and it has no
+main point until the hole is closed. Because a hole is a WAITING ROOM and not
+structure, it is only ever a bracket's child — a root is unattached already,
+and what waits inside a hole waits together, in one hole, never nested.
+
+THE ANALYST'S RULING (tree-engine-spec.md §10 A4): "only validate the tree
+structure when there are no holes remaining". A document with rooms in it is
+work in progress and is stored as it stands, so two rules this validator used
+to enforce are gone. A hole may hold ONE unit — that is a one-lodger room,
+tick and pickup dot, the lone unit waiting, and only the analyst's own gesture
+settles it (§10 A1, A2); nothing collapses it into the slot. And a bracket may
+carry TWO holes — hanging at both ends is a legal working state (§10 A4), not a
+shell to bring down. What is checked of every document, holes or none, is what
+holes cannot affect: leaf coverage and order, the binary rule, and rel/star
+coherence.
+
+A BRACKET IS BINARY: it relates EXACTLY TWO sides, always (docs/tree-engine-
+spec.md §1, §7.6). A longer run of the same relationship is a NESTED CHAIN of
+binary brackets, not one wide bracket — Ser[Ser[a, b], c], never Ser[a, b, c].
+The three-way bracket was the shape the old editor could silently splice into
+existence, and it is now unrepresentable at every layer: the core forbids it,
+the loader refuses it, the first pass never builds one, and this validator
+rejects it. Documents written before the tightening that carry one are
+deletable (spec §9, Q2); there is no binarization path back.
+
 Invariants enforced here (mirrored client-side by the editor schema):
   * the forest is a non-empty, ordered list of roots;
-  * every bracket has >= 2 children;
-  * "prominent" is a valid child index iff the relationship is subordinate,
-    and None iff it is coordinate;
+  * every bracket has EXACTLY 2 children;
+  * every hole has >= 1 child, holds no hole of its own, and is a bracket's
+    child (never a forest root) — a hole is a WAITING ROOM, not a
+    relationship, so the binary rule is not its rule, and a bracket may hold
+    one at each end while the work is unfinished (spec §10 A4);
+  * "prominent" is 0 or 1 iff the relationship is subordinate, and None iff
+    it is coordinate;
   * the in-order leaves of the WHOLE FOREST (roots in list order) reference
     the propositions exactly once each, in list order (this is what makes
     crossing brackets unrepresentable);
@@ -194,7 +228,7 @@ def validate_document(doc, corpus_size: int | None = None) -> None:
     # In-order leaves of the whole forest, roots in list order.
     leaves: list[str] = []
     for node, where in _roots(doc, legacy, problems):
-        _walk_tree(node, where, leaves, problems)
+        _walk_tree(node, where, leaves, problems, "root")
 
     if prop_ids and leaves != prop_ids:
         used = set(leaves)
@@ -225,7 +259,12 @@ def _has_hole(node) -> bool:
     return any(_has_hole(child) for child in node.get("children", ()))
 
 
-def _walk_tree(node, where: str, leaves: list[str], problems: list[str]) -> None:
+def _walk_tree(
+    node, where: str, leaves: list[str], problems: list[str], holder: str = "bracket"
+) -> None:
+    """Collect ``node``'s leaves in order, reporting every problem found.
+    ``holder`` is what the node hangs from — "root", "bracket" or "hole" —
+    which is what says whether a hole may stand here at all."""
     if not isinstance(node, dict):
         problems.append(f"{where} must be an object")
         return
@@ -241,9 +280,12 @@ def _walk_tree(node, where: str, leaves: list[str], problems: list[str]) -> None
         relationship = RELATIONSHIPS.get(rel) if isinstance(rel, str) else None
         if relationship is None:
             problems.append(f"{where}.rel '{rel}' is not a known relationship")
+        # THE BINARY RULE: a bracket relates exactly two sides. A run of three
+        # is a nested chain — Ser[Ser[a, b], c] — so a wide bracket is not a
+        # long relationship, it is a corrupt one.
         children = node.get("children")
-        if not isinstance(children, list) or len(children) < 2:
-            problems.append(f"{where}.children must be a list of >= 2 nodes")
+        if not isinstance(children, list) or len(children) != 2:
+            problems.append(f"{where}.children must be a list of exactly 2 nodes")
             children = children if isinstance(children, list) else []
         prominent = node.get("prominent")
         if relationship is not None:
@@ -251,23 +293,40 @@ def _walk_tree(node, where: str, leaves: list[str], problems: list[str]) -> None
                 if prominent is not None:
                     problems.append(f"{where}.prominent must be null for coordinate {rel}")
             else:
-                if not isinstance(prominent, int) or not (0 <= prominent < len(children)):
+                # The star names child 0 or child 1 — the domain is FIXED by
+                # the binary rule, not read off a children list that may
+                # itself be the thing that is wrong.
+                if not isinstance(prominent, int) or isinstance(prominent, bool) \
+                        or prominent not in (0, 1):
                     problems.append(f"{where}.prominent must be a valid child index for {rel}")
         if "reversed" in node and not isinstance(node["reversed"], bool):
             problems.append(f"{where}.reversed must be a boolean")
         if "flag" in node and node["flag"] not in (None, "review"):
             problems.append(f"{where}.flag must be 'review' or absent")
+        # NO WAITING-ROOM COUNT. A bracket hanging at BOTH ends is a legal
+        # working state (spec §10 A4) — the analyst assembles in rooms and
+        # finishes brackets by hand, so a two-hole bracket is an unfinished
+        # claim, not a corrupt one. Full structural validation is what applies
+        # to a document with no holes left in it; everything checked here is
+        # checked of every document, because holes cannot make it false.
         for i, child in enumerate(children):
-            _walk_tree(child, f"{where}.children[{i}]", leaves, problems)
+            _walk_tree(child, f"{where}.children[{i}]", leaves, problems, "bracket")
     elif kind == "hole":
         # Units left unattached by an edit: no relationship, no star — only a
-        # place in the order until they are connected again.
+        # place in the order until they are connected again. A waiting room, so
+        # it only makes sense in a bracket's slot. ONE unit in it is a room too
+        # (spec §10 A1) — the analyst has assembled the group and has not yet
+        # said it is finished — so the only count that is wrong is none at all.
+        if holder == "root":
+            problems.append(f"{where} cannot be a forest root: roots are unattached")
+        elif holder == "hole":
+            problems.append(f"{where} cannot hold another hole: what waits, waits together")
         children = node.get("children")
-        if not isinstance(children, list) or not children:
+        if not isinstance(children, list) or len(children) < 1:
             problems.append(f"{where}.children must be a list of >= 1 node")
             children = children if isinstance(children, list) else []
         for i, child in enumerate(children):
-            _walk_tree(child, f"{where}.children[{i}]", leaves, problems)
+            _walk_tree(child, f"{where}.children[{i}]", leaves, problems, "hole")
     else:
         problems.append(f"{where}.kind must be 'prop', 'bracket' or 'hole'")
 

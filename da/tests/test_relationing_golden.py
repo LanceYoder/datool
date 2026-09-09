@@ -332,15 +332,19 @@ def test_relationing_scorecard(filename, ref):
 # does not pair (usually because the tool's segmentation differs there).
 MINIMAL_SCORECARD = {
     "1 John 1:5–7": {
-        "kept": 13,
+        # 12, was 13: the asyndetic 5→6 Series left minimal (user ruling,
+        # 2026-08-29 — the no-connective fallback carries no evidence), so
+        # the top join over the two packets is Full-only now.
+        "kept": 12,
         # alt GAINED by RULING Q1 (the "but" δέ of verse 7 → Alternative), and
         # it is sure, so it reaches minimal.
         "exact": {"alt", "v5-ftin", "v5-ftin-inner", "v5-ser", "v6-cnde",
                   "v6-ser", "v7-cnde", "v7-cmp", "v7-ser"},
         # 5d-5e: the student hears "and THEREFORE" (∴); the καί says Series.
-        # top-inf: the student's inference over the 5→6 boundary, where the
-        # tool now draws the section fold's Series over the same two packets.
-        "contradicts": {"v5-inf", "top-inf"},
+        # top-inf no longer appears: minimal draws NOTHING over the 5→6
+        # boundary, so the student's inference there is unpaired rather
+        # than contradicted.
+        "contradicts": {"v5-inf"},
     },
     "Philippians 1:9–11": {
         # Only the ἵνα content bracket: the 10b-11b tail is built out of

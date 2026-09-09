@@ -66,6 +66,15 @@ DESIGN.md §5 (the first pass).
 
 ## Decided
 
+- **The no-connective (asyndeton) fallback is OUT of minimal** (user ruling,
+  2026-08-29): a sentence opening with no connective carries no positive
+  evidence for a join — not even that it is a Series — so the Series guess
+  is Full-only and minimal leaves the boundary open. (καί/δέ → Series stay
+  in minimal: "and" is real evidence, per the earlier ruling. The
+  dangling-hold sentences of Open #2 ride this fallback, so they also left
+  minimal.) Whether FULL's asyndeton guess should be something other than
+  Series remains askable.
+
 Rulings of 2026-08-29 (the expert's answers to questions 1-12 as sent):
 
 - **Contrastive "but" (Q1)** -> the default for BOTH is Alternative: bare

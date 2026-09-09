@@ -208,7 +208,13 @@ export default function AnalysisPage() {
   const print = () => {
     const shell = document.querySelector<HTMLElement>('.editor-shell');
     if (shell !== null) {
-      const scale = Math.min(1, PRINT_WIDTH_PX / Math.max(1, shell.scrollWidth));
+      // The tree may be scrolled inside its viewport, and what is scrolled out
+      // of sight is clipped out of the shell's own scrollWidth. Paper opens
+      // that margin back up (see @media print), so the width to fit is the
+      // shell's plus everything the viewport is holding off screen.
+      const tree = shell.querySelector<HTMLElement>('.tree-viewport');
+      const hidden = tree === null ? 0 : Math.max(0, tree.scrollWidth - tree.clientWidth);
+      const scale = Math.min(1, PRINT_WIDTH_PX / Math.max(1, shell.scrollWidth + hidden));
       shell.style.setProperty('--print-scale', scale.toFixed(3));
     }
     window.print();

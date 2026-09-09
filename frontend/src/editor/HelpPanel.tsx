@@ -13,6 +13,10 @@ const COLUMNS: { what: string; how: string }[][] = [
   [
     { what: 'Connect two units', how: 'Click a dot, then click an adjacent one' },
     {
+      what: 'Finish a connection',
+      how: 'Click the loose end’s dot, then the group waiting on it',
+    },
+    {
       what: 'Label the connection',
       how: 'Click the bracket’s letters. You may type a key as a shortcut',
     },

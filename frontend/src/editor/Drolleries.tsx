@@ -5,12 +5,126 @@
 //
 // Three people and a goose, which is about the right proportion for a margin.
 //
-// Each is drawn in a 24×24 box standing on y=24, so BracketLayer places one by
+// Each is drawn in a 24×24 box standing on y=24, so a perch is placed by
 // putting that baseline on the line it is to stand on. They are decoration and
 // nothing else: the whole layer is inert, and no gesture ever reaches them.
+//
+// And because they are decoration, they YIELD. A drollery is offered a perch
+// only where the margin is genuinely empty — clear of every label box, every
+// star and every dot, with no spine or tick struck through it (layout.ts:
+// marginInk / isClearOfInk). A bracket whose corners are both busy simply goes
+// without one; a bird drawn over a star is not marginalia, it is a mistake.
+
+import type { BracketGeom, MarginInk, Rect } from './layout';
+import { isClearOfInk } from './layout';
 
 /** How many figures there are to choose between. */
 export const DROLLERY_COUNT = 4;
+
+/** The box each figure is drawn in, standing on the bottom of it. */
+export const DROLLERY_W = 24;
+export const DROLLERY_H = 24;
+
+/**
+ * How far a drollery's back stands off the spine it perches against. More
+ * than ORNAMENT_CLEAR, so that a figure's own spine — the one line it is
+ * meant to lean on — never reads as crowding it.
+ */
+export const DROLLERY_INSET = 6;
+
+/** A placed figure: which one, where its 24×24 box goes, and which way it faces. */
+export interface Perch {
+  key: string;
+  which: number;
+  facingLeft: boolean;
+  /** Top-left of the 24×24 box. */
+  x: number;
+  y: number;
+}
+
+/**
+ * A stable hash of a point into [0, 1). Used to decide which of the margin's
+ * creatures a bracket gets and whether it gets one at all: a plain weighted
+ * sum will not do, because the columns are a fixed width apart and the rows a
+ * fixed height, so any linear seed lands on the same few residues and every
+ * bracket in the tree comes out holding the same snail.
+ */
+function hash01(x: number, y: number, salt: number): number {
+  const v = Math.sin(x * 12.9898 + y * 78.233 + salt * 37.719) * 43758.5453;
+  return v - Math.floor(v);
+}
+
+/** The 24×24 box a figure would take, standing with its feet on `foot`. */
+function boxAt(spineX: number, foot: number): Rect {
+  return {
+    x: spineX - DROLLERY_INSET - DROLLERY_W,
+    y: foot - DROLLERY_H,
+    width: DROLLERY_W,
+    height: DROLLERY_H,
+  };
+}
+
+/**
+ * Where this tree's drolleries go.
+ *
+ * Roughly every third bracket is OFFERED one — placed from the bracket's own
+ * position, not its index, so a bracket keeps its own creature for as long as
+ * it stays put. The offer is then taken only if a perch is free: the top
+ * corner first, the bottom corner second, and otherwise not at all.
+ *
+ * Both perches stand in the lane LEFT of the spine, which is the lane a
+ * coordinate bracket writes its label in — so a bracket that has written
+ * there, or whose neighbour's star reaches across, keeps its margin and loses
+ * its bird. That is the right way round.
+ */
+export function drolleryPerches(
+  brackets: readonly BracketGeom[],
+  ink: MarginInk,
+): Perch[] {
+  const out: Perch[] = [];
+  for (const b of brackets) {
+    if (hash01(b.x, b.top, 1) >= 0.34) continue;
+    const box = [boxAt(b.x, b.top), boxAt(b.x, b.bottom)].find((candidate) =>
+      isClearOfInk(candidate, ink),
+    );
+    if (box === undefined) continue;
+    out.push({
+      key: `drollery-${b.bracketId}`,
+      which: Math.min(
+        DROLLERY_COUNT - 1,
+        Math.floor(hash01(b.x, b.top, 2) * DROLLERY_COUNT),
+      ),
+      facingLeft: hash01(b.x, b.top, 3) < 0.5,
+      x: box.x,
+      y: box.y,
+    });
+  }
+  return out;
+}
+
+/**
+ * The margin's creatures, drawn. Inert, like the spines they stand on.
+ *
+ * Mirroring about the local origin walks the box into negative x, so the
+ * translate that follows puts it back in the same lane.
+ */
+export function DrolleryLayer({ perches }: { perches: readonly Perch[] }) {
+  return (
+    <g className="drollery-layer" pointerEvents="none">
+      {perches.map((p) => (
+        <use
+          key={p.key}
+          href={`#datool-drollery-${p.which}`}
+          transform={
+            p.facingLeft
+              ? `translate(${(p.x + DROLLERY_W).toFixed(1)}, ${p.y.toFixed(1)}) scale(-1,1)`
+              : `translate(${p.x.toFixed(1)}, ${p.y.toFixed(1)})`
+          }
+        />
+      ))}
+    </g>
+  );
+}
 
 const CORAL = '#d98070';
 const CORAL_DARK = '#ad5847';

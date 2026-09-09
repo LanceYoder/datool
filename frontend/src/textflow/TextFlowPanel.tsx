@@ -182,16 +182,25 @@ export default function TextFlowPanel({
   /**
    * Right-click divides, exactly as it does in the tree: after this word, or —
    * on the line's last word, where there is nothing left to divide — into the
-   * line below. The passage's final word can do neither. The division itself
-   * belongs to the propositions, so it is made there and returns as a flow.
+   * line below. The division itself belongs to the PROPOSITIONS, so it is made
+   * there (the editor's own commands, through AnalysisPage) and returns here
+   * as a new flow.
+   *
+   * Which of the two gestures a word offers is this panel's business — it is
+   * the shape of the line under the pointer, and nothing else knows it. WHETHER
+   * the gesture can be made is not: that is §5.4 and §5.5, and the engine is
+   * the judge (§7.9). So the passage's final word attempts its merge like any
+   * other word and the command declines it — `mergeBelow` finds no proposition
+   * below and dispatches nothing, exactly as the core refuses "nothing follows
+   * this to merge it with". This used to be pre-filtered here with a second
+   * copy of that rule; two judges of one question is how the two views drift.
    */
   const onWordContextMenu = (wordIndex: number) => {
     close();
-    const lineIdx = lineIndexOf(flow, wordIndex);
-    const line = flow.lines[lineIdx];
-    if (line === undefined) return;
+    const line = flow.lines[lineIndexOf(flow, wordIndex)];
+    if (line === undefined) return; // the word is on no line: no gesture at all
     if (wordIndex !== line.end) onSplitWord?.(wordIndex);
-    else if (lineIdx < flow.lines.length - 1) onMergeAfterLine?.(wordIndex);
+    else onMergeAfterLine?.(wordIndex);
   };
 
   // ---- The lines ----------------------------------------------------------

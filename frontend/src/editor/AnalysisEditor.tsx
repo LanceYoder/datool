@@ -7,12 +7,19 @@
 //
 //   click a word          word-info popover (lemma, morphology, gloss) with
 //                         "Split after" -> splitProposition when splittable
+//   hover a dot           nothing is marked (§10 A6: the span wash is gone);
+//                         with another dot already armed, the aim previews the
+//                         join through core previewConnect and marks every
+//                         bracket it would break
 //   click a dot           select that dot (EVERY dot is clickable, connected
 //                         or not — reconnecting dissolves the old connection);
 //                         clicking the selected dot again unselects it
-//   click a second dot    connectUnits(first, second) -> the relationship menu
-//                         opens on the new bracket; a rejected pair shakes and
-//                         keeps the first selection
+//   click a second dot    connectUnits(first, second) -> a Ser, and the
+//                         relationship menu opens PRELOADED on it (§10 A5); a
+//                         rejected pair shakes, says nothing, and keeps the
+//                         first selection
+//   a pickup dot + its    settleHang -> the room is finished and the bracket
+//   room's sole lodger    is whole (§10 A2): one undo step, no menu
 //   click a label         the relationship menu: all 18 relationships grouped
 //                         by family, each with its key and its definition
 //   click a star          flipStar (the labels follow the star)
@@ -49,51 +56,51 @@ import type {
   CorpusWord,
   Document as AnalysisDocument,
   TaxonomyEntry,
-  TreeNode,
   VerseText,
 } from '../types';
+import type { Forest, Side } from '../tree/core';
+import { bracketById, leafOrder, previewConnect, settleTargetFor } from '../tree/core';
 import { errorMessages, getCorpusVerses, getCorpusWords, getTaxonomy } from '../api';
-import { buildTextById, displayWordText, documentToNode, nodeToDocument } from './convert';
+import { buildTextById, displayWordText, documentToNode, trySnapshot } from './convert';
 import { editorExtensions } from './editor';
-import { EditorProposition } from './schema';
+import { EditorProposition, readTree } from './schema';
 import {
   addSectionBreak,
   clearConnections,
   connectUnits,
-  deleteRelationship,
-  findBrackets,
-  findHoles,
-  findPropositionPos,
+  deleteAt,
   flipStar,
   keepPageScroll,
   mergeBelow,
   removeSectionBreak,
   sectionBreaks,
   setRelationship,
+  settleHang,
+  settleLodger,
   splitProposition,
 } from './commands';
 import {
   COL_W,
-  LABEL_GUTTER,
-  STUB_W,
-  computeColumns,
-  fitsWidth,
+  bracketWidth,
   layoutBrackets,
   layoutDots,
-  leafRefs,
+  treeViewportWidth,
 } from './layout';
-import type { DotGeom, RowBox } from './layout';
+import type { BracketGeom, Carry, DotGeom, RowBox } from './layout';
 import {
   canSplitAfter,
   clampPopover,
+  dotAddr,
   mainPointRefs,
+  newlyAnchored,
   parseDotId,
+  pickupGesture,
   rowEnglish,
 } from './interaction';
-import type { Point } from './interaction';
+import type { DotRef, Point } from './interaction';
 import { describeParsing } from './morph';
 import BracketLayer from './BracketLayer';
-import type { PositionedBracket, ShakeState } from './BracketLayer';
+import type { AnchorState, ShakeState } from './BracketLayer';
 import RelationshipMenu from './RelationshipMenu';
 import ColorSettings from './ColorSettings';
 import SectionStrip from './SectionStrip';
@@ -125,16 +132,28 @@ const STRIP_LANE = 26;
  *  4. and always the BRACKET being labeled — if the far-left berth would sit
  *     on it, the menu moves above or below that bracket's own span; if
  *     neither has room, it stands just right of the bracket's spine instead.
+ *
+ * The menu is a child of the SHELL, so it is placed in shell coordinates,
+ * while the tree's geometry is in the overlay's own (scrollable) coordinates.
+ * `scrollLeft` is what separates the two: an overlay x is on screen at
+ * `x - scrollLeft`, and the text column begins at `overlay.viewport`.
  */
-function menuPlacement(desired: Point, geom: PositionedBracket, overlay: Overlay): Point {
-  const treeLeft = overlay.brackets.reduce((left, b) => Math.min(left, b.x), overlay.margin);
+function menuPlacement(
+  desired: Point,
+  geom: BracketGeom,
+  overlay: Overlay,
+  scrollLeft: number,
+): Point {
+  const edge = overlay.viewport;
+  const bracketX = geom.x - scrollLeft;
+  const treeLeft = overlay.brackets.reduce((left, b) => Math.min(left, b.x - scrollLeft), edge);
   const leftOfTree = treeLeft - MENU_SIZE.width - TEXT_GAP;
   if (leftOfTree >= TEXT_GAP) return { x: leftOfTree, y: desired.y };
 
   // No berth outside the tree: hug the left edge, and keep the bracket being
   // worked on out from under the menu.
-  const x = Math.min(TEXT_GAP, overlay.margin - MENU_SIZE.width - TEXT_GAP);
-  if (geom.x < x || geom.x > x + MENU_SIZE.width) return { x, y: desired.y };
+  const x = Math.min(TEXT_GAP, edge - MENU_SIZE.width - TEXT_GAP);
+  if (bracketX < x || bracketX > x + MENU_SIZE.width) return { x, y: desired.y };
 
   const above = geom.top - MENU_SIZE.height - TEXT_GAP;
   const below = geom.bottom + TEXT_GAP;
@@ -143,22 +162,30 @@ function menuPlacement(desired: Point, geom: PositionedBracket, overlay: Overlay
 
   // Nowhere above or below either: stand to the RIGHT of this bracket's
   // spine, still clear of the text.
-  const rightOfBracket = Math.min(
-    geom.x + TEXT_GAP,
-    overlay.margin - MENU_SIZE.width - TEXT_GAP,
-  );
+  const rightOfBracket = Math.min(bracketX + TEXT_GAP, edge - MENU_SIZE.width - TEXT_GAP);
   return { x: Math.max(TEXT_GAP, rightOfBracket), y: desired.y };
 }
 
 /** Clear space kept between the relationship menu and the text column. */
 const TEXT_GAP = 12;
 
-/** What the reader is told when a too-wide tree is cleared, and for how long. */
-const TOO_WIDE_MESSAGE = 'That tree was wider than this window — connections cleared.';
-const TOO_WIDE_MS = 8000;
+/**
+ * How long the shake class stays on a refused gesture's dot — a shade longer
+ * than the 360ms CSS animation, so the class outlives the run rather than
+ * cutting it short. There is no message beside it: §10 A6 — "a refused gesture
+ * SHAKES and that is all".
+ */
+const SHAKE_MS = 500;
 
-/** How long a rejected connection shakes / the message stays up. */
-const FLASH_MS = 1600;
+/**
+ * How long a bracket that a gesture just made whole keeps its emphasis (§5.2:
+ * "completion is an event, not an absence"). A shade longer than the CSS
+ * animation, so the class outlives the run rather than cutting it short.
+ */
+const ANCHOR_MS = 900;
+
+/** No brackets endangered — a shared value, so an idle aim re-arms no memo. */
+const NO_IDS: readonly number[] = [];
 
 // ---------------------------------------------------------------------------
 // Row rendering (React node view)
@@ -481,12 +508,28 @@ type PopoverState =
       splittable: boolean;
       at: Point;
     }
-  | { kind: 'menu'; pos: number; at: Point | null };
+  | {
+      kind: 'menu';
+      /** The bracket being labeled, by core id (§7.3) — never a position. */
+      bracketId: number;
+      at: Point | null;
+    };
 
 interface Overlay {
-  brackets: PositionedBracket[];
+  brackets: BracketGeom[];
   dots: DotGeom[];
+  /**
+   * The tree's NATURAL width and the x0 every bracket is laid out against:
+   * the width of the scroll container's CONTENT, which may be wider than the
+   * window can show.
+   */
   margin: number;
+  /**
+   * The tree's width ON SCREEN — the shell's left padding, where the text
+   * column begins, and the fold every skin draws. Equal to `margin` whenever
+   * the tree fits; smaller when the tree scrolls sideways inside it.
+   */
+  viewport: number;
   height: number;
   /** Every measured WHOLE row (English line included), by pid — what places
    * the color-block bands so they cover what the block background paints. */
@@ -494,10 +537,8 @@ interface Overlay {
   /** Rows as the TREE measures them (anchored to the Greek's first line):
    * what a carried end is laid out against. */
   layoutRows: ReadonlyMap<string, RowBox>;
-  /** The forest this layout drew, for re-laying it out while carrying. */
-  forest: TreeNode[];
-  /** False when the tree needs more width than the shell can give it. */
-  fits: boolean;
+  /** The core state this layout drew, for re-laying it out while carrying. */
+  forest: Forest;
 }
 
 /** ESV API license: this notice must accompany displayed ESV text. */
@@ -566,13 +607,21 @@ function EditorInner({
   actionsRef,
 }: InnerProps) {
   const [selectedDotId, setSelectedDotId] = useState<string | null>(null);
+  // The dot UNDER THE POINTER, if any — §5.2's two hover signals. On its own
+  // it highlights the span that dot names; with another dot armed it is the
+  // target the join is previewed against. It is kept beside the selection
+  // rather than inside it because hovering answers a question ("what is
+  // this?") that arming has not been asked yet.
+  const [hoverDotId, setHoverDotId] = useState<string | null>(null);
   // Where the pointer is while a dot is selected: the loose end of the
   // connection being made, drawn from the dot so the reader can see where the
   // next click would put it.
   const [pointer, setPointer] = useState<Point | null>(null);
   const [popover, setPopover] = useState<PopoverState | null>(null);
-  const [flash, setFlash] = useState<string | null>(null);
   const [shake, setShake] = useState<ShakeState | null>(null);
+  // §5.2's third signal: the brackets the last gesture made whole, held just
+  // long enough to be seen.
+  const [anchored, setAnchored] = useState<AnchorState | null>(null);
   // docTick advances on every document change, layoutTick on every measurement
   // (they are separate so re-observing rows can never feed itself).
   // Reader's display options (English line, bracket colors) — persisted per
@@ -593,23 +642,30 @@ function EditorInner({
   const [docTick, setDocTick] = useState(0);
   const [layoutTick, setLayoutTick] = useState(0);
   const shellRef = useRef<HTMLDivElement | null>(null);
+  // The tree's scrollable viewport, and how far it could scroll when its
+  // position was last anchored (see the anchoring effect).
+  const treeRef = useRef<HTMLDivElement | null>(null);
+  const anchoredW = useRef<number | null>(null);
   // The last overlay laid out from a complete set of row measurements, and
   // the rows the last measurement pass saw (see the re-measure effect).
   const lastOverlay = useRef<Overlay | null>(null);
   const measuredRows = useRef('');
   const popoverRef = useRef<HTMLDivElement | null>(null);
-  const flashTimer = useRef<number | null>(null);
+  const shakeTimer = useRef<number | null>(null);
   // onSplit is defined further down (it needs the editor); the row context is
   // built before it, so it reaches the command through this ref.
   const onSplitRef = useRef<(pid: string, ordinal: number) => void>(() => {});
-  // dotPos likewise: the preview memo runs before it is defined.
-  const dotPosRef = useRef<(id: string) => number | null>(() => null);
-  // The width check runs once per loaded document (see the effect below).
-  const widthChecked = useRef(false);
   // onDotDelete is defined further down (it needs the editor); the key handler
   // above reaches it through this ref.
   const deleteDotRef = useRef<(dotId: string) => void>(() => {});
   const shakeSeq = useRef(0);
+  // The anchoring signal's bookkeeping: the state the LAST gesture started
+  // from (what the diff is taken against), a counter that re-runs the
+  // animation when the same bracket anchors twice, and the timer that takes
+  // the emphasis back off again.
+  const priorForest = useRef<Forest | null>(null);
+  const anchorSeq = useRef(0);
+  const anchorTimer = useRef<number | null>(null);
 
   const updateView = useCallback((next: ViewSettings) => {
     setView(next);
@@ -621,10 +677,17 @@ function EditorInner({
     [taxonomy],
   );
 
+  /** What the layout asks the taxonomy: the labels, and the two facts the
+   *  DERIVED `reversed` comes from (§1's follow-on ruling). */
+  const relLookup = useCallback(
+    (rel: string) => taxonomyByCode.get(rel),
+    [taxonomyByCode],
+  );
+
   const content = useMemo(() => {
     const wordList = [...words.values()];
-    return documentToNode(baseDoc, buildTextById(baseDoc, wordList));
-  }, [baseDoc, words]);
+    return documentToNode(baseDoc, buildTextById(baseDoc, wordList), taxonomy);
+  }, [baseDoc, words, taxonomy]);
 
   const editor = useEditor(
     {
@@ -638,8 +701,21 @@ function EditorInner({
         // right after they run — those setState calls land in the same batch
         // and win.
         setSelectedDotId(null);
+        // The dot the pointer was over may not exist any more, and the span it
+        // named certainly does not: §5.2's signals are position-keyed like
+        // everything else here.
+        setHoverDotId(null);
         setPopover(null);
-        onChange(nodeToDocument(ed.state.doc, baseDoc));
+        // ONE wire snapshot per docTick (§7.4 item 4), and it goes STRAIGHT to
+        // the draft. §10 A5 retired the state that used to make this
+        // conditional: every connect mints a Ser, so there is no unlabeled
+        // bracket the wire cannot spell, no held-back snapshot, and no notice
+        // to render about it. The one remaining way to fail is a rel this
+        // taxonomy does not carry — a data mismatch, not a gesture — which is
+        // reported to the console and changes nothing on the page (A6).
+        const snapshot = trySnapshot(ed.state.doc, baseDoc, taxonomy);
+        if (snapshot.ok) onChange(snapshot.document);
+        else console.warn(`datool: this edit did not reach the draft — ${snapshot.reason.message}`);
         setDocTick((t) => t + 1);
         setLayoutTick((t) => t + 1);
       },
@@ -678,6 +754,13 @@ function EditorInner({
   useEffect(() => {
     const shell = shellRef.current;
     if (shell === null) return;
+    // ...except while a dot is armed. Then the renders are the POINTER's, one
+    // per mousemove, and the document cannot have changed under them: a
+    // connect clears the selection in the same batch that changes the
+    // document, so no gesture that adds or removes a row leaves a dot armed.
+    // Scanning every row sixty times a second to learn that nothing moved is
+    // the one cost this effect can drop without weakening what it checks.
+    if (selectedDotId !== null) return;
     const present: string[] = [];
     for (const el of shell.querySelectorAll<HTMLElement>('[data-pid]')) {
       const pid = el.dataset.pid;
@@ -699,7 +782,13 @@ function EditorInner({
     if (shell === null) return;
     const onMove = (event: MouseEvent) => {
       const rect = shell.getBoundingClientRect();
-      setPointer({ x: event.clientX - rect.left, y: event.clientY - rect.top });
+      // The pointer is read in the OVERLAY's coordinates — it is what a
+      // carried end is laid out at and where the rubber band is drawn — so a
+      // scrolled tree's offset goes back in here.
+      setPointer({
+        x: event.clientX - rect.left + (treeRef.current?.scrollLeft ?? 0),
+        y: event.clientY - rect.top,
+      });
     };
     window.addEventListener('mousemove', onMove);
     return () => {
@@ -714,6 +803,8 @@ function EditorInner({
     if (editor === null) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        // Just closes what is open (§10 A5: there is no fresh-join undo any
+        // more — the Ser stands, and Ctrl-Z is how a join is taken back).
         setPopover(null);
         setSelectedDotId(null);
         return;
@@ -743,13 +834,14 @@ function EditorInner({
         return;
       }
       const key = event.key.toLowerCase();
-      if (key === 'z' && !event.shiftKey) {
-        event.preventDefault();
-        editor.commands.undo();
-      } else if ((key === 'z' && event.shiftKey) || key === 'y') {
-        event.preventDefault();
-        editor.commands.redo();
-      }
+      const undoing = key === 'z' && !event.shiftKey;
+      const redoing = (key === 'z' && event.shiftKey) || key === 'y';
+      if (!undoing && !redoing) return;
+      event.preventDefault();
+      // §7.12: keepPageScroll wraps every dispatch. Undo and redo rebuild the
+      // same node views every other command does, and Ctrl-Z is the path a
+      // reader halfway down a long analysis actually uses.
+      keepPageScroll(() => (undoing ? editor.commands.undo() : editor.commands.redo()));
     };
     window.addEventListener('keydown', onKey);
     return () => {
@@ -784,6 +876,9 @@ function EditorInner({
     const onDown = (event: MouseEvent) => {
       const el = popoverRef.current;
       if (el !== null && event.target instanceof Node && el.contains(event.target)) return;
+      // §10 A5: clicking away just CLOSES the menu. The Ser the connect minted
+      // stays, because a join always has a name now — there is nothing
+      // half-made to abandon and nothing to undo on the way out.
       setPopover(null);
     };
     window.document.addEventListener('mousedown', onDown, true);
@@ -794,7 +889,8 @@ function EditorInner({
 
   useEffect(
     () => () => {
-      if (flashTimer.current !== null) window.clearTimeout(flashTimer.current);
+      if (shakeTimer.current !== null) window.clearTimeout(shakeTimer.current);
+      if (anchorTimer.current !== null) window.clearTimeout(anchorTimer.current);
     },
     [],
   );
@@ -822,19 +918,60 @@ function EditorInner({
     [editor, docTick],
   );
 
-  /** The completed analysis's main point (empty while the forest is loose). */
-  const mainPids = useMemo<ReadonlySet<string>>(() => {
-    if (editor === null) return new Set<string>();
-    return new Set(mainPointRefs(nodeToDocument(editor.state.doc, baseDoc).forest));
+  /**
+   * The core state, once per docTick — the lens over `doc.attrs.tree` that
+   * §7.2 puts in place of a plugin-owned copy of the structure. Everything
+   * that draws or reads the tree goes through this one memo, so no two
+   * consumers can be looking at different states.
+   */
+  const forest = useMemo<Forest | null>(
+    () => (editor === null ? null : readTree(editor.state.doc)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor, docTick, baseDoc]);
+    [editor, docTick],
+  );
+
+  /** The completed analysis's main point (empty while any side hangs). */
+  const mainPids = useMemo<ReadonlySet<string>>(
+    () => new Set(forest === null ? [] : mainPointRefs(forest)),
+    [forest],
+  );
+
+  /**
+   * §5.2's third signal, taken in the COMMAND RESULT PATH: every op arrives
+   * here as exactly one docTick carrying one new Forest (§7.2), so diffing the
+   * rooms before and after that tick is diffing them across the gesture — and
+   * it costs nothing when nothing anchored.
+   *
+   * No op of §5 sets out to anchor a side; it happens as a byproduct of where
+   * a join lands, of a spill, of a merge's release. That is precisely why this
+   * is a diff and not a flag the core could hand over: only the two states
+   * know. Every gesture is covered by the one comparison — connect, delete,
+   * split, merge, and the undo that puts a room back.
+   */
+  useEffect(() => {
+    const before = priorForest.current;
+    priorForest.current = forest;
+    // A refusal dispatches nothing, so the forest comes back by identity and
+    // there is nothing to compare (core.ts reuses untouched units by
+    // reference, which is what makes `===` meaningful here).
+    if (before === null || forest === null || before === forest) return;
+    const ids = newlyAnchored(before, forest);
+    if (ids.length === 0) return;
+    anchorSeq.current += 1;
+    setAnchored({ ids, seq: anchorSeq.current });
+    if (anchorTimer.current !== null) window.clearTimeout(anchorTimer.current);
+    anchorTimer.current = window.setTimeout(() => {
+      anchorTimer.current = null;
+      setAnchored(null);
+    }, ANCHOR_MS);
+  }, [forest]);
 
 
   // ---- Geometry -----------------------------------------------------------
   // Measure every row, then lay the whole FOREST out; layout brackets
   // (pre-order) zip index-for-index with the PM bracket positions.
   const overlay: Overlay | null = useMemo(() => {
-    if (editor === null) return null;
+    if (editor === null || forest === null) return null;
     const shell = shellRef.current;
     if (shell === null) return null;
     const shellRect = shell.getBoundingClientRect();
@@ -875,77 +1012,77 @@ function EditorInner({
     measuredRows.current = [...rows.keys()].join(',');
     if (rows.size === 0) return null;
 
-    const current = nodeToDocument(editor.state.doc, baseDoc);
     // A split or a merge changes the document a frame before its rows reach
     // the DOM. Laying out then would place the new proposition's dot at y=0 —
     // a phantom above the column — so keep the last good overlay until every
     // proposition is measured; the re-measure below follows immediately.
-    for (const root of current.forest) {
-      for (const ref of leafRefs(root)) {
-        if (!rows.has(ref)) return lastOverlay.current;
-      }
+    //
+    // The overlay reads the CORE state straight off the doc attribute (§7.11):
+    // it needs no wire form at all, which is what lets it draw the unlabeled
+    // bracket a fresh connect just made.
+    for (const pid of leafOrder(forest)) {
+      if (!rows.has(pid)) return lastOverlay.current;
     }
-    const { maxColumn } = computeColumns(current.forest);
+    // The tree's NATURAL width, from the layout's own formula — the one
+    // layout.test.ts guards. Re-deriving it inline here is how the shipped
+    // width and the tested width become two expressions that only happen to
+    // agree; a change to LABEL_GUTTER or the STUB_W floor would then pass the
+    // suite while the page drifted.
+    //
     // The verse-label column (13a, 13b, …) is the workflow's anchor: pin its
     // center to the middle of the shell, so the tree has the whole left half
     // to grow into without ever shifting the words. Only a tree too deep for
     // that half pushes the text right (the Math.max arm).
-    const need = Math.max(maxColumn * COL_W, STUB_W) + LABEL_GUTTER;
+    const need = bracketWidth(forest);
     const centered = Math.round(shellRect.width / 2 - VERSE_LABEL_W / 2);
+    // The tree is ALWAYS laid out at its natural width — nothing is refused
+    // and nothing is cleared for being wide. What the window cannot show it
+    // scrolls: the margin stops growing at `viewport`, and the tree runs on
+    // leftwards inside it.
     const margin = Math.max(need, centered);
-    const fits = fitsWidth(current.forest, shellRect.width);
-    const layout = layoutBrackets(
-      current.forest,
-      rows,
-      margin,
-      (rel) => taxonomyByCode.get(rel)?.labels,
-    );
-    const pmBrackets = findBrackets(editor.state.doc);
-    const brackets = layout.brackets.map((geom) => ({
-      ...geom,
-      pos: pmBrackets[geom.preorderIndex]?.pos ?? -1,
-    }));
+    const viewport = treeViewportWidth(need, shellRect.width, VERSE_LABEL_W);
+    const layout = layoutBrackets(forest, rows, margin, relLookup);
     lastOverlay.current = {
-      brackets,
-      dots: layoutDots(current.forest, rows, margin),
+      brackets: layout.brackets,
+      dots: layoutDots(forest, rows, margin),
       margin,
+      viewport,
       height: shellRect.height,
       rowBoxes: blockBoxes,
       layoutRows: rows,
-      forest: current.forest,
-      fits,
+      forest,
     };
     return lastOverlay.current;
     // docTick + layoutTick drive re-measurement.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor, docTick, layoutTick, baseDoc, taxonomyByCode]);
+  }, [editor, forest, docTick, layoutTick, relLookup]);
 
   // Hand the fold's position up whenever it moves. In an effect, not in the
   // layout itself: the overlay is computed during render, and telling anyone
   // about it there would be a side effect in the middle of one.
-  const margin = overlay?.margin ?? null;
+  // What the skins want is the fold — where the tree ENDS on screen and the
+  // words begin — so it is the viewport, not the tree's full width.
+  const foldAt = overlay?.viewport ?? null;
   useEffect(() => {
-    if (margin !== null) onTreeMargin?.(margin);
-  }, [margin, onTreeMargin]);
+    if (foldAt !== null) onTreeMargin?.(foldAt);
+  }, [foldAt, onTreeMargin]);
 
-  // A tree deeper than the screen is wide draws itself off both edges: the
-  // analysis reads as empty. Rather than show that, drop the connections the
-  // document ARRIVED with and say so. The propositions are untouched; the
-  // clearing itself stays OUT of the history, so a tree this window cannot
-  // draw is not one keystroke from coming back. Only ever the loaded
-  // document: a tree built by hand is the analyst's, however wide it grows.
+  // Where a scrolled tree starts: at its RIGHT edge. The columns grow
+  // LEFTWARDS from the text (layout: x = x0 - column * colW), so the innermost
+  // relationships — the ones nearest the words they join — are on the right,
+  // and the outermost spine is what the reader scrolls out to. Re-anchored
+  // whenever how far the tree can scroll changes — a deeper tree, a resized
+  // window, a skin with a narrower margin — and never otherwise: scrolling is
+  // the reader's, and an edit that moves neither edge must not throw their
+  // place away.
+  const scrollable = overlay === null ? null : overlay.margin - overlay.viewport;
   useEffect(() => {
-    if (editor === null || overlay === null || widthChecked.current) return;
-    widthChecked.current = true;
-    if (overlay.fits || findBrackets(editor.state.doc).length === 0) return;
-    clearConnections(editor, false);
-    setFlash(TOO_WIDE_MESSAGE);
-    if (flashTimer.current !== null) window.clearTimeout(flashTimer.current);
-    flashTimer.current = window.setTimeout(() => {
-      flashTimer.current = null;
-      setFlash(null);
-    }, TOO_WIDE_MS);
-  }, [editor, overlay]);
+    const tree = treeRef.current;
+    if (tree === null || scrollable === null) return;
+    if (anchoredW.current === scrollable) return;
+    anchoredW.current = scrollable;
+    tree.scrollLeft = tree.scrollWidth - tree.clientWidth;
+  }, [scrollable]);
 
 
   /**
@@ -959,31 +1096,58 @@ function EditorInner({
    */
   const flexed = useMemo<Overlay | null>(() => {
     if (overlay === null || pointer === null || selectedDotId === null) return null;
-    if (!selectedDotId.startsWith('hole:')) return null;
-    const carry = {
-      hole: Number(selectedDotId.slice('hole:'.length)),
-      x: pointer.x,
-      y: pointer.y,
-    };
-    if (!Number.isInteger(carry.hole)) return null;
+    const ref = parseDotId(selectedDotId);
+    if (ref === null || ref.kind !== 'hang') return null;
+    const carry: Carry = { bracketId: ref.id, side: ref.side, x: pointer.x, y: pointer.y };
     const rows = overlay.layoutRows;
-    const layout = layoutBrackets(
-      overlay.forest,
-      rows,
-      overlay.margin,
-      (rel) => taxonomyByCode.get(rel)?.labels,
-      COL_W,
-      carry,
-    );
+    const layout = layoutBrackets(overlay.forest, rows, overlay.margin, relLookup, COL_W, carry);
     return {
       ...overlay,
-      brackets: layout.brackets.map((geom, i) => ({
-        ...geom,
-        pos: overlay.brackets[i]?.pos ?? -1,
-      })),
+      brackets: layout.brackets,
       dots: layoutDots(overlay.forest, rows, overlay.margin, COL_W, carry),
     };
-  }, [overlay, pointer, selectedDotId, taxonomyByCode]);
+  }, [overlay, pointer, selectedDotId, relLookup]);
+
+  // §10 A6: the hover SPAN-WASH IS GONE. Hovering a dot no longer paints a
+  // band across the passage — the state, the memo that derived it, the rect
+  // that drew it and its CSS are all deleted. The endangered wash while AIMING
+  // stays, and it is the `aim` memo below that feeds it.
+
+  /**
+   * §5.2, second signal: with a dot ARMED and the pointer over another, what
+   * the click would do — run through the core's own `previewConnect`, which is
+   * `connect` itself (core.ts), so the highlight can never drift from the
+   * outcome. One call per hovered target: the memo's keys are the forest and
+   * the two dot ids, and none of them changes while the pointer sits still.
+   *
+   * `broken` is the EXACT set the join would take down — both endpoints'
+   * claimers, a crossed bracket, cascade deaths — because §4's bounded
+   * breakage is what makes the preview honest. A target the core refuses (not
+   * adjacent, containment, or a room's pickup dot, which is no unit at all)
+   * comes back as a refusal, and the aim line says so instead.
+   */
+  const aim = useMemo<{ broken: readonly number[]; refused: boolean } | null>(() => {
+    if (forest === null || selectedDotId === null || hoverDotId === null) return null;
+    if (hoverDotId === selectedDotId) return null;
+    const armed = parseDotId(selectedDotId);
+    const target = parseDotId(hoverDotId);
+    if (armed === null || target === null) return { broken: NO_IDS, refused: true };
+    // §10 A2: a pickup dot aims at its room's SOLE lodger and at nothing else.
+    // Settling breaks nothing, so the aim offers — or refuses — with an empty
+    // endangered set either way.
+    if (armed.kind === 'hang' || target.kind === 'hang') {
+      const hang = armed.kind === 'hang' ? armed : (target as { id: number; side: Side });
+      // The same decision the click will make (`trySettle`), not a second copy
+      // of it: §5.2's "the preview IS the gesture", applied to A2's settle.
+      const plan = pickupGesture(armed, target, settleTargetFor(forest, hang.id, hang.side));
+      return { broken: NO_IDS, refused: plan.kind !== 'settle' };
+    }
+    const a = dotAddr(armed);
+    const b = dotAddr(target);
+    if (a === null || b === null) return { broken: NO_IDS, refused: true };
+    const out = previewConnect(forest, a, b);
+    return out.ok ? { broken: out.broken, refused: false } : { broken: NO_IDS, refused: true };
+  }, [forest, selectedDotId, hoverDotId]);
 
   const rowCtx = useMemo<RowContextValue>(
     () => ({
@@ -1056,78 +1220,86 @@ function EditorInner({
   // Each one runs a single core command; the state set afterwards is what
   // survives the reset onUpdate did while the command was dispatching.
 
-  const bracketPosAt = (index: number): number | null =>
-    findBrackets(editor.state.doc)[index]?.pos ?? null;
-
-  const holePosAt = (index: number): number | null =>
-    findHoles(editor.state.doc)[index] ?? null;
-
-  const dotPos = (id: string): number | null => {
-    const ref = parseDotId(id);
-    if (ref === null) return null;
-    if (ref.kind === 'prop') return findPropositionPos(editor.state.doc, ref.pid);
-    if (ref.kind === 'hole') return holePosAt(ref.index);
-    return bracketPosAt(ref.index);
-  };
-
-  dotPosRef.current = dotPos;
-
-  const rejectConnection = (dotId: string, message: string) => {
+  /**
+   * A REFUSED GESTURE SHAKES ITS DOT, AND THAT IS ALL (§10 A6). No flash, no
+   * toast, no sentence anywhere on the page: the analyst's screenshot showed
+   * message text rendering above the passage and pushing the whole page down,
+   * and the ruling is that nothing may ever shift the tree or the text. The
+   * refusal's own `message` still exists in the core, for the console and for
+   * the tests; it is simply not something the page says.
+   */
+  const rejectConnection = (dotId: string) => {
     shakeSeq.current += 1;
     setShake({ dotId, seq: shakeSeq.current });
-    setFlash(message);
-    if (flashTimer.current !== null) window.clearTimeout(flashTimer.current);
-    flashTimer.current = window.setTimeout(() => {
-      flashTimer.current = null;
+    if (shakeTimer.current !== null) window.clearTimeout(shakeTimer.current);
+    shakeTimer.current = window.setTimeout(() => {
+      shakeTimer.current = null;
       setShake(null);
-      setFlash(null);
-    }, FLASH_MS);
+    }, SHAKE_MS);
   };
 
   /**
    * Right-click a dot — or select it and press Delete — to remove the
-   * connections it names: a bracket's own connection, or every bracket above
-   * a proposition.
+   * relationship it names (§5.3's dot targeting, which the CORE decides): a
+   * bracket dot names its bracket, a room's pickup dot the bracket it hangs
+   * from, a proposition's dot the bracket owning the side that holds it, and a
+   * root proposition's dot-delete is a refusal with a message.
    */
   const onDotDelete = (dotId: string) => {
     setPopover(null);
     setSelectedDotId(null);
     const ref = parseDotId(dotId);
     if (ref === null) return;
-    if (ref.kind === 'bracket') {
-      // Only THIS relationship: what it held is left hanging, and everything
-      // above it stands.
-      const pos = bracketPosAt(ref.index);
-      if (pos !== null) deleteRelationship(editor, pos);
-      return;
-    }
-    if (ref.kind === 'hole') {
-      // The hanging end itself: what goes is the relationship it hangs from,
-      // which frees this loose group into whatever holds them both.
-      const pos = holePosAt(ref.index);
-      if (pos === null) return;
-      const $pos = editor.state.doc.resolve(pos);
-      if ($pos.depth === 0) return;
-      deleteRelationship(editor, $pos.before($pos.depth));
-      return;
-    }
-    // A proposition: the one relationship it hangs from, and no more.
-    const pos = findPropositionPos(editor.state.doc, ref.pid);
-    if (pos === null) return;
-    const parent = editor.state.doc.resolve(pos).depth;
-    if (parent === 0) return; // already loose
-    deleteRelationship(editor, editor.state.doc.resolve(pos).before(parent));
+    // A hanging side is not a unit, but the bracket it hangs FROM is: deleting
+    // there frees the waiting group into whatever holds them both.
+    const addr =
+      ref.kind === 'hang' ? ({ kind: 'bracket', id: ref.id } as const) : dotAddr(ref);
+    if (addr === null) return;
+    if (deleteAt(editor, addr) !== null) rejectConnection(dotId);
   };
   deleteDotRef.current = onDotDelete;
 
+  /**
+   * §10 A2 — THE PICKUP DOT FINISHES THE BRACKET. Pairing a room's pickup dot
+   * with that room's SOLE lodger settles the side: the relationship becomes
+   * whole, in one undo step, with no new bracket and NO MENU (nothing is being
+   * named — the analyst is saying "that group is done"). Any other pairing
+   * involving a pickup dot — a room still holding a group, some other unit,
+   * two pickup dots — shakes and does nothing else.
+   *
+   * A REFUSED pairing shakes and does NOTHING ELSE (§10 A6) — the armed dot is
+   * still carried, exactly as it is after a refused connect below. Dropping it
+   * would be a second effect, and would make aiming at the wrong lodger cost
+   * the pickup as well.
+   *
+   * Returns true when the pair was a pickup-dot gesture at all, settled or
+   * refused, so the caller knows not to try connecting them.
+   */
+  const trySettle = (armed: DotRef, target: DotRef, shakeAt: string): boolean => {
+    const hang = armed.kind === 'hang' ? armed : target.kind === 'hang' ? target : null;
+    if (hang === null) return false;
+    const plan = pickupGesture(armed, target, settleLodger(editor, hang.id, hang.side));
+    if (plan.kind === 'none') return false;
+    if (plan.kind === 'refuse') {
+      rejectConnection(shakeAt);
+      return true; // nothing dispatched: the first selection stands (§10 A6)
+    }
+    setSelectedDotId(null);
+    if (settleHang(editor, plan.id, plan.side) !== null) rejectConnection(shakeAt);
+    return true;
+  };
+
   const onDotClick = (dot: DotGeom) => {
     // Every dot is a live handle, connected or not: a click selects it, a
-    // click on the SAME dot unselects it, and a click on a second dot
-    // connects the two (dissolving any old connections above either unit —
-    // connectUnits' job). No modifier keys.
-    //
+    // click on the SAME dot unselects it, and a click on a second dot connects
+    // the two. The CORE is the judge (§5.1): the join succeeds whenever the
+    // two spans meet, breaking exactly the brackets that stand in its way
+    // (ruling Q1), and the only refusals are geometric. No modifier keys.
     setPopover(null);
     if (selectedDotId === null) {
+      // A room's pickup dot arms like any other handle — the tree flexes
+      // around it while it is carried — and it is a real endpoint now (A2).
+      // Nothing is said about it: the tick and the dot are the whole signal.
       setSelectedDotId(dot.id);
       return;
     }
@@ -1135,42 +1307,49 @@ function EditorInner({
       setSelectedDotId(null);
       return;
     }
-    const posA = dotPos(selectedDotId);
-    const posB = dotPos(dot.id);
-    if (posA === null || posB === null) {
-      rejectConnection(dot.id, 'That unit is no longer there.');
+    const armed = parseDotId(selectedDotId);
+    const target = parseDotId(dot.id);
+    if (armed === null || target === null) {
+      rejectConnection(dot.id);
       return;
     }
-    // connectUnits itself is the judge of what may connect (units that are —
-    // or come out as — adjacent roots).
-    const newPos = connectUnits(editor, posA, posB, taxonomy);
-    if (newPos === null) {
-      rejectConnection(dot.id, 'Only two adjacent units can be connected.');
+    if (trySettle(armed, target, dot.id)) return;
+    const a = dotAddr(armed);
+    const b = dotAddr(target);
+    if (a === null || b === null) {
+      rejectConnection(dot.id);
+      return; // nothing dispatched: the first selection stands
+    }
+    const out = connectUnits(editor, a, b);
+    if (!out.ok) {
+      rejectConnection(dot.id);
       return; // nothing dispatched: the first selection stands
     }
     setSelectedDotId(null);
-    // Label the fresh connection straight away (it defaults to Series).
-    setPopover({ kind: 'menu', pos: newPos, at: null });
+    // The join is made and it is a SER (§10 A5): the menu opens PRELOADED on
+    // it, and clicking away simply closes the menu — the Ser stays. A
+    // re-connection of an existing pair opens preloaded on its own rel.
+    setPopover({ kind: 'menu', bracketId: out.bracketId, at: null });
   };
 
-  const onLabelClick = (pos: number, at: Point) => {
+  const onLabelClick = (bracketId: number, at: Point) => {
     setSelectedDotId(null);
     setPopover((prev) =>
-      prev !== null && prev.kind === 'menu' && prev.pos === pos ? null : { kind: 'menu', pos, at },
+      prev !== null && prev.kind === 'menu' && prev.bracketId === bracketId
+        ? null
+        : { kind: 'menu', bracketId, at },
     );
   };
 
-  const onStarClick = (pos: number) => {
+  const onStarClick = (bracketId: number) => {
     setPopover(null);
-    flipStar(editor, pos, taxonomy);
+    flipStar(editor, bracketId, taxonomy);
     setSelectedDotId(null);
   };
 
   const onSplit = (pid: string, ordinal: number) => {
-    const pos = findPropositionPos(editor.state.doc, pid);
     setPopover(null);
-    if (pos === null) return;
-    splitProposition(editor, pos, ordinal + 1, words);
+    splitProposition(editor, pid, ordinal + 1, words);
   };
   onSplitRef.current = onSplit;
 
@@ -1216,6 +1395,11 @@ function EditorInner({
     removeSectionBreak(editor, pid);
   };
 
+  // The history controls do exactly what they say now: §10 A5 retired the
+  // fresh-join dismissal that used to spend a step ahead of them.
+  const onUndo = () => keepPageScroll(() => editor.commands.undo());
+  const onRedo = () => keepPageScroll(() => editor.commands.redo());
+
   /** Toolbar: remove every connection at once (the propositions stay put). */
   const onClearTree = () => {
     setPopover(null);
@@ -1224,13 +1408,13 @@ function EditorInner({
     clearConnections(editor);
   };
 
-  const onPickRelationship = (pos: number, rel: string) => {
-    // Close on every pick, including one that changes nothing (the menu opens
-    // on a fresh connection already set to Series, so choosing Series is a
-    // legitimate no-op that must still feel like a choice).
+  const onPickRelationship = (bracketId: number, rel: string) => {
+    // Close on every pick, including one that changes nothing: re-choosing the
+    // relationship a bracket already has is a legitimate no-op that must still
+    // feel like a choice.
     setPopover(null);
     setSelectedDotId(null);
-    setRelationship(editor, pos, rel, taxonomy);
+    setRelationship(editor, bracketId, rel, taxonomy);
   };
 
   // What the reader sees: the tree flexed around what they are carrying, or
@@ -1242,9 +1426,11 @@ function EditorInner({
   let popoverNode: ReactNode = null;
   if (popover !== null && overlay !== null) {
     const bounds = {
-      width: shellRef.current?.clientWidth ?? overlay.margin,
+      width: shellRef.current?.clientWidth ?? overlay.viewport,
       height: overlay.height,
     };
+    // Popovers are the SHELL's children; the tree's geometry is the overlay's.
+    const treeScroll = treeRef.current?.scrollLeft ?? 0;
     if (popover.kind === 'word') {
       const at = clampPopover(popover.at, WORD_SIZE, bounds);
       const info = popover.index !== null ? words.get(popover.index) : undefined;
@@ -1272,11 +1458,18 @@ function EditorInner({
         </div>
       );
     } else {
-      const geom = overlay.brackets.find((b) => b.pos === popover.pos);
-      const node = editor.state.doc.nodeAt(popover.pos);
-      if (geom !== undefined && node !== null && node.type.name === 'bracket') {
+      // Both the geometry and the relationship are read by ID off the CORE
+      // state (§7.3) — never off a ProseMirror position, and never off a
+      // `nodeAt` that the flat document could not answer anyway.
+      const geom = overlay.brackets.find((b) => b.bracketId === popover.bracketId);
+      const bracket = forest === null ? null : bracketById(forest, popover.bracketId);
+      if (geom !== undefined && bracket !== null) {
         const desired = popover.at ?? { x: geom.x + 8, y: geom.connectY + 8 };
-        const at = clampPopover(menuPlacement(desired, geom, overlay), MENU_SIZE, bounds);
+        const at = clampPopover(
+          menuPlacement(desired, geom, overlay, treeScroll),
+          MENU_SIZE,
+          bounds,
+        );
         popoverNode = (
           <div
             ref={popoverRef}
@@ -1285,8 +1478,13 @@ function EditorInner({
           >
             <RelationshipMenu
               taxonomy={taxonomy}
-              current={String(node.attrs.rel)}
-              onPick={(rel) => onPickRelationship(popover.pos, rel)}
+              // §10 A5 (which REVERSES Q6): the menu opens PRELOADED on the
+              // bracket's own rel — Ser for a fresh join, since that is what
+              // `connect` mints. Clicking away keeps it; there is no unlabeled
+              // state to mark. The `?? ''` is the impossible case only: a
+              // bracket loaded from a document with no rel at all.
+              current={bracket.rel ?? ''}
+              onPick={(rel) => onPickRelationship(popover.bracketId, rel)}
             />
           </div>
         );
@@ -1353,26 +1551,16 @@ function EditorInner({
           </button>
         )}
         <span className="toolbar-spacer" />
-        {flash !== null && (
-          <span className="toolbar-flash" role="status">
-            {flash}
-          </span>
-        )}
+        {/* No flash element here, and nowhere else on the page: §10 A6 — the
+            message that rendered above the passage was SHIFTING THE PAGE, and
+            a refused gesture now shakes its dot and says nothing. */}
         {/* Undo and redo rebuild the same node views every other command does,
             so they move the page the same way — and they are the two the
             reader is most likely to press from halfway down a long analysis. */}
-        <button
-          type="button"
-          disabled={!editor.can().undo()}
-          onClick={() => keepPageScroll(() => editor.commands.undo())}
-        >
+        <button type="button" disabled={!editor.can().undo()} onClick={onUndo}>
           Undo
         </button>
-        <button
-          type="button"
-          disabled={!editor.can().redo()}
-          onClick={() => keepPageScroll(() => editor.commands.redo())}
-        >
+        <button type="button" disabled={!editor.can().redo()} onClick={onRedo}>
           Redo
         </button>
         <button
@@ -1410,7 +1598,9 @@ function EditorInner({
         className="editor-shell"
         style={
           {
-            paddingLeft: overlay?.margin ?? `calc(50% - ${VERSE_LABEL_W / 2}px)`,
+            // The text column begins at the tree's VIEWPORT: a tree wider than
+            // that scrolls inside it and never pushes a word.
+            paddingLeft: overlay?.viewport ?? `calc(50% - ${VERSE_LABEL_W / 2}px)`,
             // The strip stands in the shell's right padding, so no line of Greek
             // ever runs under it.
             paddingRight: view.blocks ? STRIP_LANE : undefined,
@@ -1419,27 +1609,51 @@ function EditorInner({
             // notebook's binding — need it in CSS, and only the layout knows
             // it.
             '--tree-margin':
-              overlay === null ? `calc(50% - ${VERSE_LABEL_W / 2}px)` : `${overlay.margin}px`,
+              overlay === null ? `calc(50% - ${VERSE_LABEL_W / 2}px)` : `${overlay.viewport}px`,
+            // How much tree there is beyond the viewport's right edge — nil
+            // for a tree that fits. Print reads this: paper cannot scroll, so
+            // it lays the whole width out and scales it down instead.
+            '--tree-overflow': `${overlay === null ? 0 : overlay.margin - overlay.viewport}px`,
           } as CSSProperties
         }
       >
-        {/* While a connection is being aimed, the tree is drawn AS IT WOULD
+        {/* The tree's own viewport. It is exactly the margin wide, and the
+            tree inside it is as wide as the tree really is: when that is
+            more, this scrolls sideways and the text column does not move.
+            While a connection is being aimed, the tree is drawn AS IT WOULD
             BE: making it then moves nothing. */}
         {shown !== null && (
-          <BracketLayer
-            brackets={shown.brackets}
-            dots={shown.dots}
-            width={shown.margin}
-            height={shown.height}
-            selectedDotId={selectedDotId}
-            shake={shake}
-            onDotClick={onDotClick}
-            onLabelClick={onLabelClick}
-            onStarClick={onStarClick}
-            onDotDelete={(dot) => onDotDelete(dot.id)}
-            pointer={flexed === null ? pointer : null}
-            view={view}
-          />
+          <div
+            ref={treeRef}
+            className={
+              shown.margin > shown.viewport ? 'tree-viewport scrollable' : 'tree-viewport'
+            }
+            style={{ height: shown.height }}
+          >
+            <BracketLayer
+              brackets={shown.brackets}
+              dots={shown.dots}
+              width={shown.margin}
+              height={shown.height}
+              selectedDotId={selectedDotId}
+              shake={shake}
+              onDotClick={onDotClick}
+              onLabelClick={onLabelClick}
+              onStarClick={onStarClick}
+              onDotDelete={(dot) => onDotDelete(dot.id)}
+              // §5.2's aiming signals, all worked out from the CORE above and
+              // handed down already answered: the span the hovered dot names,
+              // the exact set the aimed join would break, whether that target
+              // refuses, and what a gesture just made whole.
+              onDotHover={(dot) => setHoverDotId(dot === null ? null : dot.id)}
+              endangered={aim === null ? NO_IDS : aim.broken}
+              aimTargetId={aim === null ? null : hoverDotId}
+              aimRefused={aim !== null && aim.refused}
+              anchored={anchored}
+              pointer={flexed === null ? pointer : null}
+              view={view}
+            />
+          </div>
         )}
         <EditorContent editor={editor} />
         {view.blocks && overlay !== null && (

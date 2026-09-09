@@ -1,0 +1,594 @@
+{
+ "schemaVersion": 2,
+ "propositions": [
+  {
+   "id": "p1",
+   "label": "38a",
+   "source": {
+    "kind": "corpus",
+    "start": 57656,
+    "end": 57658
+   }
+  },
+  {
+   "id": "p2",
+   "label": "38b",
+   "source": {
+    "kind": "corpus",
+    "start": 57659,
+    "end": 57661
+   }
+  },
+  {
+   "id": "p3",
+   "label": "38c",
+   "source": {
+    "kind": "corpus",
+    "start": 57662,
+    "end": 57665
+   }
+  },
+  {
+   "id": "p4",
+   "label": "38d",
+   "source": {
+    "kind": "corpus",
+    "start": 57666,
+    "end": 57668
+   }
+  },
+  {
+   "id": "p5",
+   "label": "38e",
+   "source": {
+    "kind": "corpus",
+    "start": 57669,
+    "end": 57673
+   }
+  },
+  {
+   "id": "p6",
+   "label": "39a",
+   "source": {
+    "kind": "corpus",
+    "start": 57674,
+    "end": 57676
+   }
+  },
+  {
+   "id": "p7",
+   "label": "39b",
+   "source": {
+    "kind": "corpus",
+    "start": 57677,
+    "end": 57679
+   }
+  },
+  {
+   "id": "p8",
+   "label": "39c",
+   "source": {
+    "kind": "corpus",
+    "start": 57680,
+    "end": 57686
+   }
+  },
+  {
+   "id": "p9",
+   "label": "39d",
+   "source": {
+    "kind": "corpus",
+    "start": 57687,
+    "end": 57689
+   }
+  },
+  {
+   "id": "p10",
+   "label": "39e",
+   "source": {
+    "kind": "corpus",
+    "start": 57690,
+    "end": 57692
+   }
+  },
+  {
+   "id": "p11",
+   "label": "40a",
+   "source": {
+    "kind": "corpus",
+    "start": 57693,
+    "end": 57696
+   }
+  },
+  {
+   "id": "p12",
+   "label": "40b",
+   "source": {
+    "kind": "corpus",
+    "start": 57697,
+    "end": 57699
+   }
+  },
+  {
+   "id": "p13",
+   "label": "40c",
+   "source": {
+    "kind": "corpus",
+    "start": 57700,
+    "end": 57702
+   }
+  },
+  {
+   "id": "p14",
+   "label": "40d",
+   "source": {
+    "kind": "corpus",
+    "start": 57703,
+    "end": 57707
+   }
+  },
+  {
+   "id": "p15",
+   "label": "41a",
+   "source": {
+    "kind": "corpus",
+    "start": 57708,
+    "end": 57711
+   }
+  },
+  {
+   "id": "p16",
+   "label": "41b",
+   "source": {
+    "kind": "corpus",
+    "start": 57712,
+    "end": 57718
+   }
+  },
+  {
+   "id": "p17",
+   "label": "41c",
+   "source": {
+    "kind": "corpus",
+    "start": 57719,
+    "end": 57720
+   }
+  },
+  {
+   "id": "p18",
+   "label": "41d",
+   "source": {
+    "kind": "corpus",
+    "start": 57721,
+    "end": 57723
+   }
+  },
+  {
+   "id": "p19",
+   "label": "41e",
+   "source": {
+    "kind": "corpus",
+    "start": 57724,
+    "end": 57726
+   }
+  },
+  {
+   "id": "p20",
+   "label": "42a",
+   "source": {
+    "kind": "corpus",
+    "start": 57727,
+    "end": 57729
+   }
+  },
+  {
+   "id": "p21",
+   "label": "42b",
+   "source": {
+    "kind": "corpus",
+    "start": 57730,
+    "end": 57733
+   }
+  },
+  {
+   "id": "p22",
+   "label": "42c",
+   "source": {
+    "kind": "corpus",
+    "start": 57734,
+    "end": 57740
+   }
+  },
+  {
+   "id": "p23",
+   "label": "42d",
+   "source": {
+    "kind": "corpus",
+    "start": 57741,
+    "end": 57742
+   }
+  },
+  {
+   "id": "p24",
+   "label": "42e",
+   "source": {
+    "kind": "corpus",
+    "start": 57743,
+    "end": 57746
+   }
+  },
+  {
+   "id": "p25",
+   "label": "43a",
+   "source": {
+    "kind": "corpus",
+    "start": 57747,
+    "end": 57748
+   }
+  },
+  {
+   "id": "p26",
+   "label": "43b",
+   "source": {
+    "kind": "corpus",
+    "start": 57749,
+    "end": 57751
+   }
+  },
+  {
+   "id": "p27",
+   "label": "43c",
+   "source": {
+    "kind": "corpus",
+    "start": 57752,
+    "end": 57752
+   }
+  },
+  {
+   "id": "p28",
+   "label": "43d",
+   "source": {
+    "kind": "corpus",
+    "start": 57753,
+    "end": 57755
+   }
+  },
+  {
+   "id": "p29",
+   "label": "44a",
+   "source": {
+    "kind": "corpus",
+    "start": 57756,
+    "end": 57765
+   }
+  },
+  {
+   "id": "p30",
+   "label": "44b",
+   "source": {
+    "kind": "corpus",
+    "start": 57766,
+    "end": 57771
+   }
+  },
+  {
+   "id": "p31",
+   "label": "44c",
+   "source": {
+    "kind": "corpus",
+    "start": 57772,
+    "end": 57775
+   }
+  },
+  {
+   "id": "p32",
+   "label": "44d",
+   "source": {
+    "kind": "corpus",
+    "start": 57776,
+    "end": 57777
+   }
+  },
+  {
+   "id": "p33",
+   "label": "44e",
+   "source": {
+    "kind": "corpus",
+    "start": 57778,
+    "end": 57781
+   }
+  }
+ ],
+ "forest": [
+  {
+   "kind": "bracket",
+   "rel": "WEd",
+   "prominent": 0,
+   "children": [
+    {
+     "kind": "prop",
+     "ref": "p1"
+    },
+    {
+     "kind": "prop",
+     "ref": "p2"
+    }
+   ],
+   "reversed": true
+  },
+  {
+   "kind": "prop",
+   "ref": "p3"
+  },
+  {
+   "kind": "bracket",
+   "rel": "Ser",
+   "prominent": null,
+   "children": [
+    {
+     "kind": "prop",
+     "ref": "p4"
+    },
+    {
+     "kind": "prop",
+     "ref": "p5"
+    }
+   ]
+  },
+  {
+   "kind": "bracket",
+   "rel": "FtIn",
+   "prominent": 1,
+   "children": [
+    {
+     "kind": "prop",
+     "ref": "p6"
+    },
+    {
+     "kind": "prop",
+     "ref": "p7"
+    }
+   ]
+  },
+  {
+   "kind": "bracket",
+   "rel": "FtIn",
+   "prominent": 1,
+   "children": [
+    {
+     "kind": "prop",
+     "ref": "p8"
+    },
+    {
+     "kind": "bracket",
+     "rel": "Grnd",
+     "prominent": 0,
+     "children": [
+      {
+       "kind": "prop",
+       "ref": "p9"
+      },
+      {
+       "kind": "prop",
+       "ref": "p10"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "prop",
+   "ref": "p11"
+  },
+  {
+   "kind": "bracket",
+   "rel": "FtIn",
+   "prominent": 1,
+   "children": [
+    {
+     "kind": "prop",
+     "ref": "p12"
+    },
+    {
+     "kind": "prop",
+     "ref": "p13"
+    }
+   ]
+  },
+  {
+   "kind": "prop",
+   "ref": "p14"
+  },
+  {
+   "kind": "prop",
+   "ref": "p15"
+  },
+  {
+   "kind": "bracket",
+   "rel": "Alt",
+   "prominent": null,
+   "children": [
+    {
+     "kind": "bracket",
+     "rel": "FtIn",
+     "prominent": 1,
+     "children": [
+      {
+       "kind": "bracket",
+       "rel": "Ser",
+       "prominent": null,
+       "children": [
+        {
+         "kind": "prop",
+         "ref": "p16"
+        },
+        {
+         "kind": "prop",
+         "ref": "p17"
+        }
+       ]
+      },
+      {
+       "kind": "bracket",
+       "rel": "FtIn",
+       "prominent": 1,
+       "children": [
+        {
+         "kind": "bracket",
+         "rel": "FtIn",
+         "prominent": 1,
+         "children": [
+          {
+           "kind": "prop",
+           "ref": "p18"
+          },
+          {
+           "kind": "bracket",
+           "rel": "Ser",
+           "prominent": null,
+           "children": [
+            {
+             "kind": "prop",
+             "ref": "p19"
+            },
+            {
+             "kind": "prop",
+             "ref": "p20"
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "kind": "prop",
+         "ref": "p21"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "bracket",
+     "rel": "FtIn",
+     "prominent": 1,
+     "children": [
+      {
+       "kind": "bracket",
+       "rel": "MEd",
+       "prominent": 1,
+       "children": [
+        {
+         "kind": "prop",
+         "ref": "p22"
+        },
+        {
+         "kind": "prop",
+         "ref": "p23"
+        }
+       ]
+      },
+      {
+       "kind": "prop",
+       "ref": "p24"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "bracket",
+   "rel": "Tmp",
+   "prominent": 0,
+   "children": [
+    {
+     "kind": "prop",
+     "ref": "p25"
+    },
+    {
+     "kind": "prop",
+     "ref": "p26"
+    }
+   ],
+   "reversed": true
+  },
+  {
+   "kind": "prop",
+   "ref": "p27"
+  },
+  {
+   "kind": "prop",
+   "ref": "p28"
+  },
+  {
+   "kind": "bracket",
+   "rel": "Ser",
+   "prominent": null,
+   "children": [
+    {
+     "kind": "prop",
+     "ref": "p29"
+    },
+    {
+     "kind": "prop",
+     "ref": "p30"
+    }
+   ]
+  },
+  {
+   "kind": "bracket",
+   "rel": "FtIn",
+   "prominent": 1,
+   "children": [
+    {
+     "kind": "prop",
+     "ref": "p31"
+    },
+    {
+     "kind": "bracket",
+     "rel": "Ser",
+     "prominent": null,
+     "children": [
+      {
+       "kind": "prop",
+       "ref": "p32"
+      },
+      {
+       "kind": "prop",
+       "ref": "p33"
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "sections": [
+  {
+   "start": "p6",
+   "color": 1
+  },
+  {
+   "start": "p8",
+   "color": 2
+  },
+  {
+   "start": "p11",
+   "color": 3
+  },
+  {
+   "start": "p15",
+   "color": 4
+  },
+  {
+   "start": "p16",
+   "color": 5
+  },
+  {
+   "start": "p25",
+   "color": 6
+  },
+  {
+   "start": "p31",
+   "color": 7
+  }
+ ]
+}

@@ -298,6 +298,13 @@ class TestTreeInvariants:
         problems = problems_of(doc)
         assert any("valid child index" in p for p in problems)
 
+    def test_prominent_true_is_not_a_child_index(self):
+        # A bool is an int in Python, but it is not a slot number.
+        doc = valid_doc()
+        doc["forest"][0]["prominent"] = True
+        problems = problems_of(doc)
+        assert any("valid child index" in p for p in problems)
+
     def test_single_child_bracket(self):
         doc = {
             "schemaVersion": 2,
@@ -310,7 +317,74 @@ class TestTreeInvariants:
             ],
         }
         problems = problems_of(doc)
-        assert any(">= 2" in p for p in problems)
+        assert any("exactly 2" in p for p in problems)
+
+    def test_three_way_bracket_rejected(self):
+        # THE BINARY RULE: three propositions in a row are a NESTED chain of
+        # Series, Ser[Ser[p1, p2], p3] — never one three-way bracket. This is
+        # the shape the old editor could splice into existence; the server
+        # refuses it outright now (docs/tree-engine-spec.md §1, §7.6, §9 Q2).
+        doc = {
+            "schemaVersion": 2,
+            "propositions": [prop("p1", 0, 1), prop("p2", 2, 3), prop("p3", 4, 5)],
+            "forest": [
+                {
+                    "kind": "bracket", "rel": "Ser", "prominent": None,
+                    "children": [
+                        {"kind": "prop", "ref": "p1"},
+                        {"kind": "prop", "ref": "p2"},
+                        {"kind": "prop", "ref": "p3"},
+                    ],
+                },
+            ],
+        }
+        assert problems_of(doc) == [
+            "forest[0].children must be a list of exactly 2 nodes"]
+
+    def test_the_nested_chain_that_replaces_it_is_valid(self):
+        # The same three propositions, related the only way the model allows.
+        doc = {
+            "schemaVersion": 2,
+            "propositions": [prop("p1", 0, 1), prop("p2", 2, 3), prop("p3", 4, 5)],
+            "forest": [
+                {
+                    "kind": "bracket", "rel": "Ser", "prominent": None,
+                    "children": [
+                        {
+                            "kind": "bracket", "rel": "Ser", "prominent": None,
+                            "children": [
+                                {"kind": "prop", "ref": "p1"},
+                                {"kind": "prop", "ref": "p2"},
+                            ],
+                        },
+                        {"kind": "prop", "ref": "p3"},
+                    ],
+                },
+            ],
+        }
+        validate_document(doc)
+
+    def test_a_wide_bracket_still_reports_its_out_of_range_star(self):
+        # The star's domain is {0, 1} whatever the children list says, so a
+        # three-way subordinate bracket reports BOTH faults, not one.
+        doc = {
+            "schemaVersion": 2,
+            "propositions": [prop("p1", 0, 1), prop("p2", 2, 3), prop("p3", 4, 5)],
+            "forest": [
+                {
+                    "kind": "bracket", "rel": "Grnd", "prominent": 2,
+                    "children": [
+                        {"kind": "prop", "ref": "p1"},
+                        {"kind": "prop", "ref": "p2"},
+                        {"kind": "prop", "ref": "p3"},
+                    ],
+                },
+            ],
+        }
+        assert problems_of(doc) == [
+            "forest[0].children must be a list of exactly 2 nodes",
+            "forest[0].prominent must be a valid child index for Grnd",
+        ]
 
 
 class TestSources:
@@ -692,33 +766,113 @@ class TestTextFlow:
 
 class TestHoles:
     """A hole holds units an edit left unattached, so the structure above them
-    survives. A document with one is an editing state — sound, unfinished."""
+    survives. A document with one is an editing state — sound, unfinished.
+
+    It is a WAITING ROOM, not structure: only a bracket's child (a root is
+    unattached already), never inside another hole (what waits, waits
+    together), and never around a single unit (that unit takes the slot)."""
 
     def hole_doc(self) -> dict:
+        """What deleting one relationship leaves: Grnd[p1, hole[p2, p3]], with
+        p4 still standing alone."""
         doc = partial_doc()
         doc["forest"] = [
-            {"kind": "prop", "ref": "p1"},
-            {"kind": "prop", "ref": "p2"},
             {
                 "kind": "bracket", "rel": "Grnd", "prominent": 0,
                 "children": [
-                    {"kind": "hole", "children": [{"kind": "prop", "ref": "p3"}]},
-                    {"kind": "prop", "ref": "p4"},
+                    {"kind": "prop", "ref": "p1"},
+                    {
+                        "kind": "hole",
+                        "children": [
+                            {"kind": "prop", "ref": "p2"},
+                            {"kind": "prop", "ref": "p3"},
+                        ],
+                    },
                 ],
             },
+            {"kind": "prop", "ref": "p4"},
         ]
         return doc
 
     def test_a_hole_validates_and_still_tiles_the_propositions(self):
         validate_document(self.hole_doc())
 
-    def test_a_hole_needs_something_in_it(self):
+    def test_a_hole_may_hold_a_hanging_bracket(self):
+        # What waits is whole units, brackets included — a packet whose own
+        # relationship was never touched keeps it while it hangs.
         doc = self.hole_doc()
-        doc["forest"][2]["children"][0]["children"] = []
-        assert problems_of(doc) == [
-            "forest[2].children[0].children must be a list of >= 1 node",
-            "propositions not in the forest: ['p3']",
+        doc["forest"][0]["children"][1]["children"] = [
+            {"kind": "prop", "ref": "p2"},
+            {
+                "kind": "bracket", "rel": "Ser", "prominent": None,
+                "children": [
+                    {"kind": "prop", "ref": "p3"},
+                    {"kind": "prop", "ref": "p4"},
+                ],
+            },
         ]
+        doc["forest"] = doc["forest"][:1]
+        validate_document(doc)
+
+    def test_a_hole_of_one_is_a_room_with_one_lodger(self):
+        # Spec §10 A1: the analyst has assembled the group and has not said it
+        # is finished. The room stands — tick, pickup dot, the lone unit
+        # waiting — and only their own gesture settles it.
+        doc = self.hole_doc()
+        doc["forest"][0]["children"][1]["children"] = [{"kind": "prop", "ref": "p2"}]
+        doc["propositions"] = [p for p in doc["propositions"] if p["id"] != "p3"]
+        validate_document(doc)  # no raise
+
+    def test_an_empty_hole_holds_nothing_and_is_nothing(self):
+        doc = self.hole_doc()
+        doc["forest"][0]["children"][1]["children"] = []
+        assert problems_of(doc) == [
+            "forest[0].children[1].children must be a list of >= 1 node",
+            "propositions not in the forest: ['p2', 'p3']",
+        ]
+
+    def test_a_hole_cannot_be_a_forest_root(self):
+        doc = self.hole_doc()
+        doc["forest"] = [
+            {
+                "kind": "hole",
+                "children": [
+                    {"kind": "prop", "ref": "p1"},
+                    {"kind": "prop", "ref": "p2"},
+                ],
+            },
+            {"kind": "prop", "ref": "p3"},
+            {"kind": "prop", "ref": "p4"},
+        ]
+        assert problems_of(doc) == [
+            "forest[0] cannot be a forest root: roots are unattached"]
+
+    def test_a_hole_cannot_hold_another_hole(self):
+        doc = self.hole_doc()
+        doc["forest"][0]["children"][1]["children"] = [
+            {"kind": "prop", "ref": "p2"},
+            {
+                "kind": "hole",
+                "children": [
+                    {"kind": "prop", "ref": "p3"},
+                    {"kind": "prop", "ref": "p4"},
+                ],
+            },
+        ]
+        doc["forest"] = doc["forest"][:1]
+        assert problems_of(doc) == [
+            "forest[0].children[1].children[1] cannot hold another hole: "
+            "what waits, waits together"]
+
+    def test_the_leaves_of_a_hole_count_like_any_others(self):
+        # Waiting does not put a proposition outside the reading order.
+        doc = self.hole_doc()
+        doc["forest"][0]["children"][1]["children"] = [
+            {"kind": "prop", "ref": "p3"},
+            {"kind": "prop", "ref": "p2"},
+        ]
+        assert problems_of(doc) == [
+            "forest leaves must appear exactly once each, in proposition order"]
 
     def test_an_unfinished_tree_has_no_main_point(self):
         doc = self.hole_doc()
@@ -755,3 +909,30 @@ class TestHoles:
         doc = self.hole_doc()
         doc["forest"][0] = {"kind": "blob"}
         assert "forest[0].kind must be 'prop', 'bracket' or 'hole'" in problems_of(doc)
+
+
+def test_a_bracket_may_hang_at_both_ends():
+    # Spec §10 A4, the analyst's ruling: "only validate the tree structure when
+    # there are no holes remaining". A bracket with a room at each end is work
+    # in progress — nothing cascades, nothing dissolves — and it stores as it
+    # stands.
+    doc = {
+        "schemaVersion": 2,
+        "propositions": [
+            {"id": f"p{i}", "label": str(i),
+             "source": {"kind": "corpus", "start": 124771 + i, "end": 124771 + i}}
+            for i in range(4)
+        ],
+        "forest": [{
+            "kind": "bracket", "rel": "Alt", "prominent": None,
+            "children": [
+                {"kind": "hole", "children": [
+                    {"kind": "prop", "ref": "p0"}, {"kind": "prop", "ref": "p1"}]},
+                {"kind": "hole", "children": [
+                    {"kind": "prop", "ref": "p2"}, {"kind": "prop", "ref": "p3"}]},
+            ],
+        }],
+    }
+    validate_document(doc)  # no raise
+    # …and it has no main point while the rooms are open.
+    assert main_point(doc) == []

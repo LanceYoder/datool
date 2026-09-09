@@ -1312,8 +1312,13 @@ def _sentence_join(prev_segs: list, cur_segs: list, words) -> tuple[str, bool]:
     # speech in the tree as well as in the sectioning.
     if _dicendi_sentence(prev_segs, words, cur_segs):
         return "FtIn", True
-    # Asyndeton between sentences: Series, the sensible default (RULING: sure).
-    return "Ser", True
+    # Asyndeton between sentences: Series, but OUT of minimal (user ruling,
+    # 2026-08-29): a sentence with no connective carries no positive evidence
+    # for the join — not even that the relationship is a Series — so the
+    # guess stays a Full-mode default and minimal leaves the boundary open.
+    # (This also keeps the dangling-hold sentences of expert-questions Open
+    # #2 out of minimal, since they reach the fold through this fallback.)
+    return "Ser", False
 
 
 class _Packet(NamedTuple):

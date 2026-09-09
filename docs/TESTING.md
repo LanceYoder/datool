@@ -62,24 +62,56 @@ judgment call included — to be corrected rather than built:
    the ὡς comparison in verse 7.
 2. **Word info**: click any word for its card — lemma with transliteration,
    a short gloss, readable morphology, and the word's English here.
-3. **Split**: RIGHT-click a word → the proposition divides after it.
-   Splitting a connected proposition pulls it out of the tree first (the
-   brackets over it dissolve). Labels re-derive from the corpus verses
-   (11a, 11b, …; spans like 10–12 for units crossing verses).
+3. **Split**: RIGHT-click a word → the proposition divides after it. Nothing
+   is pulled out of the tree: the side that held it now holds both halves and
+   HANGS — a short dashed tick with a pickup dot on the end — waiting to be
+   put back together. Only a bracket left hanging at BOTH ends gives way.
+   Labels re-derive from the corpus verses (11a, 11b, …; spans like 10–12 for
+   units crossing verses).
 4. **Merge**: right-click the LAST word of a proposition — it joins with the
-   one below.
-5. **Connect**: click a unit's dot (the small circle left of it), then click
-   an adjacent unit's dot; a line follows the pointer while a dot is
-   selected. The pair joins and the relationship menu opens. Clicking a
-   selected dot unselects it; only adjacent units connect — an invalid pair
-   shakes. Connecting an already-connected unit somewhere else dissolves its
-   old connections first.
-6. **Disconnect**: right-click a dot — or select it and press Delete — to
-   remove the connections it names. **Clear tree** in the toolbar removes
-   every connection at once.
-7. **Relabel**: click a bracket's letter label (Ft, In, G, S, …) for the menu
-   of all 18 relationships — each row's ⓘ explains what the relationship
-   means, and the listed shortcut keys pick one from the keyboard.
+   one below. A fused proposition cannot be half inside a claim, so the
+   brackets around the pair are settled innermost-outward and only the
+   MINIMAL set gives way: one holding the word as a committed member breaks,
+   one holding it as a lodger simply lets it go and survives, contracted. On
+   the passage's final word nothing happens — there is nothing below to join
+   it to.
+5. **Connect**: dot to dot. **Hover** any dot first: the span it names lights
+   up, because a dot means EXACTLY its own unit. The last proposition of a
+   packet is that proposition; to take the packet, click the packet's own dot
+   on its bracket. Click one dot, then an adjacent unit's dot — a line
+   follows the pointer meanwhile, and clicking the armed dot again unarms it.
+   The join SUCCEEDS whenever the two spans meet; the only refusals are
+   geometric (not adjacent, or one already contains the other), and a refused
+   pair shakes with the reason.
+   While a dot is armed, **aim** at another one: the line snaps to it and
+   draws the bracket that would be made, and every bracket the join would
+   BREAK is washed in the warning ink — the bracket claiming either clicked
+   unit, a bracket the join reaches across, and anything that comes down with
+   them. An aim that cannot land says so in its own line instead. Nothing is
+   hidden: what is highlighted is exactly what goes. Connecting a unit that
+   already belongs to a bracket breaks that bracket — that is the rule, and
+   you see it before you click. A lodger waiting in a room simply leaves it,
+   and the bracket survives, contracted.
+   The new bracket lands UNNAMED and its menu opens with **nothing
+   preselected**: pick a relationship, or press Escape (or click away) to
+   undo the whole join in one step. Nothing is saved while a join stands
+   unnamed, and the toolbar says so until you settle it.
+   A room's own pickup dot can be picked up — the tree flexes so you can see
+   what is still loose — but a waiting group is not a unit, and clicking it
+   says so. When a join fills a room's last slot, the bracket that was
+   hanging flashes once: it is whole again.
+6. **Disconnect**: right-click a dot — or select it and press Delete. WHICH
+   relationship goes depends on the dot: a bracket's dot names its own
+   bracket, a room's pickup dot names the bracket it hangs from, and a
+   proposition's dot names the bracket that holds it. A proposition hanging
+   from nothing has no relationship to delete and says so. What the deleted
+   bracket held spills into the place it stood, a bracket thereby left
+   hanging at both ends comes down after it, and nothing else on the page
+   moves. **Clear tree** in the toolbar removes every connection at once.
+7. **Relabel**: click a bracket's letter label (Ft, In, G, S, …) — including
+   the empty box on a join you have not named yet — for the menu of all 18
+   relationships; each row's ⓘ explains what the relationship means, and the
+   listed shortcut keys pick one from the keyboard.
 8. **Star**: click a `*` to move prominence to the other member (the letter
    labels follow the star).
 9. **Main point**: while every proposition is connected into ONE tree, the

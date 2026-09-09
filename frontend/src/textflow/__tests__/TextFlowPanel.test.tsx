@@ -3,10 +3,20 @@
 // The panel's GESTURES, at the one place they differ from the tree's: a
 // right-click on a word divides the propositions the lines are, and the panel
 // only reports it — the division itself is made in the document.
+//
+// Which of the two gestures a word offers is the panel's to decide (it is the
+// shape of the line under the pointer). WHETHER the gesture is legal is not:
+// §5.4 and §5.5 belong to the engine, and the panel attempts and lets a
+// refusal or a no-op happen rather than keeping a second copy of the rule. The
+// last describe below closes that loop for real — panel right-click through
+// the editor's own commands, which is the path AnalysisPage's actionsRef
+// carries — because a deferring UI is only honest if the judge it defers to
+// actually answers.
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import type { CorpusWord, TextFlow } from '../../types';
+import type { Editor } from '@tiptap/core';
+import type { CorpusWord, DocumentV2, TextFlow } from '../../types';
 
 /** The panel's only server call: the passage's words. */
 const words: CorpusWord[] = 'α β γ δ'.split(' ').map((text, i) => ({
@@ -33,6 +43,12 @@ vi.mock('../../api', () => ({
 }));
 
 const TextFlowPanel = (await import('../TextFlowPanel')).default;
+// Imported after the api mock is registered, like the panel itself: these
+// reach the same module graph.
+const { buildTextById, documentToNode } = await import('../../editor/convert');
+const { buildEditor } = await import('../../editor/editor');
+const { mergeBelow, splitProposition } = await import('../../editor/commands');
+const { propositionsInOrder } = await import('../../editor/schema');
 
 /** Two lines: α β | γ δ. */
 const flow: TextFlow = {
@@ -85,14 +101,18 @@ describe('TextFlowPanel right-click', () => {
     expect(onSplitWord).not.toHaveBeenCalled();
   });
 
-  it('does nothing on the passage’s final word', async () => {
+  it('DEFERS on the passage’s final word: it attempts the merge, and the engine declines', async () => {
+    // The panel does not know — and must not decide — that there is nothing
+    // below the last line to merge into. §5.5 is the engine's rule, so the
+    // gesture is attempted and `mergeBelow` finds no proposition below and
+    // dispatches nothing. Pre-filtering it here was a second copy of the rule.
     const onSplitWord = vi.fn();
     const onMergeAfterLine = vi.fn();
     await panel({ onSplitWord, onMergeAfterLine });
 
     fireEvent.contextMenu(word('δ'));
     expect(onSplitWord).not.toHaveBeenCalled();
-    expect(onMergeAfterLine).not.toHaveBeenCalled();
+    expect(onMergeAfterLine).toHaveBeenCalledWith(103);
   });
 
   it('opens no popover: a right-click is the whole gesture', async () => {
@@ -118,5 +138,121 @@ describe('TextFlowPanel left-click', () => {
     );
     expect(screen.getByText('Loading…')).toBeTruthy();
     expect(screen.queryByRole('button')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The round trip: panel gesture -> the EDITOR's commands -> the document.
+//
+// AnalysisPage hands the panel two callbacks that run straight into
+// AnalysisEditor's `actionsRef` (EditorActions.splitAfter / .mergeAt), which
+// name a word by CORPUS INDEX, find the proposition holding it, and run one
+// core command. The two lines below are those two propositions, so the flow's
+// right-click and the tree's right-click are the same division of the same
+// document — and one undo step, because each command dispatches once.
+
+const WORD_MAP: ReadonlyMap<number, CorpusWord> = new Map(words.map((w) => [w.index, w]));
+
+/** Two corpus propositions matching the flow's two lines. */
+function twoLineDoc(): DocumentV2 {
+  return {
+    schemaVersion: 2,
+    propositions: [
+      { id: 'p1', label: '1a', source: { kind: 'corpus', start: 100, end: 101 } },
+      { id: 'p2', label: '1b', source: { kind: 'corpus', start: 102, end: 103 } },
+    ],
+    forest: [{ kind: 'prop', ref: 'p1' }, { kind: 'prop', ref: 'p2' }],
+  };
+}
+
+/**
+ * EditorActions as AnalysisEditor builds them: a corpus index names the
+ * proposition whose range holds it, and the ordinal within that range is where
+ * the division falls.
+ */
+function editorActions(editor: Editor) {
+  const at = (index: number): { pid: string; srcStart: number } | null => {
+    for (const { node } of propositionsInOrder(editor.state.doc)) {
+      const { pid, srcStart, srcEnd } = node.attrs;
+      if (typeof srcStart === 'number' && typeof srcEnd === 'number') {
+        if (index >= srcStart && index <= srcEnd) return { pid: String(pid), srcStart };
+      }
+    }
+    return null;
+  };
+  return {
+    splitAfter: (index: number) => {
+      const hit = at(index);
+      if (hit !== null) splitProposition(editor, hit.pid, index - hit.srcStart + 1, WORD_MAP);
+    },
+    mergeAt: (index: number) => {
+      const hit = at(index);
+      if (hit !== null) mergeBelow(editor, hit.pid, WORD_MAP);
+    },
+  };
+}
+
+/** The propositions as they now stand: label and display text, in order. */
+const rows = (editor: Editor): string[] =>
+  propositionsInOrder(editor.state.doc).map(
+    ({ node }) => `${String(node.attrs.label)}: ${String(node.attrs.text)}`,
+  );
+
+describe('TextFlowPanel gestures through the editor’s commands', () => {
+  let editor: Editor | null = null;
+
+  afterEach(() => {
+    editor?.destroy();
+    editor = null;
+  });
+
+  async function wired() {
+    const doc = twoLineDoc();
+    const ed = buildEditor([], documentToNode(doc, buildTextById(doc, words), []));
+    editor = ed;
+    const actions = editorActions(ed);
+    await panel({
+      onSplitWord: (index) => {
+        actions.splitAfter(index);
+      },
+      onMergeAfterLine: (index) => {
+        actions.mergeAt(index);
+      },
+    });
+    return ed;
+  }
+
+  it('divides the proposition a right-click falls in, and re-labels from the verses', async () => {
+    const ed = await wired();
+    expect(rows(ed)).toEqual(['1a: α β', '1b: γ δ']);
+
+    fireEvent.contextMenu(word('α'));
+    // The division landed in the DOCUMENT: three propositions, the corpus
+    // labels re-derived (one verse, so they letter a/b/c).
+    expect(rows(ed)).toEqual(['1a: α', '1b: β', '1c: γ δ']);
+  });
+
+  it('joins the line below on a line’s last word', async () => {
+    const ed = await wired();
+    fireEvent.contextMenu(word('β')); // last word of line one -> merge
+    expect(rows(ed)).toEqual(['1: α β γ δ']);
+  });
+
+  it('leaves the document untouched when the engine declines the final word', async () => {
+    const ed = await wired();
+    const before = rows(ed);
+    const steps = ed.state.doc;
+    fireEvent.contextMenu(word('δ')); // attempted, and refused: nothing below
+    expect(rows(ed)).toEqual(before);
+    expect(ed.state.doc).toBe(steps); // byte-identical: no transaction at all
+    expect(ed.can().undo()).toBe(false);
+  });
+
+  it('is ONE undo step, text and tree together', async () => {
+    const ed = await wired();
+    fireEvent.contextMenu(word('α'));
+    expect(rows(ed)).toHaveLength(3);
+    ed.commands.undo();
+    expect(rows(ed)).toEqual(['1a: α β', '1b: γ δ']);
   });
 });

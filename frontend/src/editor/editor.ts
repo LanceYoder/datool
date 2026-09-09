@@ -13,8 +13,9 @@ import {
 import { Plugin } from '@tiptap/pm/state';
 import { UndoRedo } from '@tiptap/extensions';
 import type { Document as AnalysisDocument, DocumentV2 } from '../types';
+import type { TaxonomyLike } from '../tree/serialize';
 import { documentToNode, nodeToDocument } from './convert';
-import { editorNodes } from './schema';
+import { TREE_ATTR, editorNodes } from './schema';
 
 const NoTextInput = Extension.create({
   name: 'noTextInput',
@@ -38,24 +39,17 @@ const NoTextInput = Extension.create({
 export function editorExtensions(
   propositionNode: AnyExtension = editorNodes[2] as AnyExtension,
 ): AnyExtension[] {
-  const [doc, text, , bracket, hole] = editorNodes;
-  return [
-    doc,
-    text,
-    propositionNode,
-    bracket,
-    hole,
-    UndoRedo,
-    NoTextInput,
-  ] as AnyExtension[];
+  const [doc, text] = editorNodes;
+  return [doc, text, propositionNode, UndoRedo, NoTextInput] as AnyExtension[];
 }
 
 /**
  * Build an Editor with the bracketing schema, undo/redo history, and text
  * input disabled (atoms only). `content` is ProseMirror doc JSON (from
- * documentToNode); when given it becomes the initial state and is NOT an
- * undo step. Extra extensions (node views, selection plugins, ...) append
- * after the core set.
+ * documentToNode) — the FLAT propositions plus the tree attribute, together,
+ * because a post-mount install transaction was a window of guaranteed data
+ * loss (§7.5). When given it becomes the initial state and is NOT an undo
+ * step.
  */
 export function buildEditor(
   extensions: AnyExtension[] = [],
@@ -71,30 +65,31 @@ export function buildEditor(
 }
 
 /**
- * Load a Document into an existing editor. Not recorded in history —
- * replacing the whole document should not be undoable back to the previous
- * analysis.
+ * Load a Document into an existing editor: flat content and the tree attribute
+ * in ONE dispatch (§7.5), outside history — replacing the whole document
+ * should not be undoable back to the previous analysis, and neither half of it
+ * should ever be installed without the other.
  */
 export function setDocument(
   editor: Editor,
   document: AnalysisDocument,
   textById: ReadonlyMap<string, string>,
+  taxonomy: readonly TaxonomyLike[],
 ): void {
-  const json = documentToNode(document, textById);
-  editor.chain().setMeta('addToHistory', false).setContent(json).run();
-  // setContent replaces the doc's CONTENT; the doc node's own attrs (the
-  // color-block breaks) are applied separately, also outside history.
-  editor.view.dispatch(
-    editor.state.tr
-      .setDocAttribute('sections', (json.attrs?.sections as string[] | undefined) ?? [])
-      .setMeta('addToHistory', false),
-  );
+  const json = documentToNode(document, textById, taxonomy);
+  const next = editor.schema.nodeFromJSON(json);
+  const tr = editor.state.tr;
+  tr.replaceWith(0, editor.state.doc.content.size, next.content);
+  tr.setDocAttribute(TREE_ATTR, next.attrs[TREE_ATTR]);
+  tr.setMeta('addToHistory', false);
+  editor.view.dispatch(tr);
 }
 
 /** Read the editor state back out as a v2 Document (see nodeToDocument). */
 export function getDocument(
   editor: Editor,
   priorDocument: AnalysisDocument,
+  taxonomy: readonly TaxonomyLike[],
 ): DocumentV2 {
-  return nodeToDocument(editor.state.doc, priorDocument);
+  return nodeToDocument(editor.state.doc, priorDocument, taxonomy);
 }

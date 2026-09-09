@@ -31,6 +31,8 @@ says so.
 import json
 from dataclasses import dataclass
 
+import pytest
+
 from da.corpus import load_words
 from da.corpus.reference import resolve
 from da.corpus.normalize import nfc as _L
@@ -266,15 +268,14 @@ def test_first_pass_1john_1_5_7_minimal_tier():
       * 5c/5e/6c/6e/7d καί → Series (RULING: the Series default is sure);
       * 5d, 6b ὅτι after a verbum dicendi → Ft/In;
       * 6a/7a ἐάν → Conditional, 7b ὡς → Comparison;
-      * 5→6 asyndeton → Series (RULING: sure);
       * 6→7 δέ rendered "But if we walk …" → ALTERNATIVE (RULING Q1), which
-        is the bracket the student drew between the two conditionals.
-
-    RECOMPUTED for RULING Q8/Q12 as well: the 5→6 boundary now carries three
-    soft indicators (epistolary asyndeton, a lexical-cohesion drop, the
-    English period), and softs combine, so verse 5 is a section of its own —
-    which is why the Series and the Alternative nest the other way round now
-    (Ser[5, Alt[6, 7]] rather than Ser[Ser[5, 6], 7]).
+        is the bracket the student drew between the two conditionals;
+      * 5→6 asyndeton → NOTHING (user ruling, 2026-08-29): a sentence with
+        no connective carries no positive evidence, so the no-connective
+        Series fallback is OUT of minimal and verse 5 stands as its own
+        root. Minimal now only draws what a signal supports — this is the
+        one boundary in the passage without one, so minimal is a forest of
+        two and no longer equals Full here.
 
     The one call the 1 John student reads differently — 5d/5e as ∴ rather
     than Series — is exactly the kind of default the analyst re-labels in one
@@ -308,10 +309,12 @@ def test_first_pass_1john_1_5_7_minimal_tier():
                  SER(p["7c"], p["7d"]))
     alt = {"kind": "bracket", "rel": "Alt", "prominent": None,
            "children": [verse6, verse7]}
-    assert doc["forest"] == [SER(verse5, alt)]
+    assert doc["forest"] == [verse5, alt]
 
-    # Nothing in this passage is undecidable, so minimal == Full here.
-    assert doc["forest"] == build_document(segment(J_START, J_END))["forest"]
+    # The 5→6 asyndeton is the passage's ONE unsignaled join, so minimal is
+    # Full minus exactly that Series bracket.
+    full = build_document(segment(J_START, J_END))["forest"]
+    assert full == [SER(verse5, alt)]
     roundtrip(doc)
 
 
@@ -830,3 +833,45 @@ def test_no_document_ever_carries_flags():
     doc = build_document(J_HAND_SEGMENTS)
     for bracket in brackets(the_root(doc)):
         assert "flag" not in bracket
+
+
+# ---------------------------------------------------------------------------
+# The binary rule, swept
+
+# A spread wide enough to exercise every joining path the builder has:
+# narrative chains (Mark, Acts), long asyndetic and καί-strung runs
+# (Revelation, Hebrews 11), the οὐ … ἀλλά and μέν … δέ folds (Romans,
+# 1 Corinthians), heavy participial stacks (Ephesians, Colossians), and the
+# quotation/dicendi route (Matthew 8, Luke 15).
+BINARY_SWEEP = [
+    "Matthew 3:1-17", "Matthew 8:23-29", "Mark 1:1-20", "Mark 4:1-20",
+    "Luke 15:11-32", "John 1:1-18", "John 11:38-44", "Acts 2:37-41",
+    "Romans 5:1-11", "Romans 8:1-39", "1 Corinthians 13:1-13",
+    "Ephesians 1:3-14", "Colossians 1:9-23", "Hebrews 11:1-40",
+    "James 1:1-27", "1 John 1:1-10", "Revelation 21:1-27",
+]
+
+
+@pytest.mark.parametrize("confident_only", [True, False])
+@pytest.mark.parametrize("ref", BINARY_SWEEP)
+def test_the_first_pass_only_ever_builds_binary_brackets(ref, confident_only):
+    """THE BINARY RULE, over live segmentation: a bracket relates exactly two
+    sides (docs/tree-engine-spec.md §1, §7.6). A run of three same-relationship
+    clauses comes out as the LEFT-NESTED chain :func:`da.treebuild._chain`
+    builds — Ser[Ser[a, b], c] — never as one wide bracket, in either tier.
+
+    The builder has only two node constructors, ``_sub`` and ``_coord``, and
+    both take exactly ``(first, second)``; nothing appends to a ``children``
+    list afterwards (``_edge_join`` REPLACES a slot, ``_confident_forest``
+    keeps whole nodes or dissolves them). So binarity is a property of the
+    CONSTRUCTION and this sweep merely keeps it honest — what it is worth is
+    that a future join path cannot quietly widen a bracket instead of nesting
+    one, which is exactly the mistake the old editor made.
+    """
+    segs, _ = passage(ref)
+    doc = build_document(segs, confident_only=confident_only)
+    validate_document(doc)   # the tightened validator: exactly 2, no legacy
+    wide = [(b["rel"], len(b["children"]))
+            for root in doc["forest"] for b in brackets(root)
+            if len(b["children"]) != 2]
+    assert wide == []

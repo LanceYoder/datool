@@ -8,19 +8,33 @@
 //   2. dots.
 //   3. labels, then stars LAST, so where a star hugs its letters the star
 //      wins the click (a mis-hit there used to open the relationship menu).
+//
+// §5.2's aiming signals all arrive as PROPS, worked out from the core state
+// upstream: the endangered ids `previewConnect` enumerated, whether the aimed
+// target refuses, and which brackets a gesture just anchored. The hover
+// span-wash is GONE (§10 A6: quiet the UI). Nothing here re-derives a rule (§7.9) — this file only knows how
+// each of those answers is drawn.
 
-import { COL_W, STUB_W } from './layout';
+import type { CSSProperties } from 'react';
+import { useMemo } from 'react';
+import {
+  COL_W,
+  LABEL_BOX_RX,
+  STAR_R,
+  STUB_W,
+  isCompactLabel,
+  isSymbolLabel,
+  labelBox,
+  marginInk,
+  starCenterX,
+  starCenterY,
+} from './layout';
 import type { BracketGeom, DotGeom } from './layout';
 import type { Point } from './interaction';
 import type { ViewSettings } from './viewSettings';
 import { relationColor } from './viewSettings';
 import { useTheme } from '../theme';
-import DrolleryDefs, { DROLLERY_COUNT } from './Drolleries';
-
-/** A laid-out bracket zipped with the ProseMirror position of its node. */
-export interface PositionedBracket extends BracketGeom {
-  pos: number;
-}
+import DrolleryDefs, { DrolleryLayer, drolleryPerches } from './Drolleries';
 
 /** A failed connection attempt: the dot to shake, with a re-run counter. */
 export interface ShakeState {
@@ -44,6 +58,14 @@ const DOT_STROKE = 'var(--tree-dot-stroke, var(--tree-line, #374151))';
  * letters in one color and gilds its stars in another. */
 const LABEL_INK = 'var(--tree-label, var(--tree-line, #374151))';
 const STAR_INK = 'var(--tree-star, var(--tree-line, #374151))';
+/**
+ * §5.2's endangered ink: what a bracket is drawn in while the aim would BREAK
+ * it — a claimer, the crossed bracket, or a cascade death. It replaces the
+ * relationship's own colour rather than tinting it, because "this is about to
+ * go" outranks "this is a Ground"; the rest of the endangered style (the
+ * bracket steps back, its label ring follows) is the stylesheet's.
+ */
+const ENDANGERED = 'var(--tree-endangered, var(--danger, #b91c1c))';
 
 /**
  * What a bracket is drawn in: its relationship's color while color coding is
@@ -59,22 +81,6 @@ const DOT_R = 5;
 /** The (invisible) click target around each dot. */
 const DOT_HIT_R = 12;
 
-/** Rough advance width of the 13px label font, for the label hit rect. */
-const LABEL_CHAR_W = 8;
-
-/**
- * Whether a label is a SINGLE MARK standing in for a word — Negative–Positive
- * is written "-" and "+", Inference "∴". Set at the size a letter wants, one
- * of these is a few pixels of hairline sitting on a tick line and disappears
- * into it, so they are drawn bigger and heavier everywhere.
- *
- * One character is the test, which is why Comparison's "//" is left alone: a
- * pair of strokes already has the width to be seen, and blown up it shouts.
- */
-function isSymbolLabel(text: string): boolean {
-  return [...text].length === 1 && !/[A-Za-z]/.test(text);
-}
-
 /**
  * The label as it is SET. The taxonomy writes Negative–Positive's first half
  * with a hyphen; a hyphen is a word-joiner, not an operator, and beside a "+"
@@ -86,35 +92,32 @@ function labelGlyph(text: string): string {
   return text === '-' ? '\u2212' : text;
 }
 
-/** Rough width of a label as drawn — marks are set larger, so they take more. */
-function labelWidth(text: string): number {
-  return text.length * (isSymbolLabel(text) ? LABEL_CHAR_W * 1.4 : LABEL_CHAR_W);
-}
-
-/**
- * How far a label sits from its bracket's spine: end labels start this far
- * right of it, mid (coordinate) labels end this far left of it. The bracket's
- * own dot sits ON the spine, so this is what keeps letters and dots apart.
- */
-const LABEL_OFFSET = 12;
-
-/** Gap between an end label's last letter and its star. */
-const STAR_GAP = 4;
-
-/** Outer radius of the drawn star; the inner radius is this times 0.42. */
-const STAR_R = 7;
-
-/** How far a label's BASELINE sits above its tick line. */
-const LABEL_RISE = 5;
-
-/**
- * How far the star's center sits above the tick: the same rise as the label's
- * baseline, plus a third of the label's size — which puts the star's middle at
- * the middle of the letters beside it rather than on their baseline. The size
- * matches .bracket-label in styles.css.
- */
+/** The two sizes a label is set at — .bracket-label(.symbol) in styles.css. */
 const LABEL_SIZE = 13;
-const STAR_RISE = LABEL_RISE + LABEL_SIZE * 0.36;
+const SYMBOL_SIZE = 20;
+
+/**
+ * Where a glyph's INK centers above its own baseline, as a share of its font
+ * size. This is what puts a label in the middle of its square rather than
+ * merely near it: the box is centered on the geometry, but a glyph is not
+ * centered on its baseline, and the two do not meet by themselves. (Nor does
+ * dominant-baseline do it — that centers the EM BOX, descender room included,
+ * and every label here is caps with nothing below the line.)
+ *
+ * Measured off the interface face at the sizes above. The letters all land
+ * within a hair of 0.36. The marks are set on the math axis and center lower;
+ * "∴" lower still, its three dots sitting near the baseline.
+ */
+const LETTER_INK = 0.36;
+const MARK_INK = 0.285;
+const INK_EXCEPTIONS: Record<string, number> = { '∴': 0.19 };
+
+/** How far a label's baseline sits BELOW the middle of its square. */
+function baselineDrop(text: string): number {
+  const symbol = isSymbolLabel(text);
+  const ratio = INK_EXCEPTIONS[text] ?? (symbol ? MARK_INK : LETTER_INK);
+  return (symbol ? SYMBOL_SIZE : LABEL_SIZE) * ratio;
+}
 
 /** A five-pointed star, point up, centered on (cx, cy). */
 function starPath(cx: number, cy: number, r: number): string {
@@ -168,18 +171,6 @@ function scribblePath(cx: number, cy: number, r: number): string {
     d += `Q${bulge.toFixed(2)},${((py + y) / 2).toFixed(2)} ${x.toFixed(2)},${y.toFixed(2)}`;
   }
   return d;
-}
-
-/**
- * A stable hash of a point into [0, 1). Used to decide which of the margin's
- * creatures a bracket gets and whether it gets one at all: a plain weighted
- * sum will not do, because the columns are a fixed 72px apart and the rows a
- * fixed height, so any linear seed lands on the same few residues and every
- * bracket in the tree comes out holding the same snail.
- */
-function hash01(x: number, y: number, salt: number): number {
-  const v = Math.sin(x * 12.9898 + y * 78.233 + salt * 37.719) * 43758.5453;
-  return v - Math.floor(v);
 }
 
 /**
@@ -250,29 +241,47 @@ function penStarPath(cx: number, cy: number, r: number): string {
   return d;
 }
 
+/** A bracket a gesture just made whole (§5.2), with a re-run counter. */
+export interface AnchorState {
+  ids: readonly number[];
+  seq: number;
+}
+
+/** Shared empty list, so a default prop never re-arms the memos below. */
+const NO_IDS: readonly number[] = [];
+
 export interface BracketLayerProps {
-  brackets: PositionedBracket[];
+  brackets: BracketGeom[];
   dots: DotGeom[];
   width: number;
   height: number;
   selectedDotId: string | null;
   shake: ShakeState | null;
   onDotClick: (dot: DotGeom) => void;
-  onLabelClick: (pos: number, at: Point) => void;
-  onStarClick: (pos: number) => void;
+  onLabelClick: (bracketId: number, at: Point) => void;
+  onStarClick: (bracketId: number) => void;
   /** Right-click: remove the connections at this dot. */
   onDotDelete: (dot: DotGeom) => void;
+  /** The pointer entered a dot, or left one (null) — §5.2's first signal. */
+  onDotHover?: (dot: DotGeom | null) => void;
+  /**
+   * §5.2: every bracket `previewConnect` says the aimed join would break —
+   * claimers and a crossed bracket, ALL of them. The list comes straight from
+   * the core (§7.9: the UI never re-derives classification).
+   */
+  endangered?: readonly number[];
+  /** The dot under the pointer while another is armed: where the aim lands. */
+  aimTargetId?: string | null;
+  /** §5.2: that target would REFUSE — the aim line says so in its own style. */
+  aimRefused?: boolean;
+  /** §5.2: brackets a gesture just anchored, for the emphasis animation. */
+  anchored?: AnchorState | null;
   /**
    * Where the pointer is, in overlay coordinates, while a dot is selected —
    * the loose end of the connection being made. Null when nothing is selected
    * or the pointer has not moved yet.
    */
   pointer: Point | null;
-  /**
-   * A bracket this layout proposes but the document does not have yet: drawn
-   * provisionally, so what is being offered is legible as an offer.
-   */
-  provisionalPos?: number | null;
   /** Reader's display options — here, the per-relationship bracket colors. */
   view: ViewSettings;
 }
@@ -283,7 +292,7 @@ export interface BracketLayerProps {
  * where the bracket itself will stand — down that spine, and out to the dot.
  *
  * A carried HANGING END is not this: nothing new is being made there, so its
- * own tick follows the pointer instead (see carriedHole).
+ * own tick follows the pointer instead (see carriedHang).
  */
 function rubberBandPath(dot: DotGeom, pointer: Point): string {
   const spineX = Math.min(dot.x, pointer.x) - (COL_W - STUB_W);
@@ -381,16 +390,31 @@ export default function BracketLayer({
   onLabelClick,
   onStarClick,
   onDotDelete,
+  onDotHover,
+  endangered = NO_IDS,
+  aimTargetId = null,
+  aimRefused = false,
+  anchored = null,
   pointer,
-  provisionalPos = null,
   view,
 }: BracketLayerProps) {
   const selectedDot = dots.find((d) => d.id === selectedDotId);
+  const doomed = useMemo(() => new Set(endangered), [endangered]);
+  const whole = useMemo(() => new Set(anchored?.ids ?? NO_IDS), [anchored]);
+  /**
+   * The AIM: while a dot is armed and the pointer is over another dot, the
+   * line SNAPS to that dot instead of trailing the pointer, so the shape on
+   * screen is the bracket the click would make (§5.2). Everything else about
+   * the line — where it leaves from, the spine it drops down — is unchanged.
+   */
+  const aimDot = dots.find((d) => d.id === aimTargetId && d.id !== selectedDotId);
   // A hanging end being carried: THIS tick follows the pointer — the line the
   // reader picked up is the line that moves, not a second one drawn beside it.
-  const carriedHole =
-    selectedDot !== undefined && selectedDot.kind === 'hole' && pointer !== null
-      ? Number(selectedDot.id.slice('hole:'.length))
+  // A bracket may hang at BOTH ends now (§10 A4), so the carried end is named
+  // by the bracket AND the side.
+  const carriedHang =
+    selectedDot !== undefined && selectedDot.kind === 'hang' && pointer !== null
+      ? { id: Number(selectedDot.ref), side: selectedDot.side }
       : null;
   // Which instrument the tree is drawn with. The notebook is a ballpoint —
   // bowed lines, a struck star, a scribbled-in dot. The book is a quill:
@@ -400,6 +424,41 @@ export default function BracketLayer({
   const pen = theme === 'notebook';
   const quill = theme === 'book';
   const hand: Hand = pen ? 'pen' : quill ? 'quill' : 'ruled';
+
+  // Where the margin's creatures may stand — everywhere the tree has not
+  // already written. Only the book draws them, so only the book pays for
+  // working it out.
+  const perches = useMemo(
+    () => (quill ? drolleryPerches(brackets, marginInk(brackets, dots)) : []),
+    [quill, brackets, dots],
+  );
+
+  /**
+   * What one bracket is written in. Normally its relationship's colour (or the
+   * skin's ink); while the aim would break it, the endangered ink instead —
+   * one place, so the spine, its ticks, its letters and its star all say the
+   * same thing about the same bracket.
+   */
+  const inkOf = (b: BracketGeom, fallback: string): string =>
+    doomed.has(b.bracketId) ? ENDANGERED : ink(view, b.rel ?? '', fallback);
+
+  /** One bracket's class list — endangered, just-anchored. */
+  const bracketClass = (b: BracketGeom, base: string): string => {
+    const classes = [base];
+    if (doomed.has(b.bracketId)) classes.push('endangered');
+    if (whole.has(b.bracketId)) classes.push('anchored');
+    return classes.join(' ');
+  };
+
+  /**
+   * Re-key a bracket on the anchoring counter, so the same bracket anchoring
+   * twice runs the emphasis twice — the dots' shake does exactly this, and for
+   * the same reason: a CSS animation only restarts on a fresh element.
+   */
+  const bracketKey = (b: BracketGeom, prefix: string): string =>
+    anchored !== null && whole.has(b.bracketId)
+      ? `${prefix}${b.bracketId}!${anchored.seq}`
+      : `${prefix}${b.bracketId}`;
 
   return (
     <svg className="bracket-layer interactive" width={width} height={height} style={{ left: 0 }}>
@@ -436,9 +495,14 @@ export default function BracketLayer({
       <g className="spine-layer" pointerEvents="none">
         {brackets.map((b) => (
           <g
-            key={b.pos}
-            className={b.pos === provisionalPos ? 'bracket provisional' : 'bracket'}
-            data-rel={b.rel}
+            key={bracketKey(b, '')}
+            className={bracketClass(b, 'bracket')}
+            // The core id, on the element — the dots publish theirs the same
+            // way (data-dot). Nothing styles off it; it is what lets a test,
+            // or a pair of eyes in the inspector, say WHICH bracket a signal
+            // landed on rather than counting spines.
+            data-bracket={b.bracketId}
+            data-rel={b.rel ?? ''}
           >
             <Stroke
               x1={b.x}
@@ -446,7 +510,7 @@ export default function BracketLayer({
               x2={b.x}
               y2={b.bottom}
               width={1.8}
-              color={ink(view, b.rel, LINE)}
+              color={inkOf(b, LINE)}
               hand={hand}
             />
             {quill && (
@@ -454,14 +518,14 @@ export default function BracketLayer({
                 <path
                   d={flourish(b.x, b.top, true)}
                   fill="none"
-                  style={{ stroke: ink(view, b.rel, LINE) }}
+                  style={{ stroke: inkOf(b, LINE) }}
                   strokeWidth={1.1}
                   strokeLinecap="round"
                 />
                 <path
                   d={flourish(b.x, b.bottom, false)}
                   fill="none"
-                  style={{ stroke: ink(view, b.rel, LINE) }}
+                  style={{ stroke: inkOf(b, LINE) }}
                   strokeWidth={1.1}
                   strokeLinecap="round"
                 />
@@ -471,18 +535,22 @@ export default function BracketLayer({
               // A HANGING tick leaves the spine and stops: the relationship is
               // still here, what it held is not. While its end is carried, the
               // tick reaches all the way to the pointer instead.
-              const carried = carriedHole !== null && t.holeIndex === carriedHole;
+              const carried =
+                carriedHang !== null
+                && t.hanging
+                && b.bracketId === carriedHang.id
+                && t.side === carriedHang.side;
               return (
                 <Stroke
-                  key={t.childIndex}
+                  key={t.side}
                   x1={carried ? pointer!.x : t.x1}
                   y1={carried ? pointer!.y : t.y}
                   x2={t.x2}
                   y2={t.y}
                   width={1.5}
-                  color={ink(view, b.rel, LINE)}
+                  color={inkOf(b, LINE)}
                   hand={hand}
-                  hanging={t.hanging === true}
+                  hanging={t.hanging}
                 />
               );
             })}
@@ -490,40 +558,32 @@ export default function BracketLayer({
         ))}
       </g>
 
-      {/* The margin's creatures, perched on the corners of the tree. They are
-          placed from each bracket's OWN position, not from its index, so a
-          bracket keeps its own drollery for as long as it stays put — and
-          roughly every third bracket gets one, which is about the density a
-          manuscript margin runs at. Inert, like the spines they stand on. */}
-      {quill && (
-        <g className="drollery-layer" pointerEvents="none">
-          {brackets.map((b) => {
-            if (hash01(b.x, b.top, 1) >= 0.34) return null;
-            const which = Math.min(
-              DROLLERY_COUNT - 1,
-              Math.floor(hash01(b.x, b.top, 2) * DROLLERY_COUNT),
-            );
-            // Half of them face the other way. Mirroring about the local
-            // origin walks the box into negative x, so the translate that
-            // follows puts it back in the same lane.
-            const facingLeft = hash01(b.x, b.top, 3) < 0.5;
-            const transform = facingLeft
-              ? `translate(${(b.x - 6).toFixed(1)}, ${(b.top - 24).toFixed(1)}) scale(-1,1)`
-              : `translate(${(b.x - 30).toFixed(1)}, ${(b.top - 24).toFixed(1)})`;
-            return (
-              <use key={`drollery-${b.pos}`} href={`#datool-drollery-${which}`} transform={transform} />
-            );
-          })}
-        </g>
-      )}
+      {/* The margin's creatures, perched where the margin is empty. Which
+          bracket is offered one comes from its OWN position, not its index, so
+          a bracket keeps its creature for as long as it stays put; whether the
+          offer can be taken is up to the ink already on the page. Inert, like
+          the spines they stand on. */}
+      {quill && <DrolleryLayer perches={perches} />}
 
-      {/* The connection in progress, drawn as the BRACKET it would become:
-          a spine where the new bracket's spine will stand, with a tick out to
-          the selected dot and another out to the pointer. Inert. */}
-      {selectedDot !== undefined && pointer !== null && carriedHole === null && (
+      {/* The connection in progress, drawn as the BRACKET it would become: a
+          spine where the new bracket's spine will stand, with a tick out to
+          the selected dot and another out to the pointer — or, once the
+          pointer is ON another dot, out to THAT dot, so the shape on screen is
+          the bracket the click would make. It then speaks in one of three
+          voices (§5.2): trailing the pointer, offering a legal join, or
+          refusing one the core will not take. Inert. */}
+      {selectedDot !== undefined
+        && carriedHang === null
+        && (aimDot !== undefined || pointer !== null) && (
         <path
-          className="rubber-band"
-          d={rubberBandPath(selectedDot, pointer)}
+          className={
+            aimDot === undefined
+              ? 'rubber-band'
+              : aimRefused
+                ? 'rubber-band refused'
+                : 'rubber-band provisional'
+          }
+          d={rubberBandPath(selectedDot, aimDot ?? pointer!)}
           pointerEvents="none"
         />
       )}
@@ -531,7 +591,7 @@ export default function BracketLayer({
       <g className="dot-layer">
         {dots.map((d) => {
           // The carried end's dot travels with its line.
-          if (carriedHole !== null && d.kind === 'hole' && d.id === selectedDotId) {
+          if (carriedHang !== null && d.kind === 'hang' && d.id === selectedDotId) {
             d = { ...d, x: pointer!.x, y: pointer!.y };
           }
           const selected = d.id === selectedDotId;
@@ -542,7 +602,7 @@ export default function BracketLayer({
           if (d.root) classes.push('root');
           // The loose end of a hanging relationship: a handle like any other,
           // marked so it reads as an end waiting for something.
-          if (d.kind === 'hole') classes.push('loose-end');
+          if (d.kind === 'hang') classes.push('loose-end');
           if (selected) classes.push('selected');
           if (shaking) classes.push('shake');
           return (
@@ -553,6 +613,11 @@ export default function BracketLayer({
               className={classes.join(' ')}
               data-dot={d.id}
               onMouseDown={swallow}
+              // §5.2's two hover signals both start here: the span this dot
+              // names, and — while another dot is armed — the preview of the
+              // join it would land.
+              onMouseEnter={() => onDotHover?.(d)}
+              onMouseLeave={() => onDotHover?.(null)}
               onClick={() => onDotClick(d)}
               onContextMenu={(event) => {
                 event.preventDefault();
@@ -603,37 +668,57 @@ export default function BracketLayer({
             letters), the star must win the click — otherwise a star click
             opens the relationship menu instead of flipping the star. */}
         {brackets.map((b) => (
-          <g key={`labels-${b.pos}`}>
+          <g key={bracketKey(b, 'labels-')} className={bracketClass(b, 'bracket-glyphs')}>
             {b.labels.map((l, i) => {
-              const mid = l.placement === 'mid';
               // Each label gets its own lane, clear of the bracket's dot
-              // (which sits ON the spine): end labels start LABEL_OFFSET
-              // right of the spine, mid labels end LABEL_OFFSET left of it.
-              // Both sit ABOVE their line, so a parent's tick arriving at a
-              // coordinate bracket's midpoint never runs through the letters.
-              const x = mid ? b.x - LABEL_OFFSET : b.x + LABEL_OFFSET;
-              const y = l.y - LABEL_RISE;
-              const w = Math.max(18, labelWidth(l.text) + 10);
-              const hitX = mid ? x - w : x - 2;
+              // (which sits ON the spine): end labels sit right of the spine,
+              // mid labels hang left of it, and both stand ABOVE their line —
+              // so a parent's tick arriving at a coordinate bracket's midpoint
+              // never runs through the letters. layout.ts owns the geometry.
+              const box = labelBox(b.x, l.y, l.placement);
+              // The letters are centered in the box on BOTH axes, because
+              // every label on the page is drawn in the SAME square: what
+              // varies is the word, not the handle it is written on. The
+              // 20px marks and the 13px letters each find the same middle.
+              const cx = box.x + box.width / 2;
+              const cy = box.y + box.height / 2;
               return (
                 <g
                   key={`label-${i}`}
                   className="label-hit"
                   data-label={l.text}
+                  // The bracket's own ink, for the box to deepen to on hover
+                  // (styles.css) — a stroke set here instead could not be
+                  // overridden by a :hover rule.
+                  style={{ '--label-ink': inkOf(b, LABEL_INK) } as CSSProperties}
                   onMouseDown={swallow}
-                  onClick={() => onLabelClick(b.pos, { x: hitX, y: y + 6 })}
+                  onClick={() =>
+                    onLabelClick(b.bracketId, { x: box.x, y: box.y + box.height })
+                  }
                 >
-                  {/* Sits just above the label's own row so it never covers
-                      the tick line's dot. */}
-                  <rect x={hitX} y={y - 14} width={w} height={16} fill="transparent" />
+                  {/* The box IS the hit target: what the reader is shown to
+                      click is exactly what takes the click. Transparent fill,
+                      not `none` — a `none` fill is not hit-tested. */}
+                  <rect
+                    className="label-box"
+                    x={box.x}
+                    y={box.y}
+                    width={box.width}
+                    height={box.height}
+                    rx={LABEL_BOX_RX}
+                  />
                   <text
                     className={
-                      isSymbolLabel(l.text) ? 'bracket-label symbol' : 'bracket-label'
+                      isSymbolLabel(l.text)
+                        ? 'bracket-label symbol'
+                        : isCompactLabel(l.text)
+                          ? 'bracket-label compact'
+                          : 'bracket-label'
                     }
-                    x={x}
-                    y={y}
-                    style={{ fill: ink(view, b.rel, LABEL_INK) }}
-                    textAnchor={mid ? 'end' : 'start'}
+                    x={cx}
+                    y={cy + baselineDrop(l.text)}
+                    style={{ fill: inkOf(b, LABEL_INK) }}
+                    textAnchor="middle"
                   >
                     {labelGlyph(l.text)}
                   </text>
@@ -643,48 +728,48 @@ export default function BracketLayer({
           </g>
         ))}
         {brackets.map((b) => (
-          <g key={`stars-${b.pos}`}>
+          <g key={bracketKey(b, 'stars-')} className={bracketClass(b, 'bracket-glyphs')}>
             {b.ticks
               .filter((t) => t.star)
               .map((t) => {
-                // The star sits a fixed gap after its end's letters (or in
-                // their place when that end shows none) — never out in the
-                // middle of the tick.
+                // The star sits a fixed gap after its end's BOX (or in the
+                // box's place when that end shows no letters) — never out in
+                // the middle of the tick. Every labelled end's star therefore
+                // stands at the same distance from its spine.
                 const label = b.labels.find(
                   (l) => l.placement !== 'mid' && l.y === t.y,
                 );
-                const sx =
-                  b.x +
-                  LABEL_OFFSET +
-                  STAR_GAP +
-                  (label !== undefined ? labelWidth(label.text) : 0);
+                const cx = starCenterX(b.x, label !== undefined);
+                // The star shares the box's centre line, whether or not this
+                // end writes any letters — layout.ts owns both.
+                const cy = starCenterY(t.y);
                 return (
                   <g
-                    key={`star-${t.childIndex}`}
+                    key={`star-${t.side}`}
                     className="star-hit"
                     onMouseDown={swallow}
-                    onClick={() => onStarClick(b.pos)}
+                    onClick={() => onStarClick(b.bracketId)}
                   >
-                    <circle cx={sx + STAR_R} cy={t.y - STAR_RISE} r={12} fill="transparent" />
+                    <circle cx={cx} cy={cy} r={12} fill="transparent" />
                     {/* Struck with a pen in the notebook, filled in everywhere
                         else — the same star, in the hand of the page. */}
                     <path
                       className="bracket-star"
                       d={
                         pen
-                          ? penStarPath(sx + STAR_R, t.y - STAR_RISE, STAR_R)
-                          : starPath(sx + STAR_R, t.y - STAR_RISE, STAR_R)
+                          ? penStarPath(cx, cy, STAR_R)
+                          : starPath(cx, cy, STAR_R)
                       }
                       style={
                         pen
                           ? {
                               fill: 'none',
-                              stroke: ink(view, b.rel, STAR_INK),
+                              stroke: inkOf(b, STAR_INK),
                               strokeWidth: 1.6,
                               strokeLinecap: 'round',
                               strokeLinejoin: 'round',
                             }
-                          : { fill: ink(view, b.rel, STAR_INK) }
+                          : { fill: inkOf(b, STAR_INK) }
                       }
                     />
                   </g>

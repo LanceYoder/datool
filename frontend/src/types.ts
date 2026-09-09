@@ -70,8 +70,11 @@ export interface BracketNode {
  * relationship, and a document containing one is INCOMPLETE — an editing
  * state, not an analysis.
  *
- * A hole holding a single unit is not a hole at all: the commands collapse it
- * back into the slot it came from, which is how a tree becomes whole again.
+ * A hole holding a SINGLE unit is still a hole (spec §10 A1): the group has
+ * been assembled and the analyst has not yet said it is finished. Nothing
+ * collapses it back into the slot — only their own pickup-dot gesture does
+ * (§10 A2) — and a bracket may carry a hole at each end while the work is in
+ * progress (§10 A4).
  */
 export interface HoleNode {
   kind: 'hole';

@@ -1,49 +1,54 @@
-// Editing commands for the bracketing editor. Each command takes the Tiptap
-// Editor plus plain arguments, and either dispatches exactly ONE transaction
-// and reports success, or dispatches nothing and reports failure.
+// Editing commands for the bracketing editor — the thin edge between the
+// gestures and the pure core (`../tree/core.ts`, spec §5).
 //
-// Three rules shape everything below:
+// Each command does exactly three things, in this order, and nothing else:
 //
-//  1. Brackets are created BINARY ONLY. Legacy n-ary brackets still load and
-//     display, but any op whose meaning assumes two children (flipStar) no-ops
-//     on them.
-//  2. STRUCTURE never recomputes globally. A command applies its own local
-//     operation — no re-classification, no re-indexing of unrelated nodes.
-//     (Structure above a proposition that an edit invalidates is dissolved
-//     explicitly, by unzipToRoot, not silently repaired.) The one re-derived
-//     piece of DISPLAY state is the verse numbering: split and merge re-label
-//     corpus propositions from their words' verses (11a, 11b, … — see
-//     relabelCorpusInTransaction), because the corpus always knows where the
-//     verses fall.
-//  3. `reversed` is DERIVED, never toggled: on a binary subordinate bracket
-//     reversed = (prominent !== entry.starredLabel), so the starred end always
-//     shows labels[starredLabel] and the other end labels[1 - starredLabel].
-//     Coordinate and n-ary brackets are never reversed.
+//   1. read the core Forest off `doc.attrs.tree` (schema.ts's readTree);
+//   2. run ONE pure op from the core, which either answers with a new Forest
+//      or refuses (a refusal changes nothing — no transaction is dispatched);
+//   3. dispatch ONE transaction carrying the new state: the proposition
+//      ReplaceSteps a split or a merge needs, PLUS the doc-attr step, together.
 //
-// The document is a FOREST: the ProseMirror doc's content is 'unit+', so roots
-// may be bare propositions. Connecting/disconnecting roots is how structure
-// is built and taken apart.
+// That third rule is §7.2, and everything downstream depends on it. An
+// AttrStep is a real, invertible step, so prosemirror-history gives atomic
+// undo of text AND tree together; `docChanged` fires onUpdate/docTick/onChange
+// unchanged; and `closeHistory` per command keeps one gesture to one undo
+// step. There is no plugin-owned state to keep in sync, because there is no
+// second copy of the structure to be out of sync with (§7.7).
+//
+// Nothing here re-derives structure. The one re-derived piece of DISPLAY state
+// is the verse numbering: split and merge re-label corpus propositions from
+// their words' verses (11a, 11b, … — relabelCorpusInTransaction), because the
+// corpus always knows where the verses fall.
 
 import type { Editor } from '@tiptap/core';
 import { closeHistory } from '@tiptap/pm/history';
 import type { Node as PMNode } from '@tiptap/pm/model';
-import type { ResolvedPos } from '@tiptap/pm/model';
 import type { Transaction } from '@tiptap/pm/state';
 import type { CorpusWord, SectionBreak, TaxonomyEntry } from '../types';
+import type { Forest, Refusal, Result, Side, TaxonomyFacts, Unit, UnitAddr } from '../tree/core';
+import {
+  bracketById,
+  clearTree as coreClear,
+  connect as coreConnect,
+  deleteAt as coreDeleteAt,
+  flipStar as coreFlipStar,
+  mergeLeaves as coreMerge,
+  setRelationship as coreSetRelationship,
+  settleSide as coreSettle,
+  settleTargetFor,
+  splitLeaf as coreSplit,
+} from '../tree/core';
 import { displayWordText } from './convert';
+import {
+  TREE_ATTR,
+  findPropositionPos,
+  pidsInOrder,
+  propositionsInOrder,
+  readTree,
+} from './schema';
 import { addBreak, removeBreak } from './sections';
 
-/**
- * Dispatch a command's single transaction as its own UNDO STEP.
- *
- * prosemirror-history groups transactions that arrive within its newGroupDelay
- * (500ms) into one event — right for typing, wrong here: this editor has no
- * text input at all (see editor.ts), so every transaction is a discrete
- * structural gesture. Without closing the group first, two gestures made in
- * quick succession — change a relationship, then split a proposition — would
- * undo together, which is the opposite of the "one gesture, one command, one
- * undo step" rule this module is built on.
- */
 /**
  * Run a document change without letting the page move under the reader.
  *
@@ -77,522 +82,205 @@ export function keepPageScroll(run: () => void): void {
   });
 }
 
+/**
+ * Dispatch a command's single transaction as its own UNDO STEP.
+ * prosemirror-history groups transactions arriving within newGroupDelay into
+ * one event — right for typing, wrong here: every transaction is a discrete
+ * structural gesture, so the group is closed first.
+ */
 function dispatch(editor: Editor, tr: Transaction): void {
   keepPageScroll(() => {
     editor.view.dispatch(closeHistory(tr));
   });
 }
 
-/** U+2032 PRIME — suffixed to the label of a split's second half. */
-export const PRIME = '′';
-
 /**
- * Default prominent child index for a relationship: null for coordinate;
- * for subordinate, the taxonomy's starredLabel index used as a child index
- * (clamped into [0, childCount-1]).
+ * The ONE way a new core state reaches the document: the doc-attr step, plus
+ * whatever proposition steps the gesture also needs, in a single transaction
+ * (§7.2). `steps` runs before the attribute is written, on the same `tr`.
  */
-export function defaultProminent(
-  entry: TaxonomyEntry,
-  childCount: number,
-): number | null {
-  if (entry.coordinate) return null;
-  const idx = entry.starredLabel ?? 0;
-  return Math.min(Math.max(idx, 0), Math.max(childCount - 1, 0));
-}
-
-function taxonomyEntry(
-  taxonomy: readonly TaxonomyEntry[],
-  rel: string,
-): TaxonomyEntry | undefined {
-  return taxonomy.find((entry) => entry.code === rel);
-}
-
-/**
- * The derived `reversed` (see rule 3). True only when a BINARY SUBORDINATE
- * bracket stars the child that is not the taxonomy's starred end.
- */
-export function derivedReversed(
-  entry: TaxonomyEntry,
-  childCount: number,
-  prominent: number | null,
-): boolean {
-  if (entry.coordinate || childCount !== 2 || prominent === null) return false;
-  return prominent !== (entry.starredLabel ?? 0);
-}
-
-function bracketAt(editor: Editor, pos: number): PMNode | null {
-  const { doc } = editor.state;
-  if (pos < 0 || pos >= doc.content.size) return null;
-  const node = doc.nodeAt(pos);
-  return node !== null && node.type.name === 'bracket' ? node : null;
-}
-
-/** Replace a bracket's attrs wholesale (merged over the current attrs). */
-function setBracketAttrs(
-  editor: Editor,
-  pos: number,
-  node: PMNode,
-  changes: Record<string, unknown>,
-): boolean {
-  const tr = editor.state.tr.setNodeMarkup(pos, undefined, {
-    ...node.attrs,
-    ...changes,
-  });
+function commit(editor: Editor, forest: Forest, steps?: (tr: Transaction) => void): boolean {
+  const tr = editor.state.tr;
+  steps?.(tr);
+  tr.setDocAttribute(TREE_ATTR, forest);
   dispatch(editor, tr);
   return true;
 }
 
+/** What the core needs to know about a relationship (§5.6, §7.1). */
+function factsFor(
+  taxonomy: readonly TaxonomyEntry[],
+  rel: string,
+): TaxonomyFacts | null {
+  const entry = taxonomy.find((e) => e.code === rel);
+  if (entry === undefined) return null;
+  return { coordinate: entry.coordinate, starredLabel: entry.starredLabel ?? undefined };
+}
+
 // ---------------------------------------------------------------------------
-// Bracket attributes
+// §5.1 Connect
 
 /**
- * Change the relationship of the bracket at `pos`. `prominent` is fixed up
- * locally: null for a coordinate target; for a subordinate target the existing
- * index is kept (clamped into range) or, coming from coordinate, defaults per
- * the taxonomy's starredLabel. `reversed` is re-derived. `flag` is kept.
+ * What a connect gesture answers with: the bracket the menu opens on, and
+ * whether it was ALREADY there (§5.1 step 1's same-bracket re-connection —
+ * nothing structural changed, nothing to undo, and the menu opens preloaded).
+ */
+export type ConnectResult = Result<{ bracketId: number; editedInPlace: boolean }>;
+
+/**
+ * Connect two units, addressed by id (§7.3). The core is the judge: the join
+ * SUCCEEDS whenever the two spans meet, breaking exactly the brackets standing
+ * in its way, and the only refusals are geometric — so a refused gesture just
+ * shakes its dot (§10 A6).
+ *
+ * The new bracket is a SER (§10 A5 — Q6 reversed): the join always has a name,
+ * the menu opens preloaded on it, and clicking away simply leaves the Ser
+ * standing. There is no unlabeled state, and nothing to undo on dismissal.
+ */
+export function connectUnits(editor: Editor, a: UnitAddr, b: UnitAddr): ConnectResult {
+  const out = coreConnect(readTree(editor.state.doc), a, b);
+  if (!out.ok) return out;
+  // A re-connection leaves the state byte-identical; dispatching it would put
+  // an empty step in the history for a gesture that changed nothing.
+  if (out.editedInPlace === undefined) commit(editor, out.state);
+  return {
+    ok: true,
+    bracketId: out.newBracketId,
+    editedInPlace: out.editedInPlace !== undefined,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// §10 A2 Settle — the pickup dot's own gesture
+
+/**
+ * Finish a bracket: the named hanging side settles, and the relationship is
+ * whole (§10 A2). ONE undo step, no new bracket, no menu — the analyst is not
+ * naming anything here, they are saying "that group is done".
+ *
+ * The core refuses when the side still holds more than one lodger; the UI's
+ * whole answer to that is a shake (§10 A6), so the refusal is returned rather
+ * than described.
+ */
+export function settleHang(editor: Editor, bracketId: number, side: Side): Refusal | null {
+  const out = coreSettle(readTree(editor.state.doc), bracketId, side);
+  if (!out.ok) return out.refusal;
+  commit(editor, out.state);
+  return null;
+}
+
+/**
+ * The sole lodger of that hanging side, when there is exactly one — the unit
+ * the pickup dot's gesture must be paired with (§10 A2). Null when the side
+ * holds a group still being assembled, or does not hang at all.
+ */
+export function settleLodger(editor: Editor, bracketId: number, side: Side): Unit | null {
+  return settleTargetFor(readTree(editor.state.doc), bracketId, side);
+}
+
+// ---------------------------------------------------------------------------
+// §5.3 Delete
+
+/**
+ * Delete by dot (§5.3): a bracket dot names its bracket, a leaf dot the
+ * bracket owning the side that holds it, and a ROOT leaf's dot-delete is a
+ * refusal. The core's own dot targeting decides which — this only dispatches.
+ */
+export function deleteAt(editor: Editor, addr: UnitAddr): Refusal | null {
+  const out = coreDeleteAt(readTree(editor.state.doc), addr);
+  if (!out.ok) return out.refusal;
+  commit(editor, out.state);
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// §5.6 Attribute edits and clear
+
+/**
+ * Set a bracket's relationship, by id (§5.6, §7.3). The star follows: null for
+ * a coordinate target (I7); for a subordinate target the existing star is
+ * kept, or — coming from coordinate, or from an unlabeled new bracket — the
+ * taxonomy's default end. `reversed` is not stored at all any more: it is
+ * derived from rel + star at render and serialize time.
+ *
+ * Re-picking the relationship a bracket ALREADY has succeeds and dispatches
+ * nothing. The core rebuilds the bracket either way (`{...b, rel, star}` is
+ * never reference-equal), so without this guard every re-pick would land a
+ * real DocAttrStep and open a new history group — a dead entry in the undo
+ * stack for a gesture that changed no byte of the model. flipStar
+ * (`out.state === forest`), clearConnections and setBreaks (`!tr.docChanged`)
+ * all guard the same case; the menu still closes, because that is
+ * AnalysisEditor's setPopover(null) and runs regardless of what we answer.
  */
 export function setRelationship(
   editor: Editor,
-  pos: number,
+  bracketId: number,
   rel: string,
   taxonomy: readonly TaxonomyEntry[],
 ): boolean {
-  const entry = taxonomyEntry(taxonomy, rel);
-  if (entry === undefined) return false;
-  const node = bracketAt(editor, pos);
-  if (node === null) return false;
-
-  let prominent: number | null = null;
-  if (!entry.coordinate) {
-    const current = node.attrs.prominent;
-    prominent =
-      typeof current === 'number'
-        ? Math.min(Math.max(current, 0), node.childCount - 1)
-        : defaultProminent(entry, node.childCount);
+  const facts = factsFor(taxonomy, rel);
+  if (facts === null) return false;
+  const forest = readTree(editor.state.doc);
+  const out = coreSetRelationship(forest, bracketId, rel, facts);
+  if (!out.ok) return false;
+  const before = bracketById(forest, bracketId);
+  const after = bracketById(out.state, bracketId);
+  if (before !== null && after !== null && before.rel === after.rel && before.star === after.star) {
+    return true; // nothing to change: no empty undo step
   }
-  return setBracketAttrs(editor, pos, node, {
-    rel,
-    prominent,
-    reversed: derivedReversed(entry, node.childCount, prominent),
-  });
+  return commit(editor, out.state);
 }
 
 /**
- * Move the star to the other child of a BINARY SUBORDINATE bracket, and
- * re-derive `reversed` so the label at each end follows the star. Returns
- * false for coordinate brackets, for n-ary (legacy) brackets, and for a
- * relationship the taxonomy doesn't know.
+ * Move the star to the other end, so the label at each end — and the derived
+ * `reversed` — follows it. A coordinate bracket has no star to move (I7), and
+ * neither has an unlabeled one: both report failure and dispatch nothing.
  */
 export function flipStar(
   editor: Editor,
-  pos: number,
+  bracketId: number,
   taxonomy: readonly TaxonomyEntry[],
 ): boolean {
-  const node = bracketAt(editor, pos);
-  if (node === null) return false;
-  if (node.childCount !== 2) return false; // legacy n-ary: no binary flip
-  const prominent = node.attrs.prominent;
-  if (typeof prominent !== 'number') return false; // coordinate: no star
-  const entry = taxonomyEntry(taxonomy, String(node.attrs.rel));
-  if (entry === undefined || entry.coordinate) return false;
+  const forest = readTree(editor.state.doc);
+  const bracket = bracketById(forest, bracketId);
+  if (bracket === null || bracket.rel === null) return false;
+  const facts = factsFor(taxonomy, bracket.rel);
+  if (facts === null || facts.coordinate) return false;
+  const out = coreFlipStar(forest, bracketId, facts);
+  if (!out.ok || out.state === forest) return false;
+  return commit(editor, out.state);
+}
 
-  const next = 1 - prominent;
-  return setBracketAttrs(editor, pos, node, {
-    prominent: next,
-    reversed: derivedReversed(entry, 2, next),
-  });
+/** Toolbar: every connection removed at once; the propositions stay put. */
+export function clearConnections(editor: Editor): boolean {
+  const forest = readTree(editor.state.doc);
+  if (forest.roots.every((u) => u.kind === 'leaf')) return false; // nothing to clear
+  const out = coreClear(forest);
+  if (!out.ok) return false;
+  return commit(editor, out.state);
 }
 
 // ---------------------------------------------------------------------------
-// Forest structure: connect / disconnect roots
+// §5.4 / §5.5 Split and merge — the propositions AND the tree, one transaction
+//
+// The core knows only that one leaf became two (or two became one). Dividing
+// the corpus source at the chosen word, minting the new pid, keeping the
+// blockColor on the half that keeps the pid, and re-deriving the verse labels
+// are the edge's business — §7.10's bookkeeping, unchanged from the old
+// engine, and it rides the same transaction the tree attribute does.
 
-
-/**
- * A stable way to re-find a unit while a transaction reshapes the document.
- * Propositions carry their pid; a bracket is named by its leftmost leaf's pid
- * plus how many levels the bracket sits above that leaf — both invariant under
- * the only mutation the connect path performs (dissolving brackets ABOVE the
- * unit), where raw positions and pre-order indices are not.
- */
-type UnitHandle =
-  | { kind: 'prop'; pid: string }
-  | { kind: 'bracket'; leafPid: string; up: number };
-
-/** The unit (proposition, bracket or hole) at `pos`, or null. */
-function unitNodeAt(doc: PMNode, pos: number): PMNode | null {
-  if (pos < 0 || pos > doc.content.size) return null;
-  const node = doc.nodeAt(pos);
-  if (node === null) return null;
-  const name = node.type.name;
-  return name === 'proposition' || name === 'bracket' || name === 'hole' ? node : null;
-}
-
-/** Current position of the unit a handle names, or null when it is gone. */
-function locateUnit(doc: PMNode, handle: UnitHandle): number | null {
-  if (handle.kind === 'prop') return findPropositionPos(doc, handle.pid);
-  const leafPos = findPropositionPos(doc, handle.leafPid);
-  if (leafPos === null) return null;
-  const $leaf = doc.resolve(leafPos);
-  const depth = $leaf.depth - handle.up + 1;
-  if (depth < 1 || depth > $leaf.depth) return null;
-  if ($leaf.node(depth).type.name !== 'bracket') return null;
-  return $leaf.before(depth);
-}
-
-/**
- * Dissolve, inside `tr`, every bracket ABOVE the unit `handle` names,
- * outermost first, until the unit is itself a forest root. Each round
- * re-locates the unit (the previous replace moved it). Returns the unit's
- * final position, or null when it cannot be found.
- */
-function unzipUnitInTransaction(tr: Transaction, handle: UnitHandle): number | null {
-  for (;;) {
-    const pos = locateUnit(tr.doc, handle);
-    if (pos === null) return null;
-    const $pos = tr.doc.resolve(pos);
-    if ($pos.depth === 0) return pos; // a root already
-    const rootPos = $pos.before(1);
-    const root = tr.doc.nodeAt(rootPos);
-    if (root === null) return null;
-    tr.replaceWith(rootPos, rootPos + root.nodeSize, root.content);
-  }
-}
-
-/**
- * Connect two units into one new BINARY bracket, in document order, with
- * relationship `rel` (default 'Ser' — a coordinate series, no star, no flag).
- * `posA`/`posB` are the units' positions in either order.
- *
- * The units need not be roots: a NESTED unit is first unzipped — every
- * bracket above it is dissolved, inside the same transaction — because those
- * connections described the unit's old place and cannot survive its moving.
- * That is what lets a user re-connect an already-connected unit by its dot.
- * After unzipping, the two units must be ADJACENT roots; otherwise nothing at
- * all is dispatched.
- *
- * Rejected (returns null, dispatching nothing) when either position is not a
- * unit, when one unit contains the other, when they do not come out adjacent,
- * or when `rel` is not in the taxonomy. One undo step.
- *
- * @returns the new bracket's position, or null.
- */
-/**
- * Replace two adjacent units with one node, dissolving only what lies between
- * them and their common ancestor. Everything above that ancestor stands, and
- * whatever it held that is not the new node waits in a HOLE (see the module
- * head). Returns the transaction and where the new node landed, or null when
- * the two cannot be joined — nothing is dispatched here.
- *
- * Both connecting (the new node is a bracket over the pair) and merging (the
- * new node is one proposition made of both) are this operation.
- */
-function rejoinUnits(
-  editor: Editor,
-  posA: number,
-  posB: number,
-  make: (first: PMNode, second: PMNode) => PMNode,
-): { tr: Transaction; at: number | null } | null {
-  const { state } = editor;
-  const { doc } = state;
-  if (posA === posB) return null;
-  const nodeA = unitNodeAt(doc, posA);
-  const nodeB = unitNodeAt(doc, posB);
-  if (nodeA === null || nodeB === null) return null;
-  // Overlapping ranges: one unit contains the other — nothing to join.
-  if (posA < posB + nodeB.nodeSize && posB < posA + nodeA.nodeSize) return null;
-
-  const holeType = state.schema.nodes.hole;
-  if (holeType === undefined) return null;
-
-  const $a = doc.resolve(posA);
-  const $b = doc.resolve(posB);
-  const shared = $a.sharedDepth(posB);
-  const container = $a.node(shared);
-
-  // Rebuild the common ancestor's children with the path to each unit
-  // DISSOLVED — every bracket between a unit and the ancestor goes, and
-  // nothing above the ancestor is touched.
-  const items: PMNode[] = [];
-  let dissolved = false;
-  container.forEach((child, _offset, index) => {
-    const $unit = index === $a.index(shared) ? $a : index === $b.index(shared) ? $b : null;
-    if ($unit === null || shared === $unit.depth) {
-      items.push(child); // a bystander, or the unit itself
-      return;
-    }
-    dissolved = true;
-    items.push(...loosen(child, shared + 1, $unit));
-  });
-
-  const indexA = items.indexOf(nodeA);
-  const indexB = items.indexOf(nodeB);
-  if (indexA === -1 || indexB === -1) return null;
-  if (Math.abs(indexA - indexB) !== 1) return null; // not adjacent: nothing to do
-
-  const low = Math.min(indexA, indexB);
-  const joined = make(items[low]!, items[low + 1]!);
-  const merged = [...items.slice(0, low), joined, ...items.slice(low + 2)];
-
-  const tr = state.tr;
-  if (shared === 0) {
-    // The forest itself: the roots simply take their new arrangement.
-    tr.replaceWith(0, doc.content.size, merged);
-  } else if (!dissolved && merged.length > 1) {
-    // Both units were already this bracket's own children: it keeps them.
-    tr.replaceWith($a.start(shared), $a.end(shared), merged);
-  } else if (shared === 1) {
-    // What held them was a forest root: the pieces need no hole to wait in,
-    // because a root IS unattached. They take their places in the forest.
-    tr.replaceWith($a.before(shared), $a.after(shared), merged);
-  } else {
-    // Whatever held them is gone, and its slot is inside a bracket that
-    // survives: the pieces wait there, in a hole — unless the new node is all
-    // that is left, and takes the slot itself.
-    const replacement = merged.length === 1 ? merged[0]! : holeType.create(null, merged);
-    tr.replaceWith($a.before(shared), $a.after(shared), replacement);
-  }
-  // Read the position off the transaction's own document: dispatching applies
-  // exactly this transaction, so what holds there holds after.
-  return { tr, at: findNode(tr.doc, joined) };
-}
-
-/** The transaction a connection would be, unspent. */
-function buildConnection(
-  editor: Editor,
-  posA: number,
-  posB: number,
-  taxonomy: readonly TaxonomyEntry[],
-  rel: string,
-): { tr: Transaction; at: number | null } | null {
-  const entry = taxonomyEntry(taxonomy, rel);
-  if (entry === undefined) return null;
-  const bracketType = editor.state.schema.nodes.bracket;
-  if (bracketType === undefined) return null;
-
-  const prominent = defaultProminent(entry, 2);
-  return rejoinUnits(editor, posA, posB, (first, second) =>
-    bracketType.create(
-      { rel, prominent, reversed: derivedReversed(entry, 2, prominent), flag: null },
-      [first, second],
-    ),
-  );
-}
-
-export function connectUnits(
-  editor: Editor,
-  posA: number,
-  posB: number,
-  taxonomy: readonly TaxonomyEntry[],
-  rel = 'Ser',
-): number | null {
-  const outcome = buildConnection(editor, posA, posB, taxonomy, rel);
-  if (outcome === null) return null;
-  dispatch(editor, outcome.tr);
-  return outcome.at;
-}
-
-/**
- * The document a connection WOULD make, without making it — so the tree can
- * be drawn where it is going while the reader is still deciding, and connect
- * without anything jumping. Null when the two cannot be connected.
- */
-export function previewConnection(
-  editor: Editor,
-  posA: number,
-  posB: number,
-  taxonomy: readonly TaxonomyEntry[],
-  rel = 'Ser',
-): { doc: PMNode; at: number | null } | null {
-  const outcome = buildConnection(editor, posA, posB, taxonomy, rel);
-  return outcome === null ? null : { doc: outcome.tr.doc, at: outcome.at };
-}
-
-/**
- * The children of `node` with the branch leading to `$unit` dissolved: every
- * bracket between the two disappears, its children taking its place, and the
- * unit comes out loose among them.
- */
-function loosen(node: PMNode, depth: number, $unit: ResolvedPos): PMNode[] {
-  const out: PMNode[] = [];
-  if (depth === $unit.depth) {
-    // This node is the unit's own parent: dissolving it frees every child.
-    node.forEach((child) => out.push(child));
-    return out;
-  }
-  node.forEach((child, _offset, index) => {
-    if (index === $unit.index(depth)) out.push(...loosen(child, depth + 1, $unit));
-    else out.push(child);
-  });
-  return out;
-}
-
-/** Where a freshly built node ended up, by identity. */
-function findNode(doc: PMNode, target: PMNode): number | null {
-  let found: number | null = null;
-  doc.descendants((node, pos) => {
-    if (found !== null) return false;
-    if (node === target) {
-      found = pos;
-      return false;
-    }
-    return true;
-  });
-  return found;
-}
-
-/**
- * Dissolve a ROOT bracket: its children become adjacent roots in its place
- * (the doc's 'unit+' content allows it). Nothing else in the document moves.
- * Returns false for a nested bracket (disconnect its root ancestors first —
- * see unzipToRoot) and for a non-bracket position.
- */
-/**
- * Remove ONE relationship, wherever it sits, and leave everything above it
- * standing. The bracket's units are left unattached in a HOLE in its slot —
- * the tick above them hangs — until they are connected again; a root bracket
- * needs no hole, since its children become roots, which are unattached
- * already.
- *
- * This is what lets an analyst re-work three clauses without losing the shape
- * of the whole: the tree is briefly incomplete, and only the relation asked
- * for is gone.
- */
-export function deleteRelationship(editor: Editor, pos: number): boolean {
-  const { state } = editor;
-  const node = bracketAt(editor, pos);
-  if (node === null) return false;
-  const holeType = state.schema.nodes.hole;
-  if (holeType === undefined) return false;
-
-  const $pos = state.doc.resolve(pos);
-  const children: PMNode[] = [];
-  node.forEach((child) => {
-    // A hole inside a hole is one hole: what waits, waits together.
-    if (child.type.name === 'hole') child.forEach((inner) => children.push(inner));
-    else children.push(child);
-  });
-
-  const tr = state.tr;
-  if ($pos.depth === 0) {
-    tr.replaceWith(pos, pos + node.nodeSize, children);
-  } else {
-    tr.replaceWith(pos, pos + node.nodeSize, holeType.create(null, children));
-  }
-  dispatch(editor, tr);
-  return true;
-}
-
-export function disconnectRoot(editor: Editor, pos: number): boolean {
-  const node = bracketAt(editor, pos);
-  if (node === null) return false;
-  const { state } = editor;
-  if (state.doc.resolve(pos).depth !== 0) return false; // nested: not a root
-
-  dispatch(editor, state.tr.replaceWith(pos, pos + node.nodeSize, node.content));
-  return true;
-}
-
-/**
- * Remove EVERY connection in the document: each bracket is dissolved until
- * the forest is nothing but its propositions, in document order. The
- * propositions themselves — their text, their splits, their labels — are
- * untouched, and the whole clearing is ONE undo step — or none at all, when
- * `undoable` is false.
- *
- * Returns false when there was nothing to clear.
- */
-export function clearConnections(editor: Editor, undoable = true): boolean {
-  const { state } = editor;
-  const props: PMNode[] = [];
-  state.doc.forEach(function collect(node) {
-    if (node.type.name === 'proposition') {
-      props.push(node);
-      return;
-    }
-    node.forEach(collect);
-  });
-  // Nothing to do when every proposition is already a root of its own.
-  if (props.length === state.doc.childCount) return false;
-  const tr = state.tr.replaceWith(0, state.doc.content.size, props);
-  // `undoable: false` keeps the clearing out of the history entirely — for the
-  // automatic one, where a tree the window cannot draw must not be one
-  // keystroke away from coming back.
-  if (!undoable) tr.setMeta('addToHistory', false);
-  dispatch(editor, tr);
-  return true;
-}
-
-/**
- * Dissolve, inside `tr`, every bracket between the proposition `pid` and the
- * forest floor, outermost first, until the proposition is itself a root.
- */
-function unzipInTransaction(tr: Transaction, pid: string): boolean {
-  return unzipUnitInTransaction(tr, { kind: 'prop', pid }) !== null;
-}
-
-/**
- * Free the proposition `pid` from the ONE relationship it hangs from: that
- * bracket becomes a hole holding what it held, and everything above it
- * stands. A proposition that is already a root is left where it is. Returns
- * the proposition's position afterwards, or null when it cannot be found.
- */
-function loosenInTransaction(tr: Transaction, pid: string): number | null {
-  const pos = findPropositionPos(tr.doc, pid);
-  if (pos === null) return null;
-  const $pos = tr.doc.resolve(pos);
-  if ($pos.depth === 0) return pos; // loose already
-  const holeType = tr.doc.type.schema.nodes.hole;
-  if (holeType === undefined) return null;
-
-  const parent = $pos.node($pos.depth);
-  const children: PMNode[] = [];
-  parent.forEach((child) => {
-    // A hole inside a hole is one hole: what waits, waits together.
-    if (child.type.name === 'hole') child.forEach((inner) => children.push(inner));
-    else children.push(child);
-  });
-  const from = $pos.before($pos.depth);
-  const to = $pos.after($pos.depth);
-  // A root bracket needs no hole: its children become roots, unattached
-  // already. Anywhere else the slot must be held.
-  tr.replaceWith(from, to, $pos.depth === 1 ? children : holeType.create(null, children));
-  return findPropositionPos(tr.doc, pid);
-}
-
-/**
- * Disconnect the chain of brackets above the proposition `pid` until it is a
- * root of the forest. Every bracket that contained it is dissolved (its other
- * children become roots too); nothing else is touched.
- *
- * Exported for tests and for the commands that need it (splitting a
- * proposition, or merging two that live in different trees, invalidates every
- * connection above them, so those connections are removed rather than
- * silently reinterpreted).
- */
-export function unzipToRoot(editor: Editor, pid: string): boolean {
-  const tr = editor.state.tr;
-  if (!unzipInTransaction(tr, pid)) return false;
-  if (tr.docChanged) dispatch(editor, tr);
-  return true;
-}
-
-// ---------------------------------------------------------------------------
-// Proposition split / merge (implicit propositions are the interpreter's call
-// — the editor must let the user divide and re-join propositions freely).
+/** U+2032 PRIME — suffixed to the label of a raw split's second half. */
+export const PRIME = '′';
 
 /** An unused proposition id of the form p<n>, given the ids already in `doc`. */
 export function freshPid(doc: PMNode): string {
   const taken = new Set<string>();
   let max = 0;
-  doc.descendants((node) => {
-    if (node.type.name === 'proposition') {
-      const pid = String(node.attrs.pid);
-      taken.add(pid);
-      const m = /^p(\d+)$/.exec(pid);
-      if (m !== null) max = Math.max(max, Number(m[1]));
-    }
-    return true;
-  });
+  for (const pid of pidsInOrder(doc)) {
+    taken.add(pid);
+    const m = /^p(\d+)$/.exec(pid);
+    if (m !== null) max = Math.max(max, Number(m[1]));
+  }
   let n = max + 1;
   while (taken.has(`p${n}`)) n += 1;
   return `p${n}`;
@@ -636,13 +324,12 @@ function relabelCorpusInTransaction(
   const entries: Entry[] = [];
   const groupCounts = new Map<string, number>();
 
-  tr.doc.descendants((node, pos) => {
-    if (node.type.name !== 'proposition') return true;
+  for (const { pos, node } of propositionsInOrder(tr.doc)) {
     const { srcStart, srcEnd } = node.attrs;
-    if (typeof srcStart !== 'number' || typeof srcEnd !== 'number') return false;
+    if (typeof srcStart !== 'number' || typeof srcEnd !== 'number') continue;
     const first = words.get(srcStart);
     const last = words.get(srcEnd);
-    if (first === undefined || last === undefined) return false;
+    if (first === undefined || last === undefined) continue;
 
     let label: string;
     let groupKey: string | null = null;
@@ -658,8 +345,7 @@ function relabelCorpusInTransaction(
     if (groupKey !== null) {
       groupCounts.set(groupKey, (groupCounts.get(groupKey) ?? 0) + 1);
     }
-    return false;
-  });
+  }
 
   const seen = new Map<string, number>();
   for (const entry of entries) {
@@ -691,41 +377,39 @@ export function corpusText(
 }
 
 /**
- * Split the proposition at `pos` into two ROOT propositions. The first keeps
- * the pid; corpus labels are then RE-DERIVED from the words' verses across
- * the document (11a, 11b, … — relabelCorpusInTransaction), while a raw
- * source's second half takes the first's label with a prime (′) appended.
- * `firstCount` is the number of words in the FIRST half (a UI wanting "split
- * after the word I clicked" passes clickedOrdinal + 1); it must be >= 1 and
- * < the proposition's word count.
+ * Split the proposition `pid` after its `firstCount`th word (a UI wanting
+ * "split after the word I clicked" passes clickedOrdinal + 1).
  *
- * A proposition that is not already a root is unzipped first: the chain of
- * connections above it described the undivided proposition and cannot survive
- * its splitting, so those brackets are dissolved. Nothing else is relabeled or
- * re-indexed, and the whole operation is ONE undo step.
+ * §7.10's bookkeeping: w1 keeps the pid AND the blockColor (a color block
+ * begins once — the head keeps the break, the tail is simply the next
+ * proposition inside the same block); w2's pid is minted by today's
+ * convention; the corpus source divides at the chosen word; corpus labels are
+ * then re-derived from the verses across the whole document, while a raw
+ * source's second half takes the first's label with a prime.
  *
- * Corpus sources divide their word range (needs `words` covering it); raw
- * sources divide their whitespace-separated tokens.
+ * Structure is preserved up to I3 (ruling Q4): a committed leaf's side now
+ * holds ⟨w1 w2⟩ and HANGS, awaiting reassembly — the split does not eject the
+ * leaf, and only a bracket left hanging at both ends gives way.
  */
 export function splitProposition(
   editor: Editor,
-  pos: number,
+  pid: string,
   firstCount: number,
   words: ReadonlyMap<number, CorpusWord> | null,
 ): boolean {
   const { state } = editor;
+  const pos = findPropositionPos(state.doc, pid);
+  if (pos === null) return false;
   const node = state.doc.nodeAt(pos);
-  if (node === null || node.type.name !== 'proposition') return false;
   const type = state.schema.nodes.proposition;
-  if (type === undefined) return false;
+  if (node === null || node.type.name !== 'proposition' || type === undefined) return false;
 
   const attrs = node.attrs;
-  const pid = String(attrs.pid);
   const label = String(attrs.label ?? '');
   const pidB = freshPid(state.doc);
 
-  // Validate and compute both halves BEFORE touching the document, so a
-  // rejected split dispatches nothing at all.
+  // Validate and compute both halves BEFORE touching anything, so a rejected
+  // split dispatches nothing at all.
   let attrsA: Record<string, unknown>;
   let attrsB: Record<string, unknown>;
   if (typeof attrs.srcStart === 'number' && typeof attrs.srcEnd === 'number') {
@@ -740,8 +424,6 @@ export function splitProposition(
       label: label + PRIME,
       srcStart: midEnd + 1,
       text: corpusText(words, midEnd + 1, attrs.srcEnd),
-      // A color block begins ONCE: the head keeps the break, the tail is
-      // simply the next proposition inside the same block.
       blockColor: null,
     };
   } else {
@@ -762,50 +444,27 @@ export function splitProposition(
     };
   }
 
-  // One proposition becomes two, so the relationship it hung from no longer
-  // describes it: that ONE relationship gives way and its units wait in a
-  // hole. Everything above stands.
-  const tr = state.tr;
-  const loosePos = loosenInTransaction(tr, pid);
-  if (loosePos === null) return false;
-  const loose = tr.doc.nodeAt(loosePos);
-  if (loose === null) return false;
+  const out = coreSplit(readTree(state.doc), pid, pidB);
+  if (!out.ok) return false;
 
-  tr.replaceWith(loosePos, loosePos + loose.nodeSize, [
-    type.create(attrsA),
-    type.create(attrsB),
-  ]);
-  if (words !== null) relabelCorpusInTransaction(tr, words);
-  dispatch(editor, tr);
-  return true;
-}
-
-/** Every proposition node in document order. */
-function propositionsInOrder(doc: PMNode): { pos: number; node: PMNode }[] {
-  const out: { pos: number; node: PMNode }[] = [];
-  doc.descendants((node, pos) => {
-    if (node.type.name === 'proposition') {
-      out.push({ pos, node });
-      return false;
-    }
-    return true;
+  return commit(editor, out.state, (tr) => {
+    tr.replaceWith(pos, pos + node.nodeSize, [type.create(attrsA), type.create(attrsB)]);
+    if (words !== null) relabelCorpusInTransaction(tr, words);
   });
-  return out;
 }
 
 /**
- * Merge the proposition `pid` with the NEXT proposition in document order,
- * wherever in the forest that one lives. Both are unzipped to roots first (so
- * they end up adjacent roots — nothing sits between two consecutive
- * propositions once their brackets are gone), then joined into a single root
- * proposition keeping the FIRST one's pid. Corpus labels are re-derived from
- * the verses afterwards (relabelCorpusInTransaction); a raw result keeps the
- * first proposition's label.
+ * Merge the proposition `pid` with the NEXT one (§5.5). The fused leaf keeps
+ * the upper one's pid and blockColor and concatenates the spans; contiguous
+ * corpus ranges re-join into one range (text rebuilt from `words`, apparatus
+ * sigla stripped), and anything else degrades to a raw source with the two
+ * display texts joined. Corpus labels are re-derived from the verses
+ * afterwards; a raw result keeps the first proposition's label.
  *
- * Contiguous corpus ranges re-join into one range (text rebuilt from `words`,
- * apparatus sigla stripped); anything else degrades to a raw source with the
- * two display texts joined. One undo step. Returns false when `pid` is the
- * last proposition, or is not in the document.
+ * The core removes the MINIMAL set of brackets around the pair
+ * (innermost-outward: give way where the leaf is committed or the boundary
+ * separates the pair, release where it is a fringe lodger). Returns false when
+ * `pid` is the last proposition, or is not in the document.
  */
 export function mergeBelow(
   editor: Editor,
@@ -819,16 +478,17 @@ export function mergeBelow(
   const props = propositionsInOrder(state.doc);
   const index = props.findIndex((p) => String(p.node.attrs.pid) === pid);
   if (index === -1) return false;
-  const nextEntry = props[index + 1];
-  if (nextEntry === undefined) return false; // last proposition
+  const upper = props[index];
+  const lower = props[index + 1];
+  if (upper === undefined || lower === undefined) return false; // last proposition
 
-  const a = props[index]!.node.attrs;
-  const b = nextEntry.node.attrs;
+  const a = upper.node.attrs;
+  const b = lower.node.attrs;
   let merged: Record<string, unknown>;
   if (
-    typeof a.srcStart === 'number' && typeof a.srcEnd === 'number' &&
-    typeof b.srcStart === 'number' && typeof b.srcEnd === 'number' &&
-    a.srcEnd + 1 === b.srcStart
+    typeof a.srcStart === 'number' && typeof a.srcEnd === 'number'
+    && typeof b.srcStart === 'number' && typeof b.srcEnd === 'number'
+    && a.srcEnd + 1 === b.srcStart
   ) {
     const text = words !== null
       ? corpusText(words, a.srcStart, b.srcEnd)
@@ -839,29 +499,22 @@ export function mergeBelow(
     merged = { ...a, srcStart: null, srcEnd: null, rawText: text, text };
   }
 
-  // The two become one, and only what stood between them goes: the same
-  // surgery a connection makes, with a proposition in place of a bracket.
-  const posA = props[index]!.pos;
-  const posB = nextEntry.pos;
-  const outcome = rejoinUnits(editor, posA, posB, () => type.create(merged));
-  if (outcome === null) return false;
-  if (words !== null) relabelCorpusInTransaction(outcome.tr, words);
-  dispatch(editor, outcome.tr);
-  return true;
+  const out = coreMerge(readTree(state.doc), pid);
+  if (!out.ok) return false;
+
+  return commit(editor, out.state, (tr) => {
+    // The document is FLAT, so the two propositions are adjacent siblings:
+    // one replacement covers both.
+    tr.replaceWith(upper.pos, lower.pos + lower.node.nodeSize, type.create(merged));
+    if (words !== null) relabelCorpusInTransaction(tr, words);
+  });
 }
 
 // ---------------------------------------------------------------------------
-// Color blocks (see sections.ts for the model). A break rides the PROPOSITION
-// that begins its block, as that node's blockColor attr, so these are ordinary
-// transactions: one undo step each, shared history with every other gesture —
-// and only the rows whose attr changes re-render. Structural commands never
-// touch them: a merged-away break comes back when the merge is undone, and a
-// split leaves the break on the half that kept the pid.
-
-/** The pids currently in the document, in order. */
-function pidsInOrder(doc: PMNode): string[] {
-  return propositionsInOrder(doc).map((p) => String(p.node.attrs.pid));
-}
+// Section breaks (color blocks). Not tree structure: a break is carried by
+// the proposition that begins its block, as that node's blockColor attr, so
+// these are ordinary transactions — one undo step each, shared history — and
+// only the rows whose attr changes re-render.
 
 /** The color-block breaks the document carries, in proposition order. */
 export function sectionBreaks(doc: PMNode): SectionBreak[] {
@@ -911,49 +564,4 @@ export function addSectionBreak(editor: Editor, pid: string): boolean {
 export function removeSectionBreak(editor: Editor, pid: string): boolean {
   const doc = editor.state.doc;
   return setBreaks(editor, removeBreak(sectionBreaks(doc), pidsInOrder(doc), pid));
-}
-
-// ---------------------------------------------------------------------------
-// Lookups
-
-/** Position of the proposition node with the given pid, or null. */
-export function findPropositionPos(doc: PMNode, pid: string): number | null {
-  let found: number | null = null;
-  doc.descendants((node, pos) => {
-    if (found !== null) return false;
-    if (node.type.name === 'proposition' && node.attrs.pid === pid) {
-      found = pos;
-      return false;
-    }
-    return true;
-  });
-  return found;
-}
-
-export interface BracketHit {
-  pos: number;
-  node: PMNode;
-}
-
-/**
- * All bracket nodes with their positions, in document (pre-)order — the same
- * order layoutBrackets emits its BracketGeoms and layoutDots numbers its
- * 'bracket:<preorderIndex>' ids, so the two zip index-for-index.
- */
-export function findHoles(doc: PMNode): number[] {
-  const hits: number[] = [];
-  doc.descendants((node, pos) => {
-    if (node.type.name === 'hole') hits.push(pos);
-    return true;
-  });
-  return hits;
-}
-
-export function findBrackets(doc: PMNode): BracketHit[] {
-  const hits: BracketHit[] = [];
-  doc.descendants((node, pos) => {
-    if (node.type.name === 'bracket') hits.push({ pos, node });
-    return true;
-  });
-  return hits;
 }

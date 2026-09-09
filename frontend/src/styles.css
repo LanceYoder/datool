@@ -19,6 +19,27 @@
   --tree-muted: #9ca3af;
   --tree-dot-fill: #ffffff;
   --tree-dot-stroke: var(--tree-line);
+  /* The ring around every label — the quietest line in the tree, because it
+     is an affordance and not a mark the analyst made. --tree-labelbox-fill is
+     left unset, i.e. transparent: the overlay lies OVER the page, so a box
+     with a color of its own is a patch laid on the paper. A skin that wants
+     one reaches for its own ground, never for white. */
+  --tree-labelbox: var(--tree-muted);
+
+  /* The AIMING SIGNALS (spec §5.2, quieted by §10 A6). TWO inks: the hover
+     span-wash is GONE — hovering a dot no longer washes the passage, and its
+     variable went with the rect that drew it.
+       --tree-endangered  what the join would BREAK. It replaces the
+                          relationship's own color outright (BracketLayer),
+                          because "this is about to go" outranks "this is a
+                          Ground"; each skin's own alarm ink is the right one,
+                          and each skin says so in its own block;
+       --tree-refusal     an aim that cannot land. It follows --tree-endangered
+                          unless a skin separates them: the two can never
+                          appear at once (a refused join breaks nothing), so
+                          one voice for "no" is enough. */
+  --tree-endangered: var(--danger);
+  --tree-refusal: var(--tree-endangered);
 }
 
 * {
@@ -345,6 +366,33 @@ div.error-box {
   font-weight: 700;
 }
 
+/* The two three-letter codes ("Adv", "Alt") drop a size to hold the tight
+   square every label shares — see layout.ts LABEL_BOX_SIDE. */
+.bracket-label.compact {
+  font-size: 10px;
+  letter-spacing: -0.2px;
+}
+
+/* The ring every label is written in — one size for all of them (layout.ts:
+   LABEL_BOX_W/H), so the tree shows the reader where its handles are without
+   a single one of them shouting. Transparent, because the overlay lies over
+   the page and the page is what should show through; muted, because when the
+   brackets are color-coded the LETTER carries the color, not the ring.
+   The star beside it gets none: a star is a state marker, not a menu. */
+.label-box {
+  fill: var(--tree-labelbox-fill, transparent);
+  stroke: var(--tree-labelbox, var(--tree-muted, #9ca3af));
+  stroke-width: 1;
+  transition: stroke 90ms ease-out;
+}
+
+/* Under the pointer the ring takes the label's own ink — the same color the
+   letters are already in, so the handle answers in the bracket's voice.
+   --label-ink is published on the group by BracketLayer. */
+.label-hit:hover .label-box {
+  stroke: var(--label-ink, var(--tree-accent, #1d4ed8));
+}
+
 .bracket-star {
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font-size: 16px;
@@ -650,14 +698,9 @@ div.error-box {
   cursor: pointer;
 }
 
-.toolbar-hint,
-.toolbar-flash {
-  font-size: 0.9rem;
-}
-
-.toolbar-flash {
-  color: var(--danger);
-}
+/* No .toolbar-flash / .toolbar-hint rule: §10 A6 removed the elements they
+   dressed. A refused gesture shakes its dot and the toolbar says nothing —
+   the message that used to render here pushed the whole passage down. */
 
 .editor-shell {
   position: relative;
@@ -667,6 +710,57 @@ div.error-box {
 
 .editor-shell .bracket-layer.interactive {
   pointer-events: none;
+}
+
+/* The tree's viewport: the margin, as a window onto a tree that may be wider
+   than it. It stands exactly where the overlay used to — the shell's left
+   padding — and while the tree fits it is not a scroller at all, so nothing
+   about a tree that fits changes. The TEXT is outside it and never moves. */
+.tree-viewport {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--tree-margin);
+  /* A rubber band reaches out over the text while a connection is aimed; a
+     tree that fits must not have it cut off at the margin. */
+  overflow: visible;
+  pointer-events: none;
+}
+
+.tree-viewport.scrollable {
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* The tree is its own scroller: reaching its end must not start scrolling
+     the page out from under the reader. */
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+  /* A scroller clips, so its handles have to be reachable through it — the
+     overlay itself stays inert (see .bracket-layer.interactive). */
+  pointer-events: auto;
+}
+
+/* In flow, so the tree's real width IS the scrollable width. */
+.tree-viewport > .bracket-layer {
+  position: relative;
+  display: block;
+}
+
+.tree-viewport.scrollable::-webkit-scrollbar {
+  height: 8px;
+}
+
+.tree-viewport.scrollable::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tree-viewport.scrollable::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: var(--border);
+}
+
+.tree-viewport.scrollable:hover::-webkit-scrollbar-thumb {
+  background: var(--muted);
 }
 
 /* The overlay is inert except for its handles: dots, labels, stars. */
@@ -980,11 +1074,8 @@ div.error-box {
 
 .textflow-body {
   position: relative;
-  /* One indent step. Full-width now, so the steps are generous — and each
-     level is drawn as a faint rail (see .textflow-line::before), so the eye
-     can count depths without measuring space. */
+  /* One indent step — generous, since the flow has the whole width. */
   --textflow-step: 2.5rem;
-  --textflow-rail: var(--border);
   padding: 0.5rem 0.6rem;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -1007,23 +1098,11 @@ div.error-box {
   outline: none;
 }
 
-/* The rails: one faint vertical line per indent level, drawn only across the
-   line's own gutter, so a clause's depth can be read at a glance. */
-.textflow-line::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: -0.15rem;
-  bottom: -0.15rem;
-  width: calc(var(--textflow-step) * var(--tf-indent, 0));
-  pointer-events: none;
-  background: repeating-linear-gradient(
-    to right,
-    transparent,
-    transparent calc(var(--textflow-step) - 1px),
-    var(--textflow-rail) calc(var(--textflow-step) - 1px),
-    var(--textflow-rail) var(--textflow-step)
-  );
+/* Clause lines sit close, like the handout's flows — the sentence gap below
+   is the only vertical air. The .greek line-height of 2 is for the editor's
+   rows, not for a flow read as a block of text. */
+.textflow-body .textflow-text {
+  line-height: 1.45;
 }
 
 .textflow-line:focus-visible {
@@ -1070,8 +1149,12 @@ div.error-box {
   transition: opacity 0.12s ease;
 }
 
+/* Shown on hover, and for the KEYBOARD (focus-visible) — a mouse click on an
+   arrow leaves plain focus behind, which must not pin the arrows on after
+   the pointer moves away. */
 .textflow-line:hover .textflow-indent,
-.textflow-line:focus-within .textflow-indent {
+.textflow-line:focus-visible .textflow-indent,
+.textflow-line:has(:focus-visible) .textflow-indent {
   opacity: 1;
 }
 
@@ -1202,6 +1285,16 @@ div.error-box {
     -webkit-print-color-adjust: exact;
   }
 
+  /* The label rings print — on paper they group each code with its own line,
+     which a reader following a deep tree needs. They print as the hairline
+     they are on screen and no heavier: print-color-adjust above keeps them
+     the muted gray they were mixed as, so no printer driver renders them as
+     black rules around the letters. */
+  .label-box {
+    stroke: var(--tree-labelbox, var(--tree-muted, #9ca3af));
+    stroke-width: 0.75;
+  }
+
   /* Scale set per page from the analysis's real width (see AnalysisPage).
      ZOOM, not transform: a transformed box is laid out at its original size
      and then drawn smaller, so the page it belongs to is paginated as if
@@ -1210,6 +1303,18 @@ div.error-box {
      where the reader sees it fall. */
   .editor-shell {
     zoom: var(--print-scale, 1);
+    /* Paper cannot scroll. A tree that reads by scrolling on screen is laid
+       out WHOLE here — the margin opens by exactly what was hidden — and the
+       zoom above brings the whole width back onto the page. */
+    padding-left: calc(var(--tree-margin) + var(--tree-overflow, 0px)) !important;
+  }
+
+  /* … so the viewport stops being a window and simply is the tree. A scroll
+     position is clamped to 0 the moment the overflow turns visible, so the
+     printed tree always starts at its outermost spine. */
+  .tree-viewport.scrollable {
+    width: calc(var(--tree-margin) + var(--tree-overflow, 0px));
+    overflow: visible;
   }
 
   /* The color-block strip is an editing control, and its bands are one tall
@@ -1375,8 +1480,74 @@ div.error-box {
   stroke-dasharray: 2.5 2;
 }
 
-/* A bracket the reader is offering, not one they have made: drawn faintly
-   until the click that commits it. */
-.bracket.provisional {
-  opacity: 0.55;
+/* ---- The aiming signals (spec §5.2) ----
+   Everything here is drawn from an answer the CORE gave — the exact set a join
+   would break, whether the target refuses, what a gesture just made whole.
+   None of it re-derives a rule (§7.9); the colors are the --tree-* variables
+   above, so each skin says all three in its own ink. */
+
+/* AIMING AT A LEGAL TARGET: every bracket the join would break — the claiming
+   brackets at both endpoints and a crossed bracket. All of them, every time:
+   the aim never hides a consequence. The ink
+   is BracketLayer's (--tree-endangered replaces the bracket's own colour);
+   what this adds is the step back — an endangered bracket is still standing,
+   and must not read as one already gone. */
+.bracket.endangered {
+  opacity: 0.8;
+}
+
+/* …and its letters step back with it, ring included, so the whole bracket
+   speaks with one voice rather than a spine in one colour and a label in
+   another. */
+.bracket-glyphs.endangered .label-box {
+  stroke: var(--tree-endangered, #b91c1c);
+}
+
+/* THE AIM LINE ITSELF, in its two answering voices. Over a legal target it
+   stops trailing and SNAPS to that dot (BracketLayer), so the shape drawn is
+   the bracket the click would make: solid, and unbroken. */
+.rubber-band.provisional {
+  stroke-dasharray: none;
+  opacity: 0.9;
+}
+
+/* Over a target the core refuses — not adjacent, containment, or a room's
+   pickup dot, which names no unit at all — the same line in the refusal ink,
+   broken into a much finer dash. Nothing shakes yet: this is the aim saying
+   no before the click, not the click being turned down. */
+.rubber-band.refused {
+  stroke: var(--tree-refusal, #b91c1c);
+  stroke-dasharray: 1.5 5;
+  opacity: 0.85;
+}
+
+/* A SIDE ANCHORING AS A BYPRODUCT — a room resolving to one unit, so the
+   bracket that was waiting is whole again. Completion is an event, not an
+   absence (§5.2), so the bracket says so once and then stops: two beats, over
+   in under a second, on the ink alone. Nothing moves and nothing reflows. */
+.bracket.anchored {
+  animation: bracket-anchor 760ms ease-out;
+}
+
+@keyframes bracket-anchor {
+  0% {
+    opacity: 0.3;
+  }
+  30% {
+    opacity: 1;
+  }
+  62% {
+    opacity: 0.55;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* A reader who has asked for less motion still gets the signal — the bracket
+   is simply whole, with no announcement. */
+@media (prefers-reduced-motion: reduce) {
+  .bracket.anchored {
+    animation: none;
+  }
 }

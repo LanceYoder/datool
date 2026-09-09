@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { AnalysisSummary, DeletedAnalysisSummary, FirstPassResult } from '../types';
-import { normalizeDocument, withoutConnections } from '../editor/convert';
-import { fitsWidth } from '../editor/layout';
+import { normalizeDocument } from '../editor/convert';
 import {
   createAnalysis,
   deleteAnalysis,
@@ -33,11 +32,6 @@ function saveMaximal(maximal: boolean): void {
   } catch {
     /* a browser that blocks storage just forgets the choice */
   }
-}
-
-/** Width the analysis will have on this screen — the app's own column. */
-function shellWidth(): number {
-  return Math.min(window.innerWidth, 1600) - 64;
 }
 
 function formatDate(iso: string): string {
@@ -190,13 +184,10 @@ export default function HomePage() {
     setErrors([]);
     try {
       const title = found.alignment?.ref ?? 'Untitled analysis';
-      // A proposed tree too wide to draw is never stored: the analysis starts
-      // from its propositions instead. Deciding here — before it is saved —
-      // is what keeps it from coming back.
-      const proposed = normalizeDocument(found.document);
-      const document = fitsWidth(proposed.forest, shellWidth())
-        ? proposed
-        : withoutConnections(proposed);
+      // Every proposed connection is stored, however deep the tree runs: a
+      // tree wider than the window is now read by scrolling the margin
+      // sideways, so there is nothing about width left to decide here.
+      const document = normalizeDocument(found.document);
       const created = await createAnalysis({ title, document });
       navigate(`/analysis/${created.id}`);
     } catch (err) {
