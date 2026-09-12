@@ -1,51 +1,19 @@
-"""API tests (pytest-django) for the DRF layer: da/views.py + da/urls.py."""
+"""API tests (pytest-django) for the DRF layer: da/views.py + da/urls.py.
+
+``client`` (da/tests/conftest.py) is signed in as an individual account: every
+endpoint here now needs a session, and an analysis belongs to whoever made it.
+Who may see whose is tested in test_accounts.py.
+"""
 
 import sys
 import types
 
 import pytest
-from rest_framework.test import APIClient
 
-from da.corpus import align, load_words
+from da.corpus import load_words
 from da.models import Analysis, TRASH_DAYS
 
-JOHN_1_1 = "Ἐν ἀρχῇ ἦν ὁ λόγος, καὶ ὁ λόγος ἦν πρὸς τὸν θεόν, καὶ θεὸς ἦν ὁ λόγος."
-
-
-@pytest.fixture
-def client():
-    return APIClient()
-
-
-@pytest.fixture(scope="module")
-def john_1_1():
-    """Real corpus indexes for the CRUD document, located via align."""
-    alignment = align(JOHN_1_1)
-    assert alignment is not None and alignment.exact
-    return alignment
-
-
-def small_document(alignment) -> dict:
-    """Two corpus-sourced propositions covering John 1:1, in a Series."""
-    start, end = alignment.start, alignment.end
-    return {
-        "schemaVersion": 2,
-        "propositions": [
-            {"id": "p1", "label": "1a",
-             "source": {"kind": "corpus", "start": start, "end": start + 4}},
-            {"id": "p2", "label": "1b",
-             "source": {"kind": "corpus", "start": start + 5, "end": end}},
-        ],
-        "forest": [
-            {
-                "kind": "bracket", "rel": "Ser", "prominent": None,
-                "children": [
-                    {"kind": "prop", "ref": "p1"},
-                    {"kind": "prop", "ref": "p2"},
-                ],
-            },
-        ],
-    }
+from .conftest import JOHN_1_1, small_document  # noqa: F401  (used below)
 
 
 @pytest.mark.django_db
@@ -72,12 +40,14 @@ class TestAnalysisCrud:
         assert second.status_code == 201
         listed = client.get("/api/analyses").json()
         assert [row["title"] for row in listed] == ["Second", "John 1:1"]
-        assert set(listed[0]) == {"id", "title", "passageRef", "updatedAt"}
+        assert set(listed[0]) == {"id", "title", "passageRef", "updatedAt", "ownerId"}
 
         # Detail.
         detail = client.get(f"/api/analyses/{pk}").json()
         assert detail["document"] == document
-        assert set(detail) == {"id", "title", "passageRef", "document", "notes", "updatedAt"}
+        assert set(detail) == {
+            "id", "title", "passageRef", "document", "notes", "updatedAt", "ownerId",
+        }
 
         # Update title and document; passage_ref re-derives from the document.
         smaller = {
@@ -294,8 +264,8 @@ class TestFirstPass:
         result = types.SimpleNamespace(document=stub_document, alignment=None)
         calls = []
 
-        def fake_first_pass(text, maximal=False):
-            calls.append((text, maximal))
+        def fake_first_pass(text, maximal=False, *, tier="minimal"):
+            calls.append((text, tier))
             return result
 
         try:
@@ -310,7 +280,9 @@ class TestFirstPass:
         response = client.post("/api/first-pass", {"text": "ψευδόμεθα"}, format="json")
         assert response.status_code == 200
         assert response.json() == {"document": stub_document, "alignment": None}
-        assert calls == [("ψευδόμεθα", False)]
+        # No tier asked for and no policy in force: the default is minimal,
+        # what the pre-tier boolean's default gave.
+        assert calls == [("ψευδόμεθα", "minimal")]
 
 
 class TestTaxonomy:
@@ -390,7 +362,9 @@ class TestRecentlyDeleted:
 
         trash = client.get("/api/analyses/deleted").json()
         assert [row["title"] for row in trash] == ["Doomed"]
-        assert set(trash[0]) == {"id", "title", "passageRef", "updatedAt", "deletedAt", "daysLeft"}
+        assert set(trash[0]) == {
+            "id", "title", "passageRef", "updatedAt", "ownerId", "deletedAt", "daysLeft",
+        }
         assert trash[0]["daysLeft"] == TRASH_DAYS
 
         restored = client.post(f"/api/analyses/{pk}/restore")

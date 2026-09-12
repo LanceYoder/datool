@@ -63,13 +63,16 @@ afterEach(cleanup);
 async function panel(handlers: {
   onSplitWord?: (i: number) => void;
   onMergeAfterLine?: (i: number) => void;
+  onChange?: (flow: TextFlow) => void;
+  editable?: boolean;
 }) {
+  const { onChange = () => {}, ...rest } = handlers;
   render(
     <TextFlowPanel
       flow={flow}
       range={{ start: 100, end: 103 }}
-      onChange={() => {}}
-      {...handlers}
+      onChange={onChange}
+      {...rest}
     />,
   );
   // The words arrive with the corpus fetch.
@@ -138,6 +141,57 @@ describe('TextFlowPanel left-click', () => {
     );
     expect(screen.getByText('Loading…')).toBeTruthy();
     expect(screen.queryByRole('button')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// READ-ONLY (accounts-spec §8): a professor reading a student's work. Two
+// separate things meet in this panel: `editable` governs SHAPING the flow —
+// the ◀ ▶ and the embedding — while DIVIDING the lines, which are
+// propositions, is the page's: it withholds the two divisions by handing the
+// panel no callbacks at all, and the panel takes it from there. No class rule
+// touches either (§5): the flow is always the student's to edit.
+
+describe('TextFlowPanel read-only', () => {
+  it('draws no ◀ ▶, and refuses Tab, when the flow is read-only', async () => {
+    const onChange = vi.fn();
+    await panel({ editable: false, onChange });
+    expect(screen.queryByLabelText('Move line in')).toBeNull();
+    expect(screen.queryByLabelText('Move line out')).toBeNull();
+
+    const line = word('α').closest('.textflow-line');
+    expect(line).not.toBeNull();
+    fireEvent.keyDown(line!, { key: 'Tab' });
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('opens no embedding popover when the flow is read-only', async () => {
+    await panel({ editable: false });
+    fireEvent.click(word('α'));
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('still READS: the lines and their words are all there', async () => {
+    await panel({ editable: false });
+    for (const w of ['α', 'β', 'γ', 'δ']) expect(word(w)).toBeTruthy();
+  });
+
+  it('divides nothing when the page hands it no split callback', async () => {
+    // What AnalysisPage does on a read-only page — the prop is simply not
+    // passed, so the right-click reaches nothing.
+    await panel({ editable: true });
+    fireEvent.contextMenu(word('α')); // would have split
+    fireEvent.contextMenu(word('β')); // would have merged
+    // Nothing to assert but the absence of a crash and of a popover: the
+    // panel has no other way to change the document.
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('keeps indenting when only the DIVISIONS are withheld', async () => {
+    const onChange = vi.fn();
+    await panel({ editable: true, onChange });
+    fireEvent.click(screen.getAllByLabelText('Move line in')[0]!);
+    expect(onChange).toHaveBeenCalled();
   });
 });
 

@@ -12,9 +12,12 @@ usually right is worth drawing — re-labelling one bracket beats drawing the
 structure by hand — so only the GENUINELY UNDECIDABLE joins are left
 disconnected for the analyst: a bare ἀλλά, an apposition, an
 implicit-proposition prepositional phrase, an unknown subordinator, and which
-clauses of an asyndetic run belong together. MAXIMAL runs the full classifier:
-every judgment call included, the whole passage proposed as one tree. Stage 1
-(:mod:`da.segmentation`) pre-splits into clause propositions either way.
+clauses of an asyndetic run belong together. MAXIMAL — now called FULL — runs the full
+classifier: every judgment call included, the whole passage proposed as one
+tree. NONE, the third tier a professor may set (docs/accounts-spec.md §5),
+proposes nothing: the propositions come back as loose roots and the student
+draws every bracket. Stage 1 (:mod:`da.segmentation`) pre-splits into clause
+propositions on all three.
 
 Two ways in, one result. Text that reads as a REFERENCE ("Eph 1:3-14",
 "1 jn 1:5 to 7", typos and abbreviations included — see
@@ -52,35 +55,64 @@ class FirstPassResult:
     alignment: Alignment | None
 
 
-def first_pass(text: str, maximal: bool = False) -> FirstPassResult:
-    """Locate the input — reference or paste — and analyze it. ``maximal``
-    runs the full classifier; the default draws only the sure connections."""
+#: The tiers of automatic analysis, least to most (docs/accounts-spec.md §5).
+#: ``none`` proposes nothing at all; a professor may allow any subset of them.
+TIERS = ("none", "minimal", "full")
+
+#: ``maximal`` was the pre-tier name for the full analysis; still accepted.
+TIER_ALIASES = {"maximal": "full"}
+
+
+def normalize_tier(raw: str) -> str:
+    """A tier name, alias resolved. Raises ValueError for anything else."""
+    tier = TIER_ALIASES.get(raw, raw) if isinstance(raw, str) else raw
+    if tier not in TIERS:
+        raise ValueError(f"tier must be one of {', '.join(TIERS)}")
+    return tier
+
+
+def first_pass(text: str, maximal: bool = False, *,
+               tier: str | None = None) -> FirstPassResult:
+    """Locate the input — reference or paste — and analyze it at ``tier``.
+
+    ``full`` runs the full classifier; ``minimal`` draws only the sure
+    connections; ``none`` draws none at all — every proposition comes back a
+    forest root, for a student who is to build the whole tree themselves. The
+    older ``maximal=True`` still selects ``full``; an explicit ``tier`` wins.
+    """
+    tier = normalize_tier(tier) if tier is not None else ("full" if maximal else "minimal")
     if looks_like_reference(text):
         # resolve() raises ReferenceError (a ValueError) for a reference that
         # names no real passage; the view turns that into a 400 the same way
         # it does an unanalyzable paste.
         reference = resolve(text)
         return FirstPassResult(
-            _analyzed(reference.start, reference.end, maximal),
+            _analyzed(reference.start, reference.end, tier),
             _reference_alignment(reference),
         )
     alignment = align(text)
     if alignment is None:
+        # Without morphology there is no proposed structure at any tier: a raw
+        # paste already comes back all-roots, which IS the 'none' tier.
         return FirstPassResult(_raw_document(text), None)
-    return FirstPassResult(_analyzed(alignment.start, alignment.end, maximal),
+    return FirstPassResult(_analyzed(alignment.start, alignment.end, tier),
                            alignment)
 
 
-def _analyzed(start: int, end: int, maximal: bool) -> dict:
+def _analyzed(start: int, end: int, tier: str) -> dict:
     """Segment a corpus range into clauses, draw its connections, and write
     out the passage's TEXT FLOW.
 
-    The flow rides on BOTH levels unchanged: it is a grammatical reading (one
+    The flow rides on EVERY tier unchanged: it is a grammatical reading (one
     clause per line, dependents indented under what they modify), not a
-    semantic one, so there is nothing in it for the minimal/maximal tiering to
-    hold back. It comes from the same segmentation and the same within-sentence
-    assembly the classifier just ran — :func:`da.treebuild.build_text_flow` —
-    so the flow's lines ARE the analysis's propositions.
+    semantic one, so there is nothing in it for the tiering to hold back. It
+    comes from the same segmentation and the same within-sentence assembly the
+    classifier just ran — :func:`da.treebuild.build_text_flow` — so the flow's
+    lines ARE the analysis's propositions.
+
+    The ``none`` tier runs the same segmentation (the propositions and the
+    sections are a reading of the grammar, not an analysis) and then drops
+    every bracket: the forest becomes one root per proposition.
     """
     # Imported here, not at module top: the analyzer lives in its own modules
     # and raw-mode entry must keep working even while they are being reworked.
@@ -88,7 +120,11 @@ def _analyzed(start: int, end: int, maximal: bool) -> dict:
     from .treebuild import build_document, build_text_flow
 
     segments = segment(start, end)
-    document = build_document(segments, confident_only=not maximal)
+    document = build_document(segments, confident_only=tier != "full")
+    if tier == "none":
+        document["forest"] = [
+            {"kind": "prop", "ref": p["id"]} for p in document["propositions"]
+        ]
     document["textFlow"] = build_text_flow(segments)
     # build_document validated the analysis; the flow is added after, so the
     # document is checked once more as it actually ships.

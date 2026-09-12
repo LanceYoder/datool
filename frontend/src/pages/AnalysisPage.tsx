@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import type { Analysis, Document as AnalysisDocument, TextFlow } from '../types';
+import { ReadOnlyScope } from '../policy';
+import { useSession } from '../session';
 import { errorMessages, getAnalysis, getTextFlow, updateAnalysis } from '../api';
 import AnalysisEditor from '../editor/AnalysisEditor';
 import type { EditorActions } from '../editor/AnalysisEditor';
@@ -26,6 +28,8 @@ import { useUnsavedChanges } from '../unsavedChanges';
 
 export default function AnalysisPage() {
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
+  const { user } = useSession();
 
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   // The document handed to the editor: set once on load so edit history
@@ -166,11 +170,27 @@ export default function AnalysisPage() {
     editorActions.current?.mergeAt(index);
   }, []);
 
+  /**
+   * READ-ONLY: a professor opening a student's analysis (§2's default — the
+   * work stays the student's). Two ways to know, and both are wanted: the row
+   * carries `ownerId`, which is what makes a BOOKMARKED or reloaded
+   * /analysis/:id lock itself with no query at all, and the link from
+   * /students/:mid says so in the query as well, which still holds for a row
+   * that has no owner (the pre-accounts analyses of §7). PUT is owner-only on
+   * the server regardless; this is what stops the page from offering.
+   */
+  const readOnly =
+    searchParams.get('readonly') === '1' ||
+    (user !== null &&
+      analysis?.ownerId !== undefined &&
+      analysis.ownerId !== null &&
+      analysis.ownerId !== user.id);
+
   const titleDirty = analysis !== null && title !== analysis.title;
   const notesDirty = analysis !== null && notes !== analysis.notes;
 
   // Let the header links confirm before navigating away from unsaved edits.
-  useUnsavedChanges(dirty || titleDirty || notesDirty);
+  useUnsavedChanges(!readOnly && (dirty || titleDirty || notesDirty));
 
   const save = async () => {
     if (id === undefined || draftRef.current === null) return;
@@ -227,6 +247,7 @@ export default function AnalysisPage() {
   const rest = initial === '' ? '' : shownTitle.slice(initial.length);
 
   return (
+    <ReadOnlyScope readOnly={readOnly}>
     <div
       className="analysis-page"
       style={
@@ -243,6 +264,7 @@ export default function AnalysisPage() {
           <input
             className="title-input"
             value={title}
+            readOnly={readOnly}
             onChange={(e) => setTitle(e.target.value)}
             onFocus={() => setTitleEditing(true)}
             onBlur={() => setTitleEditing(false)}
@@ -261,13 +283,19 @@ export default function AnalysisPage() {
             </span>
           )}
         </div>
-        <button
-          className="primary"
-          onClick={() => void save()}
-          disabled={busy || analysis === null || (!dirty && !titleDirty && !notesDirty)}
-        >
-          Save
-        </button>
+        {/* No Save when the analysis is somebody else's: a professor reads it,
+            and there is nothing here for them to keep. */}
+        {readOnly ? (
+          <span className="muted read-only-note">Read-only — this is your student’s work.</span>
+        ) : (
+          <button
+            className="primary"
+            onClick={() => void save()}
+            disabled={busy || analysis === null || (!dirty && !titleDirty && !notesDirty)}
+          >
+            Save
+          </button>
+        )}
         {/* No Delete here. Throwing an analysis away is a decision about the
             LIST, and it is taken there — see HomePage. */}
         <button type="button" onClick={print} disabled={analysis === null}>
@@ -297,22 +325,27 @@ export default function AnalysisPage() {
           passage re-read, and reads like one — with the notes under it. */}
       {analysis !== null && initialDoc !== null && (
         <div className="analysis-lower">
+          {/* Read-only (a professor reading): the flow stays and reads, with
+              its two DIVISIONS withheld by handing it no callbacks at all —
+              §8's own wording. */}
           <TextFlowPanel
             flow={textFlow}
             range={passageRange}
             onChange={onTextFlowChange}
-            onSplitWord={onSplitWord}
-            onMergeAfterLine={onMergeAfterLine}
+            onSplitWord={readOnly ? undefined : onSplitWord}
+            onMergeAfterLine={readOnly ? undefined : onMergeAfterLine}
+            editable={!readOnly}
           />
           {/* has-notes is what the print sheet reads: an empty box prints
               nothing rather than a blank page. */}
           <section className={notes.trim() === '' ? 'notes-panel' : 'notes-panel has-notes'}>
             <h2>Notes</h2>
-            <NotesEditor value={notes} onChange={setNotes} />
+            <NotesEditor value={notes} onChange={setNotes} editable={!readOnly} />
           </section>
         </div>
       )}
       {analysis === null && errors.length === 0 && <p className="muted">Loading…</p>}
     </div>
+    </ReadOnlyScope>
   );
 }

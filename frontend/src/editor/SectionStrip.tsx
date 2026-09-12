@@ -24,6 +24,12 @@ export interface SectionStripProps {
   height: number;
   onAdd: (pid: string) => void;
   onRemove: (pid: string) => void;
+  /**
+   * Whether blocks may be made and unmade here. False for a professor reading
+   * a student's work (§8): the bands stay, the + and − never appear. No class
+   * rule ever sets it — blocks are always the student's to make.
+   */
+  canEdit?: boolean;
 }
 
 /** Top and bottom of a block, from its first and last measured row. */
@@ -43,6 +49,7 @@ export default function SectionStrip({
   height,
   onAdd,
   onRemove,
+  canEdit = true,
 }: SectionStripProps) {
   // The boundary the pointer is nearest: the pid the next block would begin
   // at, and the y to draw the control at.
@@ -55,7 +62,7 @@ export default function SectionStrip({
     .filter((b): b is { pid: string; y: number } => b.y !== undefined);
 
   const onMove = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (boundaries.length === 0) return;
+    if (!canEdit || boundaries.length === 0) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const y = event.clientY - rect.top;
     let nearest = boundaries[0]!;
@@ -93,7 +100,7 @@ export default function SectionStrip({
           />
         );
       })}
-      {hover !== null && (
+      {canEdit && hover !== null && (
         <button
           type="button"
           className={isBreak ? 'section-control remove' : 'section-control add'}

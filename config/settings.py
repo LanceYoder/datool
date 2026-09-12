@@ -74,6 +74,15 @@ DATABASES = {
     )
 }
 
+# Login by email OR handle (docs/accounts-spec.md §3): `username` holds the
+# handle for a learning account, or the lowercased email for an email account,
+# so one backend has to try both columns. ModelBackend stays behind it for the
+# Django admin's own username logins.
+AUTHENTICATION_BACKENDS = [
+    "da.auth_backends.EmailOrHandleBackend",
+    "django.contrib.auth.backends.ModelBackend",
+]
+
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
@@ -100,25 +109,104 @@ FRONTEND_DIST = BASE_DIR / "frontend" / "dist"
 WHITENOISE_ROOT = FRONTEND_DIST if FRONTEND_DIST.exists() else None
 WHITENOISE_INDEX_FILE = True
 
-# e.g. "https://datool.fly.dev" — needed by the admin's login form in
-# production; the JSON API itself is CSRF-exempt (no session auth).
+# e.g. "https://datool.fly.dev" — needed in production by the admin's login
+# form AND by every mutating API call, since the SPA now signs in with a
+# session and sends Django's CSRF token (docs/accounts-spec.md §3).
 CSRF_TRUSTED_ORIGINS = [
     origin
     for origin in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
     if origin
 ]
 
+if DEBUG:
+    # The Vite dev server, which proxies /api here. Django compares the Origin
+    # header against the Host it was reached on, and those two agree only while
+    # the proxy forwards the browser's Host unchanged (Vite's default). Trust
+    # the dev origins outright, so that a proxy configured with
+    # `changeOrigin: true` — the usual Vite idiom, harmless in every other
+    # respect — cannot turn every write in local development into an opaque
+    # "Origin checking failed" 403.
+    CSRF_TRUSTED_ORIGINS += [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
-    # v1 runs in single-user local mode; auth switches on at first deployment.
-    # No authentication classes: SessionAuthentication would demand CSRF tokens
-    # on every POST, which is pure friction with no login concept.
-    "DEFAULT_AUTHENTICATION_CLASSES": [],
-    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
+    # Session cookies + CSRF, same origin (docs/accounts-spec.md §3). Every
+    # endpoint needs a login unless it opts out explicitly (the handful in
+    # da/api/auth.py: csrf bootstrap, register, login, password forgot/reset).
+    # Our SessionAuthentication subclass answers 401 — not DRF's bare 403 —
+    # when nobody is signed in, which is the signal the SPA redirects on.
+    "DEFAULT_AUTHENTICATION_CLASSES": ["da.api.authentication.SessionAuthentication"],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
-    "UNAUTHENTICATED_USER": None,
+    # One error shape for the whole API: {"errors": [str, ...]}, DRF's own
+    # failures (401/403/404/405/throttle) included.
+    "EXCEPTION_HANDLER": "da.api.errors.exception_handler",
+    # Rate limits (da/api/throttles.py) on the endpoints a stranger can hammer:
+    # the two that send mail to an address the caller chose (invitations, the
+    # forgot-password form — per caller AND per target), the two that check a
+    # submitted password (login — per client address AND per account — and
+    # password change), and registration, which refills every per-caller
+    # allowance. A class of thirty is a normal day's provisioning; ten wrong
+    # passwords a minute is a person, not a script.
+    "DEFAULT_THROTTLE_RATES": {
+        "invitations": os.environ.get("DATOOL_INVITE_RATE", "40/day"),
+        "login": os.environ.get("DATOOL_LOGIN_RATE", "10/min"),
+        "register": os.environ.get("DATOOL_REGISTER_RATE", "5/min"),
+        "password_reset": os.environ.get("DATOOL_PASSWORD_RESET_RATE", "5/min"),
+        "password_change": os.environ.get("DATOOL_PASSWORD_CHANGE_RATE", "10/min"),
+    },
 }
+
+# ---------------------------------------------------------------------------
+# Sessions and cookies (docs/accounts-spec.md §3)
+# ---------------------------------------------------------------------------
+
+#: Two weeks, renewed on every request — a class period should never log a
+#: student out mid-analysis.
+SESSION_COOKIE_AGE = 60 * 60 * 24 * 14
+SESSION_SAVE_EVERY_REQUEST = True
+
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_HTTPONLY = True
+# The SPA READS the CSRF cookie to send X-CSRFToken, so this one cannot be
+# HttpOnly — that is Django's documented arrangement, not a weakening.
+CSRF_COOKIE_HTTPONLY = False
+# Secure cookies everywhere but local development (http://localhost).
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+
+# ---------------------------------------------------------------------------
+# Outgoing mail — invitations and password resets (docs/accounts-spec.md §3)
+# ---------------------------------------------------------------------------
+
+#: Where the links in those mails point. Same-origin in production (the SPA is
+#: served by this app); the Vite dev server in local development.
+FRONTEND_ORIGIN = os.environ.get(
+    "FRONTEND_ORIGIN",
+    "http://localhost:5173" if DEBUG else "https://datool.fly.dev",
+)
+
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "datool <no-reply@datool.local>")
+
+if DEBUG:
+    # Dev/test: mail is printed to the Django log, so an invitation link is
+    # always reachable without an SMTP provider.
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+else:
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+    EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
+    EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+    EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+    EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+    EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "1") == "1"
+    # Until an SMTP host is configured, sending fails and the API hands the
+    # link back to the admin who provisioned the account (§3, §10.1) — nothing
+    # blocks on the analyst choosing a provider.
 
 # Vite dev server during local development.
 CORS_ALLOWED_ORIGINS = [

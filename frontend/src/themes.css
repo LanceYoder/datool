@@ -156,7 +156,9 @@
 [data-theme='book'] button:not(.menu-item, .popover-item, .menu-info, .link-button, .section-control),
 [data-theme='book'] .app-add,
 [data-theme='book'] .title-input,
-[data-theme='book'] .paste-area {
+[data-theme='book'] .paste-area,
+[data-theme='book'] .form-input,
+[data-theme='book'] .form-select {
   font-family: 'IM Fell English', Georgia, serif;
   border: 1px solid #b09873;
   border-radius: 2px;
@@ -488,6 +490,7 @@
 [data-theme='book'] .notes-editor,
 [data-theme='book'] .textflow-body,
 [data-theme='book'] .verse-panel,
+[data-theme='book'] .handout,
 [data-theme='book'] .analysis-list {
   border: 1px solid var(--border);
   border-radius: 2px;
@@ -658,6 +661,8 @@
 [data-theme='notebook'] .theme-option,
 [data-theme='notebook'] .title-input,
 [data-theme='notebook'] .paste-area,
+[data-theme='notebook'] .form-input,
+[data-theme='notebook'] .form-select,
 [data-theme='notebook'] .notes-tool {
   font-family: 'Patrick Hand', 'Segoe Print', system-ui, sans-serif;
   border: 2px solid var(--pen);
@@ -947,6 +952,7 @@
 [data-theme='notebook'] .notes-editor,
 [data-theme='notebook'] .textflow-body,
 [data-theme='notebook'] .verse-panel,
+[data-theme='notebook'] .handout,
 [data-theme='notebook'] .analysis-list {
   border: 2px solid rgb(31 63 143 / 35%);
   border-radius: 26px 6px 22px 8px / 8px 22px 6px 26px;
@@ -1154,7 +1160,10 @@
 [data-theme='slate'] .app-add,
 [data-theme='slate'] .title-input,
 [data-theme='slate'] .paste-area,
+[data-theme='slate'] .form-input,
+[data-theme='slate'] .form-select,
 [data-theme='slate'] .card,
+[data-theme='slate'] .handout,
 [data-theme='slate'] .analysis-list,
 [data-theme='slate'] .help-panel,
 [data-theme='slate'] .color-settings,
@@ -1213,9 +1222,17 @@
 }
 
 [data-theme='slate'] .title-input,
-[data-theme='slate'] .paste-area {
+[data-theme='slate'] .paste-area,
+[data-theme='slate'] .form-input,
+[data-theme='slate'] .form-select {
   background: var(--slate-100);
   border-radius: 8px;
+}
+
+/* Slate's --border is transparent; the members roster needs its row rules. */
+[data-theme='slate'] .member-table th,
+[data-theme='slate'] .member-table td {
+  border-bottom: 1px solid var(--slate-200);
 }
 
 [data-theme='slate'] .title-input {
@@ -1228,6 +1245,7 @@
 
 [data-theme='slate'] .card,
 [data-theme='slate'] .analysis-list,
+[data-theme='slate'] .handout,
 [data-theme='slate'] .help-panel,
 [data-theme='slate'] .color-settings,
 [data-theme='slate'] .notes-editor {

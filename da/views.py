@@ -1,17 +1,26 @@
 """The datool HTTP API (docs/DESIGN.md §7) — plain, explicit DRF APIViews.
 
 Error contract: every 400 carries ``{"errors": [str, ...]}``.
+
+Every endpoint here needs a session (the project-wide DRF default), and an
+analysis belongs to ONE person: the listing, the writes and the trash are
+scoped to ``owner = request.user``. The single exception is reading — a
+professor may OPEN a student's analysis, never edit it (accounts-spec §2, §6).
+The account endpoints themselves live in :mod:`da.api`.
 """
 
+from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .api.permissions import professor_of
 from .corpus import format_ref, load_words, verses_for_range
 from .documents import DocumentError, validate_document
 from .models import Analysis, purge_expired
+from .policies import PolicyError, allowed_tiers, effective_policy, normalize_tier
 from .serializers import (
     AnalysisDetailSerializer,
     AnalysisListSerializer,
@@ -26,6 +35,37 @@ WORD_RANGE_CAP = 2000  # max words per /api/corpus/words request
 
 def _errors(problems: list[str]) -> Response:
     return Response({"errors": problems}, status=status.HTTP_400_BAD_REQUEST)
+
+
+def _forbidden(problems: list[str]) -> Response:
+    """A policy said no. 403, not 400: the request is well formed, the class
+    rules simply do not allow it."""
+    return Response({"errors": problems}, status=status.HTTP_403_FORBIDDEN)
+
+
+def _owned(request, pk: int, **filters) -> Analysis:
+    """One of the CALLER'S OWN analyses, or 404 — someone else's must read as
+    absent, never as forbidden, or the id space itself leaks."""
+    return get_object_or_404(Analysis, pk=pk, owner=request.user, **filters)
+
+
+def _requested_tier(payload: dict, policy: dict | None) -> str:
+    """The first-pass tier a request asks for.
+
+    ``tier`` is the field (``'none'|'minimal'|'full'``, with ``'maximal'`` as
+    the deprecated alias); the older boolean ``maximal`` is still read when no
+    tier is given. With NEITHER, the request takes the gentlest tier its policy
+    allows that it would have got before tiers existed — minimal — so a student
+    whose professor allows only one tier cannot be locked out by an old client.
+    """
+    if "tier" in payload:
+        return normalize_tier(payload["tier"])
+    if "maximal" in payload:
+        if not isinstance(payload["maximal"], bool):
+            raise PolicyError(["maximal must be a boolean"])
+        return "full" if payload["maximal"] else "minimal"
+    allowed = allowed_tiers(policy)
+    return "minimal" if "minimal" in allowed else allowed[0]
 
 
 def _validated_document(payload) -> dict:
@@ -55,23 +95,40 @@ def _derive_passage_ref(document: dict) -> str:
 
 class AnalysisListCreateView(APIView):
     def get(self, request):
-        rows = Analysis.objects.filter(deleted_at__isnull=True).order_by("-updated_at")
+        rows = Analysis.objects.filter(
+            owner=request.user, deleted_at__isnull=True
+        ).order_by("-updated_at")
         return Response(AnalysisListSerializer(rows, many=True).data)
 
     def post(self, request):
-        payload = request.data
-        title = payload.get("title") if isinstance(payload, dict) else None
+        """Create — and RECORD the rules it was made under: which first pass
+        it started from, and the policy in force at that moment (§6)."""
+        payload = request.data if isinstance(request.data, dict) else {}
+        title = payload.get("title")
         if title is not None and not isinstance(title, str):
             return _errors(["title must be a string"])
+        policy = effective_policy(request.user)
+        tier = ""
+        if "tier" in payload or "firstPassTier" in payload:
+            raw = payload.get("tier", payload.get("firstPassTier"))
+            try:
+                tier = normalize_tier(raw)
+            except PolicyError as e:
+                return _errors(e.problems)
+            if tier not in allowed_tiers(policy):
+                return _forbidden([_tier_denied(tier, policy)])
         try:
             document = _validated_document(payload)
         except DocumentError as e:
             return _errors(e.problems)
         passage_ref = _derive_passage_ref(document)
         analysis = Analysis.objects.create(
+            owner=request.user,
             title=(title or "").strip() or passage_ref or "Untitled analysis",
             passage_ref=passage_ref,
             document=document,
+            first_pass_tier=tier,
+            policy_snapshot=policy,
         )
         return Response(
             AnalysisDetailSerializer(analysis).data, status=status.HTTP_201_CREATED
@@ -80,14 +137,23 @@ class AnalysisListCreateView(APIView):
 
 class AnalysisDetailView(APIView):
     """A LIVE analysis: one in Recently Deleted reads as gone (404) until it
-    is restored. Only delete() reaches a trashed row, to purge it."""
+    is restored. Only delete() reaches a trashed row, to purge it.
+
+    GET is the one door a professor may come through — read-only, for their
+    own students; PUT and DELETE stay the owner's alone."""
 
     def get(self, request, pk: int):
-        analysis = get_object_or_404(Analysis, pk=pk, deleted_at__isnull=True)
+        analysis = get_object_or_404(
+            Analysis.objects.select_related("owner"), pk=pk, deleted_at__isnull=True
+        )
+        if analysis.owner_id != request.user.id and not professor_of(
+            request.user, analysis.owner
+        ):
+            raise Http404
         return Response(AnalysisDetailSerializer(analysis).data)
 
     def put(self, request, pk: int):
-        analysis = get_object_or_404(Analysis, pk=pk, deleted_at__isnull=True)
+        analysis = _owned(request, pk, deleted_at__isnull=True)
         payload = request.data
         if not isinstance(payload, dict):
             return _errors(["request body must be an object"])
@@ -113,7 +179,7 @@ class AnalysisDetailView(APIView):
     def delete(self, request, pk: int):
         """Soft by default — the analysis moves to Recently Deleted. Only
         ``?purge=1`` (emptying the trash) removes the row itself."""
-        analysis = get_object_or_404(Analysis, pk=pk)
+        analysis = _owned(request, pk)
         if request.query_params.get("purge") in ("1", "true"):
             analysis.delete()
         else:
@@ -128,36 +194,49 @@ class DeletedAnalysisListView(APIView):
 
     def get(self, request):
         purge_expired()
-        rows = Analysis.objects.filter(deleted_at__isnull=False).order_by("-deleted_at")
+        rows = Analysis.objects.filter(
+            owner=request.user, deleted_at__isnull=False
+        ).order_by("-deleted_at")
         return Response(DeletedAnalysisSerializer(rows, many=True).data)
 
 
 class AnalysisRestoreView(APIView):
     def post(self, request, pk: int):
-        analysis = get_object_or_404(Analysis, pk=pk, deleted_at__isnull=False)
+        analysis = _owned(request, pk, deleted_at__isnull=False)
         analysis.deleted_at = None
         analysis.save(update_fields=["deleted_at"])
         return Response(AnalysisDetailSerializer(analysis).data)
 
 
+def _tier_denied(tier: str, policy: dict | None) -> str:
+    allowed = ", ".join(allowed_tiers(policy))
+    return f"your class rules do not allow the '{tier}' first pass (allowed: {allowed})"
+
+
 class FirstPassView(APIView):
+    """``POST /api/first-pass {text, tier}`` — tier ``'none'|'minimal'|'full'``
+    (``'maximal'`` is the deprecated alias, and the old boolean still reads),
+    checked against the caller's policy before any work is done."""
+
     def post(self, request):
-        payload = request.data
-        text = payload.get("text") if isinstance(payload, dict) else None
+        payload = request.data if isinstance(request.data, dict) else {}
+        text = payload.get("text")
         if not isinstance(text, str) or not text.strip():
             return _errors(["text must be a non-empty string"])
-        # The auto-analysis level: false/absent = minimal (sure joins only),
-        # true = maximal (the full classifier).
-        maximal = payload.get("maximal", False) if isinstance(payload, dict) else False
-        if not isinstance(maximal, bool):
-            return _errors(["maximal must be a boolean"])
+        policy = effective_policy(request.user)
+        try:
+            tier = _requested_tier(payload, policy)
+        except PolicyError as e:
+            return _errors(e.problems)
+        if tier not in allowed_tiers(policy):
+            return _forbidden([_tier_denied(tier, policy)])
         # Imported at call time: the first-pass service is a separate module;
         # the rest of the API must not go down with it, and tests may stub it.
         from .documents import DocumentError
         from .firstpass import first_pass
 
         try:
-            result = first_pass(text, maximal=maximal)
+            result = first_pass(text, tier=tier)
         except DocumentError:
             # build_document's self-validation failing is a builder bug, not
             # bad input — let it surface as a 500, never a 400 blaming the user.

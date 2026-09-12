@@ -108,6 +108,7 @@ import { sectionColor, sectionColorByPid, sectionsOf } from './sections';
 import HelpPanel from './HelpPanel';
 import { loadViewSettings, saveViewSettings } from './viewSettings';
 import type { ViewSettings } from './viewSettings';
+import { applyPolicyToView, lockedRules, usePolicy, useReadOnly } from '../policy';
 
 /** Width of the .verse-label column (--verse-label-w in styles.css) — the
  * layout's anchor. Keep the two in sync. */
@@ -204,6 +205,9 @@ interface RowContextValue {
   showEnglish: boolean;
   /** Reader's verb-bolding toggle (viewSettings). */
   showVerbs: boolean;
+  /** Class rules: whether a word may be split after, and a row merged below. */
+  canSplit: boolean;
+  canMerge: boolean;
   /** Each pid's block COLOR (stored per block), or null while blocks are off. */
   sectionOf: ReadonlyMap<string, number> | null;
   /**
@@ -342,7 +346,14 @@ function PropositionRow({ node }: ReactNodeViewProps) {
           >
             {ctx !== null
               ? tokens.map((t, ordinal) => {
-                  const splittable = canSplitAfter(ordinal, tokens.length);
+                  // WHERE this word stands in its row is the document's fact;
+                  // whether dividing there is offered at all is the page's
+                  // (read-only withholds it).
+                  // The two are kept apart on purpose: a withheld split must
+                  // not turn every right-click into the MERGE that only the
+                  // row's last word offers.
+                  const dividesHere = canSplitAfter(ordinal, tokens.length);
+                  const splittable = ctx.canSplit && dividesHere;
                   // No hover tooltip: a click opens the word's card, which
                   // says everything the tooltip did and more.
                   return (
@@ -369,7 +380,9 @@ function PropositionRow({ node }: ReactNodeViewProps) {
                         event.preventDefault();
                         event.stopPropagation();
                         if (splittable) ctx.onWordSplit(pid, ordinal);
-                        else if (ctx.lastPid !== pid) ctx.onMergeBelow(pid);
+                        else if (!dividesHere && ctx.canMerge && ctx.lastPid !== pid) {
+                          ctx.onMergeBelow(pid);
+                        }
                       }}
                     >
                       {t.display}{' '}
@@ -626,7 +639,21 @@ function EditorInner({
   // (they are separate so re-observing rows can never feed itself).
   // Reader's display options (English line, bracket colors) — persisted per
   // browser, never part of the analysis.
-  const [view, setView] = useState<ViewSettings>(loadViewSettings);
+  //
+  // The POLICY sits between what the browser remembered and what the editor
+  // uses: a reading aid the class withholds is forced off here, so no stored
+  // preference can bring it back and no gated switch has to remember to.
+  const policy = usePolicy();
+  /** A professor reading a student's work: every gesture below does nothing,
+   *  and no control for one is drawn. Not a policy — the work is simply
+   *  somebody else's, which the page says for itself (§8). */
+  const readOnly = useReadOnly();
+  const [storedView, setStoredView] = useState<ViewSettings>(loadViewSettings);
+  const view = useMemo(() => applyPolicyToView(storedView, policy), [storedView, policy]);
+  /** What the class takes away, in the student's words — the toolbar's line.
+   *  Empty on a read-only page: naming "class rules" there would give the
+   *  wrong reason for the missing controls. */
+  const locked = useMemo(() => (readOnly ? [] : lockedRules(policy)), [policy, readOnly]);
   // The whole passage's corpus range — what the verse-text panel shows.
   const corpusRange = useMemo(() => {
     let min = Infinity;
@@ -667,9 +694,24 @@ function EditorInner({
   const anchorSeq = useRef(0);
   const anchorTimer = useRef<number | null>(null);
 
-  const updateView = useCallback((next: ViewSettings) => {
-    setView(next);
-    saveViewSettings(next);
+  /**
+   * Change one display setting.
+   *
+   * It takes a PATCH and applies it to what the browser remembered — never to
+   * `view`, which is the policy-FILTERED copy. Spreading the filtered settings
+   * back into storage would write the class's withheld aids over the reader's
+   * own preferences: touching the Blocks switch under a policy that withholds
+   * English would store "English off" as though the student had chosen it, and
+   * re-allowing English later would leave them looking at a page that had
+   * forgotten they ever wanted it. The filter above keeps doing its work on
+   * the way OUT; nothing a policy withholds reaches storage.
+   */
+  const updateView = useCallback((patch: Partial<ViewSettings>) => {
+    setStoredView((prev) => {
+      const next = { ...prev, ...patch };
+      saveViewSettings(next);
+      return next;
+    });
   }, []);
 
   const taxonomyByCode = useMemo(
@@ -810,6 +852,9 @@ function EditorInner({
         return;
       }
       if (event.key === 'Delete' || event.key === 'Backspace') {
+        // The keyboard side-channel of the right-click below: read-only closes
+        // it too, or the lock would be one keystroke deep.
+        if (readOnly) return;
         const target = event.target;
         if (
           target instanceof HTMLInputElement ||
@@ -848,8 +893,8 @@ function EditorInner({
       window.removeEventListener('keydown', onKey);
     };
     // selectedDotId is read by the Delete branch, so the handler is re-bound
-    // whenever the selection changes.
-  }, [editor, selectedDotId]);
+    // whenever the selection changes; so is the read-only flag it obeys.
+  }, [editor, selectedDotId, readOnly]);
 
   // A unit being carried is DROPPED by clicking anywhere that is not another
   // handle: having picked something up and thought better of it, the way out
@@ -1154,6 +1199,8 @@ function EditorInner({
       words,
       showEnglish: view.english,
       showVerbs: view.verbs,
+      canSplit: !readOnly,
+      canMerge: !readOnly,
       sectionOf: view.blocks ? sectionColorByPid(pids, breaks) : null,
       lastPid: pids.length > 0 ? (pids[pids.length - 1] ?? null) : null,
       mainPids,
@@ -1203,15 +1250,26 @@ function EditorInner({
         );
       },
       onWordSplit: (pid, ordinal) => {
+        if (readOnly) return;
         onSplitRef.current(pid, ordinal);
       },
       onMergeBelow: (pid) => {
-        if (editor === null) return;
+        if (editor === null || readOnly) return;
         setPopover(null);
         mergeBelow(editor, pid, words);
       },
     }),
-    [words, pids, mainPids, editor, view.english, view.verbs, view.blocks, breaks],
+    [
+      words,
+      pids,
+      mainPids,
+      editor,
+      view.english,
+      view.verbs,
+      view.blocks,
+      breaks,
+      readOnly,
+    ],
   );
 
   if (editor === null) return null;
@@ -1246,6 +1304,9 @@ function EditorInner({
    * root proposition's dot-delete is a refusal with a message.
    */
   const onDotDelete = (dotId: string) => {
+    // Read-only: the right-click does nothing at all — not even a shake, which
+    // would say "wrong gesture" about a gesture the reader does not have.
+    if (readOnly) return;
     setPopover(null);
     setSelectedDotId(null);
     const ref = parseDotId(dotId);
@@ -1296,6 +1357,9 @@ function EditorInner({
     // two spans meet, breaking exactly the brackets that stand in its way
     // (ruling Q1), and the only refusals are geometric. No modifier keys.
     setPopover(null);
+    // Read-only has no use for a selected dot at all, so the dots stop arming:
+    // nothing on the overlay pretends to be a handle.
+    if (readOnly) return;
     if (selectedDotId === null) {
       // A room's pickup dot arms like any other handle — the tree flexes
       // around it while it is carried — and it is a real endpoint now (A2).
@@ -1307,6 +1371,8 @@ function EditorInner({
       setSelectedDotId(null);
       return;
     }
+    // Everything past here MAKES a relationship — the connect, and A2's
+    // settle, which finishes one.
     const armed = parseDotId(selectedDotId);
     const target = parseDotId(dot.id);
     if (armed === null || target === null) {
@@ -1333,6 +1399,7 @@ function EditorInner({
   };
 
   const onLabelClick = (bracketId: number, at: Point) => {
+    if (readOnly) return;
     setSelectedDotId(null);
     setPopover((prev) =>
       prev !== null && prev.kind === 'menu' && prev.bracketId === bracketId
@@ -1342,12 +1409,14 @@ function EditorInner({
   };
 
   const onStarClick = (bracketId: number) => {
+    if (readOnly) return;
     setPopover(null);
     flipStar(editor, bracketId, taxonomy);
     setSelectedDotId(null);
   };
 
   const onSplit = (pid: string, ordinal: number) => {
+    if (readOnly) return;
     setPopover(null);
     splitProposition(editor, pid, ordinal + 1, words);
   };
@@ -1377,6 +1446,7 @@ function EditorInner({
         if (at !== null) onSplit(at.pid, index - at.srcStart);
       },
       mergeAt: (index) => {
+        if (readOnly) return;
         const at = propositionAt(index);
         if (at === null) return;
         setPopover(null);
@@ -1387,11 +1457,13 @@ function EditorInner({
 
   /** The strip's + : begin a new color block at this proposition. */
   const onAddBreak = (pid: string) => {
+    if (readOnly) return;
     addSectionBreak(editor, pid);
   };
 
   /** The strip's − : join this block to the one above it. */
   const onRemoveBreak = (pid: string) => {
+    if (readOnly) return;
     removeSectionBreak(editor, pid);
   };
 
@@ -1402,6 +1474,7 @@ function EditorInner({
 
   /** Toolbar: remove every connection at once (the propositions stay put). */
   const onClearTree = () => {
+    if (readOnly) return;
     setPopover(null);
     setSelectedDotId(null);
     // No confirmation: it is one undo away, like every other command here.
@@ -1409,6 +1482,7 @@ function EditorInner({
   };
 
   const onPickRelationship = (bracketId: number, rel: string) => {
+    if (readOnly) return;
     // Close on every pick, including one that changes nothing: re-choosing the
     // relationship a bracket already has is a legitimate no-op that must still
     // feel like a choice.
@@ -1478,6 +1552,9 @@ function EditorInner({
           >
             <RelationshipMenu
               taxonomy={taxonomy}
+              // The letter keys are the menu's own side-channel: closed with
+              // everything else on a read-only page.
+              keyboard={!readOnly}
               // §10 A5 (which REVERSES Q6): the menu opens PRELOADED on the
               // bracket's own rel — Ser for a fresh join, since that is what
               // `connect` mints. Clicking away keeps it; there is no unlabeled
@@ -1495,57 +1572,68 @@ function EditorInner({
   return (
     <RowContext.Provider value={rowCtx}>
       <div className="editor-toolbar">
-        {/* Left: what the reader sees. Right: what the editor does. */}
-        <label className="switch">
-          <input
-            type="checkbox"
-            checked={view.english}
-            onChange={(event) => updateView({ ...view, english: event.target.checked })}
-          />
-          <span className="switch-track" aria-hidden="true" />
-          <span className="switch-label">English</span>
-        </label>
-        <label className="verses-select">
-          Verses{' '}
-          <select
-            value={view.verses}
-            onChange={(event) =>
-              updateView({ ...view, verses: event.target.value as ViewSettings['verses'] })
-            }
-          >
-            <option value="off">Off</option>
-            <option value="bsb">BSB</option>
-            <option value="esv">ESV</option>
-          </select>
-        </label>
-        <label className="switch">
-          <input
-            type="checkbox"
-            checked={view.verbs}
-            onChange={(event) => updateView({ ...view, verbs: event.target.checked })}
-          />
-          <span className="switch-track" aria-hidden="true" />
-          <span className="switch-label">Verbs</span>
-        </label>
+        {/* Left: what the reader sees. Right: what the editor does.
+            A reading aid the class withholds is not a switch turned off — the
+            switch is not there at all, and `view` above has already forced the
+            aid off whatever the browser remembered (§5, §8). */}
+        {policy.aids.english && (
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={view.english}
+              onChange={(event) => updateView({ english: event.target.checked })}
+            />
+            <span className="switch-track" aria-hidden="true" />
+            <span className="switch-label">English</span>
+          </label>
+        )}
+        {policy.aids.verses && (
+          <label className="verses-select">
+            Verses{' '}
+            <select
+              value={view.verses}
+              onChange={(event) =>
+                updateView({ verses: event.target.value as ViewSettings['verses'] })
+              }
+            >
+              <option value="off">Off</option>
+              <option value="bsb">BSB</option>
+              <option value="esv">ESV</option>
+            </select>
+          </label>
+        )}
+        {policy.aids.verbs && (
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={view.verbs}
+              onChange={(event) => updateView({ verbs: event.target.checked })}
+            />
+            <span className="switch-track" aria-hidden="true" />
+            <span className="switch-label">Verbs</span>
+          </label>
+        )}
         <label className="switch">
           <input
             type="checkbox"
             checked={view.blocks}
-            onChange={(event) => updateView({ ...view, blocks: event.target.checked })}
+            onChange={(event) => updateView({ blocks: event.target.checked })}
           />
           <span className="switch-track" aria-hidden="true" />
           <span className="switch-label">Blocks</span>
         </label>
-        <label className="switch">
-          <input
-            type="checkbox"
-            checked={view.colorCoding}
-            onChange={(event) => updateView({ ...view, colorCoding: event.target.checked })}
-          />
-          <span className="switch-track" aria-hidden="true" />
-          <span className="switch-label">Color coding</span>
-        </label>
-        {view.colorCoding && (
+        {policy.aids.colorCoding && (
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={view.colorCoding}
+              onChange={(event) => updateView({ colorCoding: event.target.checked })}
+            />
+            <span className="switch-track" aria-hidden="true" />
+            <span className="switch-label">Color coding</span>
+          </label>
+        )}
+        {policy.aids.colorCoding && view.colorCoding && (
           <button type="button" onClick={() => setColorPanel((open) => !open)}>
             Colors…
           </button>
@@ -1563,13 +1651,15 @@ function EditorInner({
         <button type="button" disabled={!editor.can().redo()} onClick={onRedo}>
           Redo
         </button>
-        <button
-          type="button"
-          onClick={onClearTree}
-          title="Remove every connection, leaving the propositions as they are"
-        >
-          Clear tree
-        </button>
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={onClearTree}
+            title="Remove every connection, leaving the propositions as they are"
+          >
+            Clear tree
+          </button>
+        )}
         <button
           type="button"
           className={helpPanel ? 'help-button on' : 'help-button'}
@@ -1581,6 +1671,11 @@ function EditorInner({
           ?
         </button>
       </div>
+      {/* A quiet line, not a warning: what the class has withheld, so a
+          missing control reads as a rule rather than a broken tool (§8). */}
+      {locked.length > 0 && (
+        <p className="class-rules muted">Class rules: {locked.join(' · ')}.</p>
+      )}
       {helpPanel && <HelpPanel />}
       {view.verses !== 'off' && corpusRange !== null && (
         <VersePanel source={view.verses} start={corpusRange[0]} end={corpusRange[1]} />
@@ -1589,7 +1684,7 @@ function EditorInner({
         <ColorSettings
           taxonomy={taxonomy}
           view={view}
-          onChange={(colors) => updateView({ ...view, colors })}
+          onChange={(colors) => updateView({ colors })}
           onClose={() => setColorPanel(false)}
         />
       )}
@@ -1665,6 +1760,9 @@ function EditorInner({
             height={overlay.height}
             onAdd={onAddBreak}
             onRemove={onRemoveBreak}
+            // Read-only: the bands still read down the edge — they are part of
+            // the analysis — but the + and − that make and unmake them go.
+            canEdit={!readOnly}
           />
         )}
         {popoverNode}

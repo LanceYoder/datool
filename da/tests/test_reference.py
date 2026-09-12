@@ -71,11 +71,9 @@ class TestGlosses:
 
 
 class TestVersesEndpoint:
-    @pytest.fixture()
-    def client(self):
-        from rest_framework.test import APIClient
-
-        return APIClient()
+    """The corpus endpoints need a session too now (accounts-spec §6); the
+    ``client`` from da/tests/conftest.py comes signed in.
+    """
 
     def test_range(self, client):
         res = client.get(f"/api/corpus/verses?start={J_START}&end={J_END}")
@@ -137,18 +135,16 @@ class TestEsvParsing:
         assert table[(11, 1, 3)] == "I thank my God in all my remembrance of you,"
         assert table[(11, 1, 4)] == "always in every prayer"
 
-    def test_esv_source_without_key_is_503(self, settings):
+    def test_esv_source_without_key_is_503(self, settings, client):
         settings.ESV_API_KEY = ""
         from da.corpus.esv import _chapter
         _chapter.cache_clear()
-        from rest_framework.test import APIClient
-        res = APIClient().get("/api/corpus/verses",
-                              {"start": 0, "end": 5, "translation": "esv"})
+        res = client.get("/api/corpus/verses",
+                         {"start": 0, "end": 5, "translation": "esv"})
         assert res.status_code == 503
         assert "ESV_API_KEY" in res.json()["errors"][0]
 
-    def test_bad_translation_param(self):
-        from rest_framework.test import APIClient
-        res = APIClient().get("/api/corpus/verses",
-                              {"start": 0, "end": 5, "translation": "kjv"})
+    def test_bad_translation_param(self, client):
+        res = client.get("/api/corpus/verses",
+                         {"start": 0, "end": 5, "translation": "kjv"})
         assert res.status_code == 400

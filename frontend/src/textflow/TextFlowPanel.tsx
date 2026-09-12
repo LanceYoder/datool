@@ -47,6 +47,16 @@ export interface TextFlowPanelProps {
   onSplitWord?: (corpusIndex: number) => void;
   /** Join the line ending at this corpus word to the one below it. */
   onMergeAfterLine?: (corpusIndex: number) => void;
+  /**
+   * Whether the flow may be SHAPED here — indented and embedded. False for a
+   * professor reading a student's work: the passage still reads as clause
+   * lines, and the ◀ ▶ and the embedding popover are gone (§8). No class rule
+   * ever sets it — the flow is always the student's to edit (§5).
+   *
+   * Dividing the lines is NOT this flag's: the lines are propositions, and
+   * the page withholds the two callbacks above instead when it is read-only.
+   */
+  editable?: boolean;
 }
 
 /** What is open over the lines, if anything. */
@@ -60,6 +70,7 @@ export default function TextFlowPanel({
   onChange,
   onSplitWord,
   onMergeAfterLine,
+  editable = true,
 }: TextFlowPanelProps) {
   const [words, setWords] = useState<CorpusWord[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -156,6 +167,9 @@ export default function TextFlowPanel({
   };
 
   const onWordClick = (wordIndex: number, target: HTMLElement) => {
+    // Embedding is the click's only business here, so a locked flow has no
+    // popover to open.
+    if (!editable) return;
     const at = anchorPoint(target);
     if (anchor !== null) {
       // Completing an embedding: the second word must be on the same line.
@@ -277,6 +291,8 @@ export default function TextFlowPanel({
     // Only the LINE indents on Tab: a Tab from one of its buttons is still a
     // Tab out of the panel.
     if (event.key !== 'Tab' || event.target !== event.currentTarget) return;
+    // Tab is the ◀ ▶ buttons' keyboard side-channel: it is gated with them.
+    if (!editable) return;
     event.preventDefault();
     commit(indentLine(flow, lineIdx, event.shiftKey ? -1 : 1));
   };
@@ -365,26 +381,30 @@ export default function TextFlowPanel({
                 : 'textflow-line'
             }
             style={{ '--tf-indent': line.indent } as CSSProperties}
-            tabIndex={0}
+            tabIndex={editable ? 0 : undefined}
             onKeyDown={(event) => onLineKeyDown(event, lineIdx)}
           >
             <span className="textflow-indent">
-              <button
-                type="button"
-                aria-label="Move line out"
-                title="Move this clause out"
-                onClick={() => commit(indentLine(flow, lineIdx, -1))}
-              >
-                ◀
-              </button>
-              <button
-                type="button"
-                aria-label="Move line in"
-                title="Move this clause in"
-                onClick={() => commit(indentLine(flow, lineIdx, 1))}
-              >
-                ▶
-              </button>
+              {editable && (
+                <>
+                  <button
+                    type="button"
+                    aria-label="Move line out"
+                    title="Move this clause out"
+                    onClick={() => commit(indentLine(flow, lineIdx, -1))}
+                  >
+                    ◀
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Move line in"
+                    title="Move this clause in"
+                    onClick={() => commit(indentLine(flow, lineIdx, 1))}
+                  >
+                    ▶
+                  </button>
+                </>
+              )}
             </span>
             <span className="textflow-text greek">{renderWords(line)}</span>
           </div>

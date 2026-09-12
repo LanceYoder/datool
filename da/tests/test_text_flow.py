@@ -26,12 +26,6 @@ from da.segmentation import segment
 from da.treebuild import build_document, build_text_flow
 
 
-@pytest.fixture
-def client():
-    from rest_framework.test import APIClient
-    return APIClient()
-
-
 def _range(ref: str) -> tuple[int, int]:
     passage = resolve(ref)
     return passage.start, passage.end

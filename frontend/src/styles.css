@@ -1551,3 +1551,217 @@ div.error-box {
     animation: none;
   }
 }
+
+/* ---- Accounts, organizations and teaching (docs/accounts-spec.md §8) ----
+   These pages are made of the SAME pieces as the rest of the tool — .card,
+   the plain button rules, .error-box, .switch, .level-toggle — so every skin
+   already dresses them. The two new controls are the text field and the
+   select; both are listed beside .paste-area in each skin's block. */
+
+.auth-page {
+  max-width: 26rem;
+  margin: 0 auto;
+}
+
+.auth-card {
+  padding-bottom: 1.25rem;
+}
+
+.form-row {
+  display: block;
+  margin-top: 0.75rem;
+}
+
+.form-label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 0.2rem;
+}
+
+.form-input {
+  width: 100%;
+  font: inherit;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+}
+
+.form-select {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+}
+
+.form-aside,
+.form-foot {
+  font-size: 0.85rem;
+}
+
+.form-foot {
+  margin-bottom: 0;
+}
+
+/* What is shown ONCE: an invitation link, or a temporary password. */
+.handout {
+  margin: 0.6rem 0;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--bg-soft);
+  font-size: 0.9rem;
+}
+
+.handout-line {
+  margin: 0.35rem 0;
+}
+
+.handout-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-all;
+}
+
+.member-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.member-table th,
+.member-table td {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.member-table th {
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.member-table tr.inactive td {
+  opacity: 0.55;
+}
+
+.member-row,
+.student-row {
+  padding: 0.5rem 0.75rem;
+}
+
+.student-line {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.member-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.detail-list {
+  margin: 0;
+}
+
+.detail-row {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.15rem 0;
+}
+
+.detail-row dt {
+  width: 8rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.detail-row dd {
+  margin: 0;
+}
+
+.policy-group {
+  margin-top: 0.75rem;
+}
+
+.policy-group h3 {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin: 0.5rem 0 0.35rem;
+}
+
+.policy-switch,
+.policy-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.25rem 0;
+}
+
+.policy-tiers {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.policy-override {
+  margin: 0.5rem 0 0.25rem 0.5rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--border);
+}
+
+.policy-label {
+  font-size: 0.9rem;
+}
+
+/* The header's account links sit with the New-analysis button. */
+.app-account {
+  align-self: center;
+  font-size: 0.9rem;
+  color: var(--text);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.app-account:hover {
+  text-decoration: underline;
+}
+
+.app-signout {
+  align-self: center;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+/* What the class has withheld, said once and quietly under the toolbar. */
+.class-rules {
+  margin: 0.25rem 0 0;
+  font-size: 0.82rem;
+}
+
+.read-only-note {
+  font-size: 0.85rem;
+}
+
+/* A label that is there for the screen reader and nobody else. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

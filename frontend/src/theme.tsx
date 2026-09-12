@@ -9,9 +9,16 @@
 //
 // The choice is the reader's and lives in localStorage, like the display
 // switches: it must never look like the document was edited.
+//
+// It is a SIGNED-IN reader's choice. The way in — sign-in, register, the two
+// password pages — always wears the original design, and so does anyone who
+// is not signed in: the picker is not offered until they are, and the choice
+// they made last time waits for them behind the sign-in (ruled 2026-09-12).
 
 import { createContext, useCallback, useContext, useLayoutEffect, useState } from 'react';
 import type { ReactNode } from 'react';
+import { useLocation } from 'react-router-dom';
+import { useSession } from './session';
 
 export const THEMES = [
   { id: 'original', name: 'Original', hint: 'The tool as it stands' },
@@ -45,8 +52,19 @@ function saveTheme(theme: ThemeId): void {
   }
 }
 
+/** The pages that are the way in: always the original design (see above). */
+const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/reset-password'];
+
+export function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
 interface ThemeContextValue {
+  /** The reader's stored choice. */
   theme: ThemeId;
+  /** Whether the choice may be made — and shown — here: signed in, and not on
+   *  the way in. */
+  chooser: boolean;
   setTheme: (theme: ThemeId) => void;
 }
 
@@ -54,6 +72,7 @@ interface ThemeContextValue {
 // gets the original design rather than crashing.
 const ThemeContext = createContext<ThemeContextValue>({
   theme: 'original',
+  chooser: false,
   setTheme: () => {},
 });
 
@@ -63,24 +82,40 @@ export function useTheme(): ThemeId {
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<ThemeId>(loadTheme);
+  const { user, loading } = useSession();
+  const { pathname } = useLocation();
+
+  // Where the choice holds: a signed-in reader, off the public pages. While
+  // the session is still being fetched the STORED choice stands, because a
+  // reload by a signed-in reader is the common case and must not flash the
+  // original design first; a stranger is sent to /login, which is original
+  // whatever the session says.
+  const chooser = !isPublicPath(pathname) && (loading || user !== null);
+  const effective: ThemeId = chooser ? theme : 'original';
 
   // Layout, not passive: the attribute must land before the browser paints,
   // or every reload flashes the original design first.
   useLayoutEffect(() => {
-    document.documentElement.dataset.theme = theme;
-  }, [theme]);
+    document.documentElement.dataset.theme = effective;
+  }, [effective]);
 
   const setTheme = useCallback((next: ThemeId) => {
     setThemeState(next);
     saveTheme(next);
   }, []);
 
-  return <ThemeContext.Provider value={{ theme, setTheme }}>{children}</ThemeContext.Provider>;
+  return (
+    <ThemeContext.Provider value={{ theme, chooser: chooser && !loading, setTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  );
 }
 
-/** The design picker: one segmented control, always at the top of the page. */
+/** The design picker: one segmented control at the top of the page — for a
+ *  signed-in reader only; the way in has no design to choose. */
 export function ThemeSwitcher() {
-  const { theme, setTheme } = useContext(ThemeContext);
+  const { theme, chooser, setTheme } = useContext(ThemeContext);
+  if (!chooser) return null;
   return (
     <div className="theme-switch" role="group" aria-label="Site design">
       {THEMES.map((t) => (

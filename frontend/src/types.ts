@@ -157,6 +157,18 @@ export interface AnalysisSummary {
   title: string;
   passageRef: string;
   updatedAt: string;
+  /**
+   * The owning user's id (da/serializers.py). The SPA uses it to notice that
+   * an analysis it opened is somebody else's — a professor reading a student's
+   * work — and lock the page before offering a Save the server would refuse.
+   *
+   * Optional, and null-tolerant, on purpose: the 43 analyses made in
+   * single-user local mode have no owner at all until `assign_orphans` runs
+   * (accounts-spec §7), and a page that cannot tell must fall back to the
+   * route rather than guess. Safety never rests on it — PUT and DELETE are
+   * owner-only on the server.
+   */
+  ownerId?: number | null;
 }
 
 export interface Analysis extends AnalysisSummary {
@@ -231,4 +243,224 @@ export interface Alignment {
 export interface FirstPassResult {
   document: Document;
   alignment: Alignment | null;
+}
+
+// ---------------------------------------------------------------------------
+// Accounts, organizations and teaching policies (docs/accounts-spec.md §5–§6).
+//
+// Everything below is the WIRE shape, camelCase, exactly as the API serializes
+// it. Nothing here is derived or renamed on the way in.
+
+/**
+ * How much the auto-analysis proposes when an analysis is created.
+ * 'none' is the policy-only tier: every proposition a root, no relationships
+ * proposed, so the student builds the whole tree.
+ */
+export type FirstPassTier = 'none' | 'minimal' | 'full';
+
+/** The three tiers in the order the picker offers them. */
+export const FIRST_PASS_TIERS: readonly FirstPassTier[] = ['none', 'minimal', 'full'];
+
+/** What the picker calls each tier, and what it means in one line. */
+export const TIER_LABELS: Readonly<Record<FirstPassTier, string>> = {
+  none: 'Nothing',
+  minimal: 'Minimal',
+  full: 'Full',
+};
+
+export type Role = 'admin' | 'professor' | 'student';
+
+/**
+ * The teaching policy (§5): a fixed key set, defaults "everything allowed" —
+ * an individual account's experience. A professor's default policy and a
+ * student's per-student override are both shaped like this (the override
+ * carrying only the keys that differ).
+ *
+ * Two groups, by ruling (2026-09-12): which first-pass tiers a student may
+ * start from, and which reading aids they see. Every editing gesture —
+ * relationships, clearing, splitting and merging, color blocks, the text
+ * flow, notes — is always available, and is not in here.
+ */
+export interface Policy {
+  firstPass: {
+    /** Which tiers the student may choose. Exactly one ⇒ the picker is hidden. */
+    allowed: FirstPassTier[];
+  };
+  aids: {
+    english: boolean;
+    verses: boolean;
+    verbs: boolean;
+    colorCoding: boolean;
+  };
+}
+
+/** A policy with only some keys present — what a per-student override is. */
+export type PolicyOverride = {
+  [K in keyof Policy]?: Partial<Policy[K]>;
+};
+
+/**
+ * §5: "Defaults = everything allowed, i.e. an individual's experience." This
+ * is what `usePolicy()` returns for an individual, for staff, and for anyone
+ * whose `/api/auth/me` carries `policy: null`.
+ */
+export const DEFAULT_POLICY: Policy = {
+  firstPass: { allowed: ['none', 'minimal', 'full'] },
+  aids: { english: true, verses: true, verbs: true, colorCoding: true },
+};
+
+export interface OrgRef {
+  id: number;
+  name: string;
+  slug: string;
+}
+
+/** A professor named from a student's side: the professor's MEMBERSHIP id. */
+export interface ProfessorRef {
+  id: number;
+  name: string;
+}
+
+/** One of the caller's memberships, as `/api/auth/me` and `/api/orgs/mine` list them. */
+export interface Membership {
+  membershipId: number;
+  org: OrgRef;
+  role: Role;
+  /** Students only: the professor they are assigned to, when they have one. */
+  professor?: ProfessorRef | null;
+  active: boolean;
+}
+
+/**
+ * An organization that has asked this person to join, and is waiting for an
+ * answer. It is NOT a membership: it carries no role until it is accepted
+ * (`POST /api/invitations/<membershipId>/accept`), and declining it removes it.
+ *
+ * Beyond §6, which does not say how an account that already exists comes to
+ * belong to an org. Adding one outright would let anybody attach a stranger's
+ * account to their own classroom, so the row waits here until its holder says
+ * yes.
+ */
+export interface Invitation {
+  membershipId: number;
+  org: OrgRef;
+  role: Role;
+}
+
+/** `GET /api/auth/me` — the signed-in user and everything the SPA branches on. */
+export interface Me {
+  id: number;
+  /**
+   * EMPTY for a learning account, which has a handle instead. (The API sends
+   * '' rather than null; `null` is tolerated so nothing here depends on which.
+   * Use `signIn()` in accounts.ts rather than reading these two directly.)
+   */
+  email: string | null;
+  handle: string | null;
+  name: string;
+  /** The organizations this person BELONGS to — accepted ones only. */
+  memberships: Membership[];
+  /** Invitations waiting to be accepted or declined. */
+  invitations: Invitation[];
+  /** The EFFECTIVE policy for a student; null for everyone else. */
+  policy: Policy | null;
+  isStaff: boolean;
+}
+
+/**
+ * The user half of an org member row.
+ *
+ * For a PENDING row the server sends the invited address and nothing else —
+ * `id: null`, empty handle and name — so that typing an address into an org
+ * cannot be used to look up who holds it. Their own name appears the moment
+ * they accept.
+ */
+export interface OrgMemberUser {
+  id: number | null;
+  /** '' when the account has no email — see Me.email. */
+  email: string | null;
+  handle: string | null;
+  name: string;
+}
+
+/** One row of `GET /api/orgs/<id>/members`. */
+export interface OrgMember {
+  membershipId: number;
+  user: OrgMemberUser;
+  role: Role;
+  /** The professor this student is assigned to, or null. */
+  professor: ProfessorRef | null;
+  active: boolean;
+  /** False for a learning account — its password is reset by a person, not by mail. */
+  hasEmail: boolean;
+  /**
+   * True while an invitation to an account that already existed is waiting to
+   * be answered. Such a row holds no role and governs nothing: the person has
+   * agreed to nothing yet, and the page must not show them as a member.
+   */
+  pending: boolean;
+  /**
+   * True when this organization created the account. Only such an account has
+   * its password reset from here (§2's provisioned accounts); somebody who
+   * joined with an account of their own resets it themselves.
+   */
+  provisioned: boolean;
+  /**
+   * The student's per-student override, when the row carries one. §6 gives no
+   * endpoint that READS an override (only the PUT that sets it), so the
+   * teaching page uses this when the server sends it and otherwise starts every
+   * student on "uses your default".
+   */
+  policyOverride?: PolicyOverride | null;
+}
+
+/**
+ * What provisioning (and a password reset) may hand back beside the row: a
+ * set-password link when mail could not be sent, or the temporary password of
+ * a handle account. Both are shown ONCE, on screen, to whoever provisioned.
+ */
+export interface ProvisionSecrets {
+  /** The set-password link, when mail could not be sent. Null when it was. */
+  inviteLink?: string | null;
+  /** A handle account's password. Null when the account has an inbox instead. */
+  temporaryPassword?: string | null;
+  /** The reset flow's own name for the same link. */
+  resetLink?: string | null;
+}
+
+/**
+ * `POST /api/orgs/<id>/members` with an EMAIL: the same four keys whether the
+ * address already had an account (a pending invitation) or not (a new account
+ * whose set-password link went out by mail — or comes back here when it could
+ * not). Deliberately says nothing about which: typing an address into an org
+ * must not be a way to find out who holds one.
+ */
+export interface InvitedMember {
+  invited: true;
+  membershipId: number;
+  inviteLink: string | null;
+  temporaryPassword: null;
+}
+
+/** `POST /api/orgs/<id>/members` with a HANDLE → the new member, plus its password. */
+export type ProvisionedMember = OrgMember & ProvisionSecrets;
+
+/** What provisioning answers with, by the kind of account it made. */
+export type ProvisionResult = InvitedMember | ProvisionedMember;
+
+export function isInvited(result: ProvisionResult): result is InvitedMember {
+  return (result as InvitedMember).invited === true;
+}
+
+/** `POST /api/orgs/<id>/members/<mid>/reset-password`. */
+export type ResetPasswordResult = ProvisionSecrets & {
+  /** True when the server sent the reset mail instead of setting a password. */
+  sent?: boolean;
+};
+
+/** `PUT /api/orgs/<id>/members/<mid>/policy` — the override, and what it
+ * resolves to for that student. */
+export interface MemberPolicyResult {
+  override: PolicyOverride | null;
+  policy: Policy;
 }

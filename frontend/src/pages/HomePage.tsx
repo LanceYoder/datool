@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import type { AnalysisSummary, DeletedAnalysisSummary, FirstPassResult } from '../types';
+import type {
+  AnalysisSummary,
+  DeletedAnalysisSummary,
+  FirstPassResult,
+  FirstPassTier,
+} from '../types';
+import { TIER_LABELS } from '../types';
 import { normalizeDocument } from '../editor/convert';
+import { allowedTiers, pickTier, usePolicy } from '../policy';
 import {
   createAnalysis,
   deleteAnalysis,
@@ -15,20 +22,31 @@ import {
 /** How long typing must pause before the passage is located. */
 const LOCATE_DELAY_MS = 450;
 
-/** The remembered auto-analysis level — a preference, not analysis data. */
+/** The remembered auto-analysis tier — a preference, not analysis data. */
 const ANALYSIS_LEVEL_KEY = 'datool.analysisLevel';
 
-function loadMaximal(): boolean {
+/** What each tier proposes, for the picker's tooltip. */
+const TIER_HINTS: Record<FirstPassTier, string> = {
+  none: 'Nothing is proposed: every proposition stands alone and the tree is yours to build',
+  minimal: 'Only the connections the tool is certain of',
+  full: 'A complete tree to correct',
+};
+
+function loadTier(): FirstPassTier | null {
   try {
-    return window.localStorage.getItem(ANALYSIS_LEVEL_KEY) === 'maximal';
+    const raw = window.localStorage.getItem(ANALYSIS_LEVEL_KEY);
+    // 'maximal' is what the retired boolean wrote — read it as 'full'.
+    if (raw === 'maximal') return 'full';
+    if (raw === 'none' || raw === 'minimal' || raw === 'full') return raw;
+    return null;
   } catch {
-    return false;
+    return null;
   }
 }
 
-function saveMaximal(maximal: boolean): void {
+function saveTier(tier: FirstPassTier): void {
   try {
-    window.localStorage.setItem(ANALYSIS_LEVEL_KEY, maximal ? 'maximal' : 'minimal');
+    window.localStorage.setItem(ANALYSIS_LEVEL_KEY, tier);
   } catch {
     /* a browser that blocks storage just forgets the choice */
   }
@@ -55,10 +73,27 @@ export default function HomePage() {
   const [deleted, setDeleted] = useState<DeletedAnalysisSummary[]>([]);
   const [showTrash, setShowTrash] = useState(false);
 
+  // What the class allows. An individual's policy allows everything, so the
+  // picker is the three-way one; a policy naming a single tier hides it
+  // altogether and uses that tier (§5).
+  const policy = usePolicy();
+  const tiers = allowedTiers(policy);
+
   const [text, setText] = useState('');
-  // Auto-analysis level: minimal draws only the deterministic connections;
-  // maximal proposes the full tree. Remembered per browser.
-  const [maximal, setMaximal] = useState<boolean>(loadMaximal);
+  // Auto-analysis tier: 'none' proposes nothing, 'minimal' draws only the
+  // deterministic connections, 'full' proposes the whole tree. Remembered per
+  // browser — and re-chosen whenever the policy no longer allows it.
+  const [tier, setTierState] = useState<FirstPassTier>(() => pickTier(policy, loadTier()));
+  const setTier = (next: FirstPassTier) => {
+    setTierState(next);
+    saveTier(next);
+  };
+  // A remembered tier the policy withdrew is replaced at once, so nothing is
+  // ever sent that the server would refuse.
+  const allowedTier = pickTier(policy, tier);
+  useEffect(() => {
+    if (allowedTier !== tier) setTierState(allowedTier);
+  }, [allowedTier, tier]);
   const [result, setResult] = useState<FirstPassResult | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -149,7 +184,7 @@ export default function HomePage() {
     setLocating(true);
     const seq = ++locateSeq.current;
     const timer = window.setTimeout(() => {
-      firstPass(wanted, maximal)
+      firstPass(wanted, allowedTier)
         .then((found) => {
           if (seq !== locateSeq.current) return;
           setResult(found);
@@ -172,7 +207,7 @@ export default function HomePage() {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [text, maximal]);
+  }, [text, allowedTier]);
 
   /**
    * Enter creates, so the passage that is created has to be passed IN rather
@@ -188,7 +223,9 @@ export default function HomePage() {
       // tree wider than the window is now read by scrolling the margin
       // sideways, so there is nothing about width left to decide here.
       const document = normalizeDocument(found.document);
-      const created = await createAnalysis({ title, document });
+      // The tier goes with the row: the server records it (and the policy in
+      // force) on the analysis, and checks it against that policy.
+      const created = await createAnalysis({ title, document, firstPassTier: allowedTier });
       navigate(`/analysis/${created.id}`);
     } catch (err) {
       setErrors(errorMessages(err));
@@ -234,37 +271,29 @@ export default function HomePage() {
           >
             Create
           </button>
-          <div
-            className="level-toggle"
-            role="radiogroup"
-            aria-label="How much the auto-analysis proposes"
-            title="Minimal draws only the connections the tool is certain of; Full proposes a complete tree to correct"
-          >
-            <button
-              type="button"
-              role="radio"
-              aria-checked={!maximal}
-              className={maximal ? '' : 'on'}
-              onClick={() => {
-                setMaximal(false);
-                saveMaximal(false);
-              }}
+          {/* One tier allowed is not a choice: the picker goes, and that tier
+              is simply what the auto-analysis does (§5). */}
+          {tiers.length > 1 && (
+            <div
+              className="level-toggle"
+              role="radiogroup"
+              aria-label="How much the auto-analysis proposes"
             >
-              Minimal
-            </button>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={maximal}
-              className={maximal ? 'on' : ''}
-              onClick={() => {
-                setMaximal(true);
-                saveMaximal(true);
-              }}
-            >
-              Full
-            </button>
-          </div>
+              {tiers.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  role="radio"
+                  aria-checked={allowedTier === t}
+                  className={allowedTier === t ? 'on' : ''}
+                  title={TIER_HINTS[t]}
+                  onClick={() => setTier(t)}
+                >
+                  {TIER_LABELS[t]}
+                </button>
+              ))}
+            </div>
+          )}
           {result !== null && <span className="alignment-line">{alignmentLine(result)}</span>}
           {result === null && locating && (
             <span className="muted alignment-line">Locating…</span>

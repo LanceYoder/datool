@@ -13,21 +13,31 @@ from .models import Analysis
 
 
 class AnalysisListSerializer(serializers.ModelSerializer):
-    """Row shape for ``GET /api/analyses``."""
+    """Row shape for ``GET /api/analyses``.
+
+    ``ownerId`` is how the SPA knows whose work it is looking at: a professor
+    may OPEN a student's analysis but never write to it (accounts-spec §2, §6),
+    and the page has to put itself in read-only mode BEFORE offering a Save
+    that the server would answer with a 404. Null on the ownerless rows made in
+    single-user local mode (§7).
+    """
 
     passageRef = serializers.CharField(source="passage_ref", read_only=True)
     updatedAt = serializers.DateTimeField(source="updated_at", read_only=True)
+    ownerId = serializers.IntegerField(source="owner_id", read_only=True)
 
     class Meta:
         model = Analysis
-        fields = ["id", "title", "passageRef", "updatedAt"]
+        fields = ["id", "title", "passageRef", "updatedAt", "ownerId"]
 
 
 class AnalysisDetailSerializer(AnalysisListSerializer):
     """Full shape for detail responses and successful writes."""
 
     class Meta(AnalysisListSerializer.Meta):
-        fields = ["id", "title", "passageRef", "document", "notes", "updatedAt"]
+        fields = [
+            "id", "title", "passageRef", "document", "notes", "updatedAt", "ownerId",
+        ]
 
 
 class DeletedAnalysisSerializer(AnalysisListSerializer):
@@ -38,7 +48,9 @@ class DeletedAnalysisSerializer(AnalysisListSerializer):
     daysLeft = serializers.IntegerField(source="days_left", read_only=True)
 
     class Meta(AnalysisListSerializer.Meta):
-        fields = ["id", "title", "passageRef", "updatedAt", "deletedAt", "daysLeft"]
+        fields = [
+            "id", "title", "passageRef", "updatedAt", "ownerId", "deletedAt", "daysLeft",
+        ]
 
 
 def word_json(word: Word) -> dict:

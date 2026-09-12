@@ -12,12 +12,19 @@ export interface NotesEditorProps {
   /** Notes as HTML; '' when there are none yet. */
   value: string;
   onChange: (html: string) => void;
+  /**
+   * Whether the notes may be written. False for a professor reading a
+   * student's work (§8): the notes still READ, and the B/I/U tools go with
+   * the caret. No class rule ever sets it — notes are always the student's.
+   */
+  editable?: boolean;
 }
 
-export default function NotesEditor({ value, onChange }: NotesEditorProps) {
+export default function NotesEditor({ value, onChange, editable = true }: NotesEditorProps) {
   const editor = useEditor({
     extensions: notesExtensions,
     content: value,
+    editable,
     onUpdate: ({ editor: ed }) => {
       onChange(normalizeNotesHtml(ed.getHTML()));
     },
@@ -29,6 +36,12 @@ export default function NotesEditor({ value, onChange }: NotesEditorProps) {
       editor.commands.setContent(value, { emitUpdate: false });
     }
   }, [editor, value]);
+
+  // A policy can change under a mounted editor (a professor opening a
+  // student's page), so the flag is re-applied rather than only set at birth.
+  useEffect(() => {
+    editor?.setEditable(editable);
+  }, [editor, editable]);
 
   if (editor === null) return null;
 
@@ -46,14 +59,16 @@ export default function NotesEditor({ value, onChange }: NotesEditorProps) {
   );
 
   return (
-    <div className="notes-editor">
-      <div className="notes-tools">
-        {mark('bold', 'B', 'Bold (⌘B)', () => editor.chain().focus().toggleBold().run())}
-        {mark('italic', 'I', 'Italic (⌘I)', () => editor.chain().focus().toggleItalic().run())}
-        {mark('underline', 'U', 'Underline (⌘U)', () =>
-          editor.chain().focus().toggleUnderline().run(),
-        )}
-      </div>
+    <div className={editable ? 'notes-editor' : 'notes-editor read-only'}>
+      {editable && (
+        <div className="notes-tools">
+          {mark('bold', 'B', 'Bold (⌘B)', () => editor.chain().focus().toggleBold().run())}
+          {mark('italic', 'I', 'Italic (⌘I)', () => editor.chain().focus().toggleItalic().run())}
+          {mark('underline', 'U', 'Underline (⌘U)', () =>
+            editor.chain().focus().toggleUnderline().run(),
+          )}
+        </div>
+      )}
       <EditorContent className="notes-body" editor={editor} />
     </div>
   );

@@ -14,9 +14,20 @@ export interface RelationshipMenuProps {
   /** The bracket's current relationship code (marked in the list). */
   current: string;
   onPick: (rel: string) => void;
+  /**
+   * Whether the letter keys answer. False on a professor's read-only view of
+   * a student's work: the menu's keyboard side-channel closes with its items,
+   * so a lock is never one keystroke deep.
+   */
+  keyboard?: boolean;
 }
 
-export default function RelationshipMenu({ taxonomy, current, onPick }: RelationshipMenuProps) {
+export default function RelationshipMenu({
+  taxonomy,
+  current,
+  onPick,
+  keyboard = true,
+}: RelationshipMenuProps) {
   const groups = groupByFamily(taxonomy);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const currentRef = useRef<HTMLButtonElement | null>(null);
@@ -36,6 +47,7 @@ export default function RelationshipMenu({ taxonomy, current, onPick }: Relation
   // Typing a relationship's key picks it. The menu owns the keystroke only
   // while it is open, and never steals one meant for a text field.
   useEffect(() => {
+    if (!keyboard) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
@@ -50,7 +62,7 @@ export default function RelationshipMenu({ taxonomy, current, onPick }: Relation
     return () => {
       window.removeEventListener('keydown', onKey);
     };
-  }, [taxonomy, onPick]);
+  }, [taxonomy, onPick, keyboard]);
 
   return (
     <div className="menu-body" role="menu" aria-label="Relationship" ref={bodyRef}>
