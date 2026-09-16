@@ -46,7 +46,7 @@ class TestCsrfAndSession:
         # Logging in is public — no session yet, so no token is demanded.
         signed_in = client.post(
             "/api/auth/login",
-            {"login": "solo@example.com", "password": PASSWORD},
+            {"email": "solo@example.com", "password": PASSWORD},
             format="json",
         )
         assert signed_in.status_code == 200
@@ -83,13 +83,13 @@ class TestThrottles:
         for _ in range(10):
             response = anon_client.post(
                 "/api/auth/login",
-                {"login": "solo@example.com", "password": "wrong-every-time"},
+                {"email": "solo@example.com", "password": "wrong-every-time"},
                 format="json",
             )
             assert response.status_code == 400
         eleventh = anon_client.post(
             "/api/auth/login",
-            {"login": "solo@example.com", "password": PASSWORD},  # even the RIGHT one
+            {"email": "solo@example.com", "password": PASSWORD},  # even the RIGHT one
             format="json",
         )
         assert eleventh.status_code == 429
@@ -152,13 +152,12 @@ class TestRegister:
         assert response.status_code == 201
         me = response.json()
         assert set(me) == {
-            "id", "email", "handle", "name", "memberships", "invitations",
-            "policy", "isStaff",
+            "id", "email", "name", "memberships", "invitations", "policy", "isStaff",
         }
         assert me["invitations"] == []
         assert me["email"] == "New.Person@example.com"
-        # The handle of an email account IS its address, lowercased (§3).
-        assert me["handle"] == "new.person@example.com"
+        # The login of record IS the address, lowercased (§3).
+        assert User.objects.get(pk=me["id"]).username == "new.person@example.com"
         assert me["name"] == "New Person"
         assert me["memberships"] == []
         assert me["policy"] is None  # an individual has no class rules
@@ -203,41 +202,44 @@ class TestLogin:
     def test_by_email_case_insensitively(self, anon_client, individual):
         response = anon_client.post(
             "/api/auth/login",
-            {"login": "SOLO@Example.com", "password": PASSWORD},
+            {"email": "SOLO@Example.com", "password": PASSWORD},
             format="json",
         )
         assert response.status_code == 200
-        assert response.json()["handle"] == "solo@example.com"
+        assert response.json()["email"] == "solo@example.com"
 
-    def test_by_handle(self, anon_client, make_user):
-        """A learning account has no address — the handle is the whole login."""
-        make_user("greek101-smith", name="Sam Smith")
-        response = anon_client.post(
-            "/api/auth/login",
-            {"login": "greek101-smith", "password": PASSWORD},
-            format="json",
-        )
-        assert response.status_code == 200
-        me = response.json()
-        assert me["handle"] == "greek101-smith"
-        assert me["email"] == ""
+    def test_two_accounts_on_one_address_let_nobody_in(self, individual):
+        """The backend's ambiguity guard: an address that somehow names two
+        accounts signs neither of them in by that address. (Asked of the
+        backend itself: the API cannot make such a pair — registration and
+        provisioning both refuse a taken address — so the row is planted.)"""
+        from da.auth_backends import EmailBackend
+
+        twin = User(username="solo-twin", email="SOLO@example.com")
+        twin.set_password(PASSWORD)
+        twin.save()
+        backend = EmailBackend()
+        assert backend.authenticate(None, username="solo@example.com", password=PASSWORD) is None
+        assert backend.authenticate(None, username="SOLO@example.com", password=PASSWORD) is None
+        twin.delete()
+        assert backend.authenticate(None, username="SOLO@example.com", password=PASSWORD) == individual
 
     def test_a_wrong_password_says_nothing_about_the_account(self, anon_client, individual):
         for credential in ("solo@example.com", "nobody@example.com"):
             response = anon_client.post(
-                "/api/auth/login", {"login": credential, "password": "wrong"},
+                "/api/auth/login", {"email": credential, "password": "wrong"},
                 format="json",
             )
             assert response.status_code == 400
             assert response.json()["errors"] == [
-                "that login and password do not match an account"
+                "that email and password do not match an account"
             ]
 
     def test_a_deactivated_account_cannot_get_in(self, anon_client, individual):
         individual.is_active = False
         individual.save(update_fields=["is_active"])
         response = anon_client.post(
-            "/api/auth/login", {"login": "solo@example.com", "password": PASSWORD},
+            "/api/auth/login", {"email": "solo@example.com", "password": PASSWORD},
             format="json",
         )
         assert response.status_code == 400
@@ -250,7 +252,7 @@ class TestLogin:
 class TestMe:
     def test_a_student_carries_their_effective_policy(self, classroom, client_for):
         me = client_for(classroom.student).get("/api/auth/me").json()
-        assert me["handle"] == "greek101-smith"
+        assert me["email"] == "smith@example.com"
         assert me["policy"] == DEFAULT_POLICY  # no professor policy set yet
         assert len(me["memberships"]) == 1
         membership = me["memberships"][0]
@@ -303,7 +305,7 @@ class TestPasswordReset:
 
         signed_in = anon_client.post(
             "/api/auth/login",
-            {"login": "solo@example.com", "password": "a-brand-new-one-7"},
+            {"email": "solo@example.com", "password": "a-brand-new-one-7"},
             format="json",
         )
         assert signed_in.status_code == 200
@@ -320,12 +322,6 @@ class TestPasswordReset:
             "/api/auth/password/forgot", {"email": "nobody@example.com"}, format="json"
         )
         assert response.status_code == 200
-        assert mail.outbox == []
-
-    def test_a_learning_account_gets_no_mail(self, anon_client, make_user):
-        """No address, so no reset by mail — a professor resets it (§2)."""
-        make_user("greek101-smith")
-        anon_client.post("/api/auth/password/forgot", {"email": ""}, format="json")
         assert mail.outbox == []
 
     @pytest.mark.parametrize(

@@ -1,5 +1,4 @@
-// Signing in: email OR handle, and a password. Nothing else — a learning
-// account has no email at all, so the one field takes either (accounts-spec §3).
+// Signing in: email and password. Nothing else (accounts-spec §3).
 
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -10,7 +9,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const { user, loading, refresh } = useSession();
-  const [identifier, setIdentifier] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -29,7 +28,7 @@ export default function LoginPage() {
     setBusy(true);
     setErrors([]);
     try {
-      await login({ login: identifier.trim(), password });
+      await login({ email: email.trim(), password });
       await refresh();
       navigate(next, { replace: true });
     } catch (err) {
@@ -45,13 +44,14 @@ export default function LoginPage() {
         <h2>Sign in</h2>
         <form onSubmit={(event) => void submit(event)}>
           <label className="form-row">
-            <span className="form-label">Email or login handle</span>
+            <span className="form-label">Email</span>
             <input
               className="form-input"
-              value={identifier}
-              autoComplete="username"
+              type="email"
+              value={email}
+              autoComplete="email"
               autoFocus
-              onChange={(event) => setIdentifier(event.target.value)}
+              onChange={(event) => setEmail(event.target.value)}
             />
           </label>
           <label className="form-row">
@@ -68,7 +68,7 @@ export default function LoginPage() {
             <button
               type="submit"
               className="primary"
-              disabled={busy || identifier.trim() === '' || password === ''}
+              disabled={busy || email.trim() === '' || password === ''}
             >
               Sign in
             </button>

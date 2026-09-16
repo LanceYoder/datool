@@ -116,7 +116,7 @@ describe('CSRF', () => {
       if (url === '/api/auth/csrf') setCookie('fresh');
       return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
     });
-    await login({ login: 'ada@example.com', password: 'x' });
+    await login({ email: 'ada@example.com', password: 'x' });
     expect(calls.map((c) => c.url)).toEqual(['/api/auth/csrf', '/api/auth/login']);
     expect((calls[1]?.init.headers as Record<string, string>)['X-CSRFToken']).toBe('fresh');
   });
@@ -142,7 +142,7 @@ describe('the 401 handler', () => {
     const seen: string[] = [];
     setUnauthorizedHandler((path) => seen.push(path));
     stubFetch({ errors: ['wrong password'] }, 401);
-    await expect(login({ login: 'ada', password: 'no' })).rejects.toMatchObject({ status: 401 });
+    await expect(login({ email: 'ada@example.com', password: 'no' })).rejects.toMatchObject({ status: 401 });
     expect(seen).toEqual([]);
   });
 

@@ -102,6 +102,19 @@
   color: #cdb389;
 }
 
+/* The header is dark leather: the account links and Sign out, which the base
+   sheet writes in page ink, are lettered in the tagline's parchment instead,
+   and warm to the brand's gold under the pointer. */
+[data-theme='book'] .app-account,
+[data-theme='book'] .app-signout {
+  color: #cdb389;
+}
+
+[data-theme='book'] .app-account:hover,
+[data-theme='book'] .app-signout:hover {
+  color: #e8c86a;
+}
+
 [data-theme='book'] .theme-switch {
   border: 1px solid var(--gold);
   border-radius: 3px;
@@ -201,9 +214,15 @@
 /* ---- The leaf: vellum, ruled and bordered. ---- */
 
 /* One leaf of the codex, and the leaves under it showing along both fore
-   edges — the same stack the notebook has, in vellum rather than paper. */
+   edges — the same stack the notebook has, in vellum rather than paper. The
+   account pages are leaves too: written on the leather they would be page
+   ink on a dark ground, which is no ink at all. */
 [data-theme='book'] .analysis-page,
-[data-theme='book'] .home-page {
+[data-theme='book'] .home-page,
+[data-theme='book'] .account-page,
+[data-theme='book'] .org-page,
+[data-theme='book'] .teach-page,
+[data-theme='book'] .student-page {
   --page-pad: 1.4rem;
   --frame-w: 54px;
   position: relative;

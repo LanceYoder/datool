@@ -4,7 +4,7 @@
 
 The read-only half of docs/accounts-spec.md §7, in the pattern
 ``check_binary.py`` set: this script NAMES the rows, and moving them is the
-other half — ``manage.py assign_orphans --to <email|handle>``, a separate,
+other half — ``manage.py assign_orphans --to <email>``, a separate,
 human-approved step. The analyst decides who inherits the 43 analyses made in
 single-user local mode; this script decides nothing.
 
@@ -85,7 +85,7 @@ def report() -> int:
         print("These are visible only to site staff, through the Django admin. "
               "To hand them over — a separate, human-approved step; this script "
               "changed nothing:")
-        print("  uv run python manage.py assign_orphans --to <email|handle>")
+        print("  uv run python manage.py assign_orphans --to <email>")
     return count
 
 

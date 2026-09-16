@@ -15,7 +15,6 @@ import {
   updateMe,
 } from '../api';
 import { useSession } from '../session';
-import { signIn } from '../accounts';
 import type { Role } from '../types';
 
 const ROLE_WORD: Record<Role, string> = {
@@ -107,8 +106,8 @@ export default function AccountPage() {
         <h2>Account</h2>
         <dl className="detail-list">
           <div className="detail-row">
-            <dt>Signs in with</dt>
-            <dd>{signIn(user) ?? <span className="muted">—</span>}</dd>
+            <dt>Email</dt>
+            <dd>{user.email}</dd>
           </div>
         </dl>
         <form onSubmit={(event) => void submitName(event)}>
@@ -181,10 +180,6 @@ export default function AccountPage() {
         {user.memberships.length === 0 && (
           <p className="muted">You belong to no organization.</p>
         )}
-        <p className="muted">
-          Organizations are set up by datool for schools that ask — there is
-          nothing to create here.
-        </p>
         {user.memberships.length > 0 && (
           <ul className="analysis-list">
             {user.memberships.map((m) => {

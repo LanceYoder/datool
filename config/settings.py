@@ -74,12 +74,12 @@ DATABASES = {
     )
 }
 
-# Login by email OR handle (docs/accounts-spec.md §3): `username` holds the
-# handle for a learning account, or the lowercased email for an email account,
-# so one backend has to try both columns. ModelBackend stays behind it for the
-# Django admin's own username logins.
+# Login by email (docs/accounts-spec.md §3, ruled 2026-09-16): every account
+# has an address and signs in with it; `username` holds the same address,
+# lowercased. ModelBackend stays behind it for the Django admin's own
+# username logins.
 AUTHENTICATION_BACKENDS = [
-    "da.auth_backends.EmailOrHandleBackend",
+    "da.auth_backends.EmailBackend",
     "django.contrib.auth.backends.ModelBackend",
 ]
 

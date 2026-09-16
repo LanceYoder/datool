@@ -369,10 +369,10 @@ class TestAssignOrphans:
         assert "gave 2 analyses" in capsys.readouterr().out
         assert mine.owner_id == individual.id
 
-    def test_it_finds_the_account_by_handle_too(self, make_user, john_1_1, capsys):
-        student = make_user("greek101-smith")
+    def test_it_matches_the_email_in_any_case(self, make_user, john_1_1, capsys):
+        student = make_user("smith@example.com")
         self.orphan(john_1_1)
-        call_command("assign_orphans", "--to", "greek101-smith")
+        call_command("assign_orphans", "--to", "SMITH@Example.com")
         assert Analysis.objects.get().owner_id == student.id
 
     def test_a_dry_run_changes_nothing(self, individual, john_1_1, capsys):

@@ -350,13 +350,8 @@ export interface Invitation {
 /** `GET /api/auth/me` — the signed-in user and everything the SPA branches on. */
 export interface Me {
   id: number;
-  /**
-   * EMPTY for a learning account, which has a handle instead. (The API sends
-   * '' rather than null; `null` is tolerated so nothing here depends on which.
-   * Use `signIn()` in accounts.ts rather than reading these two directly.)
-   */
-  email: string | null;
-  handle: string | null;
+  /** The address they sign in with. Every account has one. */
+  email: string;
   name: string;
   /** The organizations this person BELONGS to — accepted ones only. */
   memberships: Membership[];
@@ -371,28 +366,24 @@ export interface Me {
  * The user half of an org member row.
  *
  * For a PENDING row the server sends the invited address and nothing else —
- * `id: null`, empty handle and name — so that typing an address into an org
+ * `id: null` and an empty name — so that typing an address into an org
  * cannot be used to look up who holds it. Their own name appears the moment
  * they accept.
  */
-export interface OrgMemberUser {
+export interface MemberUser {
   id: number | null;
-  /** '' when the account has no email — see Me.email. */
-  email: string | null;
-  handle: string | null;
+  email: string;
   name: string;
 }
 
 /** One row of `GET /api/orgs/<id>/members`. */
 export interface OrgMember {
   membershipId: number;
-  user: OrgMemberUser;
+  user: MemberUser;
   role: Role;
   /** The professor this student is assigned to, or null. */
   professor: ProfessorRef | null;
   active: boolean;
-  /** False for a learning account — its password is reset by a person, not by mail. */
-  hasEmail: boolean;
   /**
    * True while an invitation to an account that already existed is waiting to
    * be answered. Such a row holds no role and governs nothing: the person has
@@ -415,48 +406,28 @@ export interface OrgMember {
 }
 
 /**
- * What provisioning (and a password reset) may hand back beside the row: a
- * set-password link when mail could not be sent, or the temporary password of
- * a handle account. Both are shown ONCE, on screen, to whoever provisioned.
- */
-export interface ProvisionSecrets {
-  /** The set-password link, when mail could not be sent. Null when it was. */
-  inviteLink?: string | null;
-  /** A handle account's password. Null when the account has an inbox instead. */
-  temporaryPassword?: string | null;
-  /** The reset flow's own name for the same link. */
-  resetLink?: string | null;
-}
-
-/**
- * `POST /api/orgs/<id>/members` with an EMAIL: the same four keys whether the
- * address already had an account (a pending invitation) or not (a new account
- * whose set-password link went out by mail — or comes back here when it could
- * not). Deliberately says nothing about which: typing an address into an org
- * must not be a way to find out who holds one.
+ * `POST /api/orgs/<id>/members`: the same three keys whether the address
+ * already had an account (a pending invitation) or not (a new account whose
+ * set-password link went out by mail — or comes back here as `inviteLink`
+ * when it could not). Deliberately says nothing about which: typing an
+ * address into an org must not be a way to find out who holds one.
  */
 export interface InvitedMember {
   invited: true;
   membershipId: number;
+  /** The set-password link, only when mail could not be sent. */
   inviteLink: string | null;
-  temporaryPassword: null;
 }
 
-/** `POST /api/orgs/<id>/members` with a HANDLE → the new member, plus its password. */
-export type ProvisionedMember = OrgMember & ProvisionSecrets;
-
-/** What provisioning answers with, by the kind of account it made. */
-export type ProvisionResult = InvitedMember | ProvisionedMember;
-
-export function isInvited(result: ProvisionResult): result is InvitedMember {
-  return (result as InvitedMember).invited === true;
+/**
+ * `POST /api/orgs/<id>/members/<mid>/reset-password`, for an account this
+ * organization provisioned: the reset mail went out, or — when it could not —
+ * the link comes back here to be passed on by hand.
+ */
+export interface ResetResult {
+  sent: boolean;
+  resetLink: string | null;
 }
-
-/** `POST /api/orgs/<id>/members/<mid>/reset-password`. */
-export type ResetPasswordResult = ProvisionSecrets & {
-  /** True when the server sent the reset mail instead of setting a password. */
-  sent?: boolean;
-};
 
 /** `PUT /api/orgs/<id>/members/<mid>/policy` — the override, and what it
  * resolves to for that student. */

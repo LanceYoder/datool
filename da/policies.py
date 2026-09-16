@@ -212,7 +212,7 @@ def merge_policy(base: dict, override) -> dict:
 
 
 def student_membership(user):
-    """The membership that makes this user a LEARNING account, or None.
+    """The membership that makes this user a STUDENT, or None.
 
     A user may be a student in several organizations (§2); the policy that
     governs their editor is the first such membership by creation — a
@@ -225,8 +225,8 @@ def student_membership(user):
     Nor is a DEACTIVATED one — and that is a ruling, not an accident. Being
     removed from a class means going back to being an individual: a student
     who joined with their OWN account keeps their login and loses the class's
-    rules along with the class. A LEARNING account (provisioned by the org)
-    has no life outside it, so deactivating it bars the login itself
+    rules along with the class. An account the org PROVISIONED has no life
+    outside it, so deactivating it bars the login itself
     (``da/api/orgs.py``'s ``_sync_account_access``). Either way "inactive"
     never means "unsupervised but still restricted".
     """

@@ -10,8 +10,9 @@ Who may do what, in one place so it can be read at a glance:
 * **admin** — sees every member, provisions accounts of any role, assigns
   students to professors, deactivates people. Reads NO analyses.
 * **professor** — sees themselves and their own students, provisions students
-  assigned to themselves, resets those students' passwords, sets the default
-  policy and per-student overrides, and opens a student's analyses read-only.
+  assigned to themselves, sends those students a password-reset link, sets the
+  default policy and per-student overrides, and opens a student's analyses
+  read-only.
 * **student** — none of this; their editor is what the policy says.
 
 Every handler gets ``self.membership`` — the CALLER's membership in this
@@ -19,9 +20,7 @@ organization — from the permission class (da/api/permissions.py).
 """
 
 from django.contrib.auth import get_user_model
-from django.contrib.auth.validators import UnicodeUsernameValidator
 from django.core.exceptions import ValidationError
-from django.core.validators import validate_email
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -32,14 +31,8 @@ from rest_framework.views import APIView
 from ..models import Analysis, Membership, TeachingPolicy
 from ..policies import PolicyError, default_policy, policy_for_membership, validate_policy
 from ..serializers import AnalysisListSerializer
-from .auth import body, check_password_strength, clean_email, email_taken, errors, set_name
-from .mail import (
-    reset_link,
-    send_invitation,
-    send_org_invitation,
-    send_password_reset,
-    temporary_password,
-)
+from .auth import body, clean_email, email_taken, errors, set_name
+from .mail import reset_link, send_invitation, send_org_invitation, send_password_reset
 from .permissions import (
     IsOrgAdmin,
     IsOrgAdminOrProfessor,
@@ -51,15 +44,14 @@ from .shapes import me_json, member_json, membership_json
 from .throttles import InvitationThrottle, InvitationTargetThrottle
 
 User = get_user_model()
-_handle_validator = UnicodeUsernameValidator()
 
 ROLES = (Membership.ADMIN, Membership.PROFESSOR, Membership.STUDENT)
 
-#: The columns these values land in. SQLite ignores a varchar limit and
+#: The columns an address lands in. SQLite ignores a varchar limit and
 #: PostgreSQL — what production runs (config/settings.py) — raises DataError,
 #: so a value that fits neither database must be refused HERE, in the project's
 #: error shape, rather than 500 in one deployment and corrupt the other.
-from .auth import ADDRESS_MAX, EMAIL_MAX, HANDLE_MAX  # one definition, shared with register
+from .auth import ADDRESS_MAX  # one definition, shared with register
 
 class MyOrgsView(APIView):
     """``GET /api/orgs/mine`` — the caller's memberships, same shape as the
@@ -83,11 +75,8 @@ class MembersView(APIView):
 
     def get_throttles(self):
         """Only the requests that SEND MAIL are rated (da/api/throttles.py):
-        reading the roster and making learning accounts — a class of thirty in
-        one sitting — send nothing and are not held up."""
-        data = getattr(self.request, "data", None)
-        email = data.get("email") if isinstance(data, dict) else None
-        if self.request.method == "POST" and isinstance(email, str) and email.strip():
+        every POST here does, and reading the roster never does."""
+        if self.request.method == "POST":
             return [InvitationThrottle(), InvitationTargetThrottle()]
         return super().get_throttles()
 
@@ -111,65 +100,8 @@ class MembersView(APIView):
         ]
 
     def post(self, request, org_id: int):
-        payload = body(request)
-        caller = self.membership
-        role = payload.get("role")
-        if role not in ROLES:
-            return errors([f"role must be one of {', '.join(ROLES)}"])
-        if caller.role == Membership.PROFESSOR and role != Membership.STUDENT:
-            return errors(
-                ["a professor may only create students"], status.HTTP_403_FORBIDDEN
-            )
-
-        name = payload.get("name")
-        if name is not None and not isinstance(name, str):
-            return errors(["name must be a string"])
-
-        raw_email, raw_handle = payload.get("email"), payload.get("handle")
-        has_email = isinstance(raw_email, str) and raw_email.strip()
-        has_handle = isinstance(raw_handle, str) and raw_handle.strip()
-        if has_email and has_handle:
-            return errors(["give an email or a handle, not both"])
-        if not has_email and not has_handle:
-            return errors(["an email or a handle is required"])
-
-        professor_membership, problem = self._professor_for(role, payload, caller)
-        if problem:
-            return errors([problem])
-
-        password = payload.get("password")
-        if password is not None and not isinstance(password, str):
-            return errors(["password must be a string"])
-
-        if has_email:
-            return self._create_with_email(
-                request, org_id, raw_email, name, role, professor_membership, password
-            )
-        return self._create_with_handle(
-            org_id, raw_handle, name, role, professor_membership, password
-        )
-
-    def _professor_for(self, role, payload, caller):
-        """The professor membership a new student is assigned to, or None."""
-        if caller.role == Membership.PROFESSOR:
-            # A professor's students are their own, whatever the body says.
-            return caller, None
-        raw = payload.get("professor")
-        if raw is None:
-            return None, None
-        if role != Membership.STUDENT:
-            return None, "only a student has a professor"
-        professor = Membership.objects.filter(
-            pk=raw, organization_id=caller.organization_id, role=Membership.PROFESSOR
-        ).first()
-        if professor is None:
-            return None, "that professor is not a professor in this organization"
-        return professor, None
-
-    def _create_with_email(
-        self, request, org_id, raw_email, name, role, professor, password
-    ):
-        """An account reachable by mail.
+        """``{role, email, name?, professor?}`` — one way to add somebody, by
+        email (ruled 2026-09-16).
 
         Two quite different things wear this one request:
 
@@ -184,6 +116,23 @@ class MembersView(APIView):
           answer until they do — a stranger's roster must not be a place to
           look people up.
         """
+        payload = body(request)
+        caller = self.membership
+        role = payload.get("role")
+        if role not in ROLES:
+            return errors([f"role must be one of {', '.join(ROLES)}"])
+        if caller.role == Membership.PROFESSOR and role != Membership.STUDENT:
+            return errors(
+                ["a professor may only create students"], status.HTTP_403_FORBIDDEN
+            )
+
+        name = payload.get("name")
+        if name is not None and not isinstance(name, str):
+            return errors(["name must be a string"])
+
+        raw_email = payload.get("email")
+        if not isinstance(raw_email, str) or not raw_email.strip():
+            return errors(["an email is required"])
         try:
             email = clean_email(raw_email)
         except ValidationError:
@@ -191,26 +140,24 @@ class MembersView(APIView):
         if len(email) > ADDRESS_MAX:
             return errors([f"an email address may be at most {ADDRESS_MAX} characters"])
 
-        # WHAT THIS ENDPOINT ANSWERS FOR AN ADDRESS: the same four keys whether
-        # the address already had an account or not. The roster (GET) does
-        # distinguish a pending invitation from a provisioned account — the
-        # teaching page genuinely needs to — so an org admin can still learn,
-        # a page-load later, that an address was already known; the throttles
-        # (40 invitations a day per caller and per target) are what keep that
+        professor, problem = self._professor_for(role, payload, caller)
+        if problem:
+            return errors([problem])
+
+        # WHAT THIS ENDPOINT ANSWERS: the same three keys whether the address
+        # already had an account or not. The roster (GET) does distinguish a
+        # pending invitation from a provisioned account — the teaching page
+        # genuinely needs to — so an org admin can still learn, a page-load
+        # later, that an address was already known; the throttles (40
+        # invitations a day per caller and per target) are what keep that
         # from being a lookup service. The POST body itself gives nothing away.
         def invited(membership, link=None):
             return Response(
-                {
-                    "invited": True,
-                    "membershipId": membership.id,
-                    "inviteLink": link,
-                    "temporaryPassword": None,
-                },
+                {"invited": True, "membershipId": membership.id, "inviteLink": link},
                 status=status.HTTP_201_CREATED,
             )
 
         existing = User.objects.filter(email__iexact=email).first()
-        created = existing is None
         if existing is not None:
             if Membership.objects.filter(
                 user=existing, organization_id=org_id
@@ -233,14 +180,8 @@ class MembersView(APIView):
             return errors(["an account with that email already exists"])
         user = User(username=email.lower(), email=email)
         set_name(user, name)
-        if password:
-            problems = check_password_strength(password, user)
-            if problems:
-                return errors(problems)
-            user.set_password(password)
-        else:
-            # No password yet: the invitation link is how they set one.
-            user.set_unusable_password()
+        # No password yet: the invitation link is how they set one.
+        user.set_unusable_password()
         user.save()
 
         membership = Membership.objects.create(
@@ -250,62 +191,28 @@ class MembersView(APIView):
             professor=professor,
             provisioned=True,
         )
-        link = None
-        if created and not password:
-            link = reset_link(user)
-            sent = send_invitation(
-                user, link, organization_name=membership.organization.name
-            )
-            if sent:
-                link = None  # it is in their inbox; the admin needs nothing
+        link = reset_link(user)
+        sent = send_invitation(user, link, organization_name=membership.organization.name)
+        if sent:
+            link = None  # it is in their inbox; the admin needs nothing
         return invited(membership, link)
 
-    def _create_with_handle(self, org_id, raw_handle, name, role, professor, password):
-        """A LEARNING ACCOUNT: a handle and a password handed out in person.
-        It has no address, so it can only ever be reset by a professor."""
-        handle = raw_handle.strip()
-        if len(handle) > HANDLE_MAX:
-            return errors([f"a handle may be at most {HANDLE_MAX} characters"])
-        try:
-            _handle_validator(handle)
-        except ValidationError:
-            return errors(
-                ["a handle may use letters, digits and . _ + - only, with no spaces"]
-            )
-        try:
-            validate_email(handle)
-        except ValidationError:
-            pass
-        else:
-            return errors(["that handle is an email address — use the email field"])
-        if User.objects.filter(username__iexact=handle).exists():
-            return errors(["that handle is already taken"])
-
-        generated = None
-        if not password:
-            generated = password = temporary_password()
-        user = User(username=handle, email="")
-        set_name(user, name)
-        problems = check_password_strength(password, user)
-        if problems:
-            return errors(problems)
-        user.set_password(password)
-        user.save()
-        membership = Membership.objects.create(
-            user=user,
-            organization_id=org_id,
-            role=role,
-            professor=professor,
-            provisioned=True,
-        )
-        return Response(
-            {
-                **member_json(membership),
-                "inviteLink": None,
-                "temporaryPassword": generated,
-            },
-            status=status.HTTP_201_CREATED,
-        )
+    def _professor_for(self, role, payload, caller):
+        """The professor membership a new student is assigned to, or None."""
+        if caller.role == Membership.PROFESSOR:
+            # A professor's students are their own, whatever the body says.
+            return caller, None
+        raw = payload.get("professor")
+        if raw is None:
+            return None, None
+        if role != Membership.STUDENT:
+            return None, "only a student has a professor"
+        professor = Membership.objects.filter(
+            pk=raw, organization_id=caller.organization_id, role=Membership.PROFESSOR
+        ).first()
+        if professor is None:
+            return None, "that professor is not a professor in this organization"
+        return professor, None
 
 
 class MemberDetailView(APIView):
@@ -318,8 +225,8 @@ class MemberDetailView(APIView):
       the last one is the same lockout as deactivating them, and §6 gives no
       way back in but the Django admin;
     * DEACTIVATING is a revocation, not a discount. A provisioned account —
-      one this org created, a learning account above all — is barred from
-      signing in at all when its last active membership goes, because a
+      one this org created — is barred from signing in at all when its last
+      active membership goes, because a
       student whose membership is switched off but whose login still works
       would come back with NO policy, i.e. with more freedom than before
       (§2 is silent on what deactivation means; this is the reading that
@@ -415,18 +322,15 @@ class MemberDetailView(APIView):
 
 
 class MemberResetPasswordView(APIView):
-    """``POST /api/orgs/<org_id>/members/<mid>/reset-password {password?}``.
+    """``POST /api/orgs/<org_id>/members/<mid>/reset-password`` (no body).
 
     What happens is decided by the ACCOUNT, never by what the caller sent:
 
-    * a LEARNING ACCOUNT (no address at all) has no inbox, so its password is
-      set here and read back once — §2's whole reason for that account kind;
-    * an account this organization PROVISIONED by email gets the ordinary
-      reset mail, and only when the mail cannot go out does the link come
-      back for the admin to pass on (§3, §10.1). A password supplied in the
-      body is refused: §6 gives an email account the mail, and letting an
-      admin set one outright would turn "add a member" into a way of taking
-      an account over;
+    * an account this organization PROVISIONED gets the ordinary reset mail,
+      and only when the mail cannot go out does the link come back for the
+      admin to pass on (§3, §10.1). Nobody sets the password from here: §6
+      gives the account the mail, and letting an admin set one outright would
+      turn "add a member" into a way of taking an account over;
     * an account that belongs to somebody who merely JOINED this org is not
       touched at all. They have their own address and their own
       /forgot-password; nobody here gets a link into it.
@@ -444,47 +348,18 @@ class MemberResetPasswordView(APIView):
                 ["you may only reset your own students' passwords"],
                 status.HTTP_403_FORBIDDEN,
             )
-
-        password = body(request).get("password")
-        if password is not None and not isinstance(password, str):
-            return errors(["password must be a string"])
-        user = member.user
-
-        if user.email:
-            if not member.provisioned:
-                return errors(
-                    [
-                        "this member has an account of their own — they can reset "
-                        "its password themselves from the sign-in page"
-                    ],
-                    status.HTTP_403_FORBIDDEN,
-                )
-            if password:
-                return errors(
-                    [
-                        "an account with an email address sets its own password "
-                        "from the link in its reset mail"
-                    ]
-                )
-            link = reset_link(user)
-            sent = send_password_reset(user, link)
-            return Response(
-                {
-                    "sent": sent,
-                    "resetLink": None if sent else link,
-                    "temporaryPassword": None,
-                }
+        if not member.provisioned:
+            return errors(
+                [
+                    "this member has an account of their own — they can reset "
+                    "its password themselves from the sign-in page"
+                ],
+                status.HTTP_403_FORBIDDEN,
             )
-
-        chosen = password or temporary_password()
-        problems = check_password_strength(chosen, user)
-        if problems:
-            return errors(problems)
-        user.set_password(chosen)
-        user.save(update_fields=["password"])
-        return Response(
-            {"sent": False, "resetLink": None, "temporaryPassword": chosen}
-        )
+        user = member.user
+        link = reset_link(user)
+        sent = send_password_reset(user, link)
+        return Response({"sent": sent, "resetLink": None if sent else link})
 
 
 class InvitationView(APIView):

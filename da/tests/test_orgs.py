@@ -36,15 +36,16 @@ def members_url(classroom) -> str:
 class TestRoster:
     def test_an_admin_sees_everyone(self, classroom, as_admin):
         rows = as_admin.get(members_url(classroom)).json()
-        assert {row["user"]["handle"] for row in rows} == {
+        assert {row["user"]["email"] for row in rows} == {
             "dean@example.com", "prof@example.com", "prof2@example.com",
-            "greek101-smith", "greek101-jones",
+            "smith@example.com", "jones@example.com",
         }
-        student = next(r for r in rows if r["user"]["handle"] == "greek101-smith")
+        student = next(r for r in rows if r["user"]["email"] == "smith@example.com")
         assert set(student) == {
-            "membershipId", "user", "role", "professor", "active", "hasEmail",
+            "membershipId", "user", "role", "professor", "active",
             "policyOverride", "pending", "provisioned",
         }
+        assert set(student["user"]) == {"id", "email", "name"}
         assert student["pending"] is False
         assert student["role"] == "student"
         # A professor is named, not just numbered — the same object the
@@ -54,18 +55,14 @@ class TestRoster:
         }
         assert student["policyOverride"] is None
         assert student["active"] is True
-        # A learning account has no address — that is what the UI shows.
-        assert student["hasEmail"] is False
         assert student["user"]["name"] == "Sam Smith"
-        dean = next(r for r in rows if r["user"]["handle"] == "dean@example.com")
-        assert dean["hasEmail"] is True
 
     def test_a_professor_sees_only_their_own_students_and_themselves(
         self, classroom, as_professor
     ):
         rows = as_professor.get(members_url(classroom)).json()
-        assert {row["user"]["handle"] for row in rows} == {
-            "prof@example.com", "greek101-smith",
+        assert {row["user"]["email"] for row in rows} == {
+            "prof@example.com", "smith@example.com",
         }
 
     @pytest.mark.parametrize("who", ["student", "stranger"])
@@ -87,25 +84,27 @@ class TestProvisioning:
         )
         assert response.status_code == 201
         body = response.json()
-        # The answer to an EMAIL is the same four keys whether or not the
-        # address already had an account — nothing here says which.
-        assert set(body) == {"invited", "membershipId", "inviteLink", "temporaryPassword"}
+        # The answer is the same three keys whether or not the address
+        # already had an account — nothing here says which.
+        assert set(body) == {"invited", "membershipId", "inviteLink"}
         assert body["invited"] is True
         # The mail went, so the admin is handed nothing to pass on.
         assert body["inviteLink"] is None
-        assert body["temporaryPassword"] is None
         # The row itself is on the roster.
         row = next(
             m for m in as_admin.get(members_url(classroom)).json()
             if m["membershipId"] == body["membershipId"]
         )
         assert row["role"] == "professor"
-        assert row["hasEmail"] is True
-        assert row["user"]["handle"] == "new.prof@example.com"
+        assert row["provisioned"] is True
+        assert row["user"]["email"] == "New.Prof@example.com"
+        # The login of record is the address, lowercased.
+        assert User.objects.get(email="New.Prof@example.com").username == "new.prof@example.com"
 
         assert len(mail.outbox) == 1
         assert mail.outbox[0].to == ["New.Prof@example.com"]
         assert "Greek 101" in mail.outbox[0].subject
+        assert "Your login is New.Prof@example.com" in mail.outbox[0].body
 
         # The invitation is a password reset that was never set: following it
         # is how the new professor gets in.
@@ -120,7 +119,7 @@ class TestProvisioning:
         ).status_code == 200
         assert visitor.post(
             "/api/auth/login",
-            {"login": "new.prof@example.com", "password": "chosen-by-them-4"},
+            {"email": "new.prof@example.com", "password": "chosen-by-them-4"},
             format="json",
         ).status_code == 200
 
@@ -134,38 +133,41 @@ class TestProvisioning:
         ).json()
         assert body["inviteLink"].startswith("http://localhost:5173/reset-password/")
 
-    def test_a_learning_account_gets_a_temporary_password(self, classroom, as_admin):
-        response = as_admin.post(
+    def test_a_student_is_assigned_at_creation(self, classroom, as_admin):
+        body = as_admin.post(
             members_url(classroom),
-            {"role": "student", "handle": "greek101-brown", "name": "Bo Brown",
+            {"role": "student", "email": "brown@example.com", "name": "Bo Brown",
              "professor": classroom.professor_m.id},
             format="json",
+        ).json()
+        row = next(
+            m for m in as_admin.get(members_url(classroom)).json()
+            if m["membershipId"] == body["membershipId"]
         )
-        assert response.status_code == 201
-        body = response.json()
-        assert body["hasEmail"] is False
-        assert body["professor"]["id"] == classroom.professor_m.id
-        assert body["inviteLink"] is None
-        temporary = body["temporaryPassword"]
-        assert temporary and len(temporary) >= 12
-        assert mail.outbox == []
+        assert row["professor"]["id"] == classroom.professor_m.id
+        assert row["user"]["name"] == "Bo Brown"
+
+    def test_nobody_sets_a_provisioned_accounts_first_password(
+        self, classroom, as_admin
+    ):
+        """The set-password link in the mail is the ONLY way in: a password in
+        the body is not a field this endpoint has, so it is not applied."""
+        body = as_admin.post(
+            members_url(classroom),
+            {"role": "student", "email": "green@example.com", "password": "chosen-here-6"},
+            format="json",
+        ).json()
+        assert set(body) == {"invited", "membershipId", "inviteLink"}
+        user = User.objects.get(email="green@example.com")
+        assert not user.has_usable_password()
 
         from rest_framework.test import APIClient
 
         assert APIClient().post(
             "/api/auth/login",
-            {"login": "greek101-brown", "password": temporary},
+            {"email": "green@example.com", "password": "chosen-here-6"},
             format="json",
-        ).status_code == 200
-
-    def test_a_chosen_password_is_not_read_back(self, classroom, as_admin):
-        body = as_admin.post(
-            members_url(classroom),
-            {"role": "student", "handle": "greek101-green", "password": "chosen-here-6"},
-            format="json",
-        ).json()
-        assert body["temporaryPassword"] is None
-        assert User.objects.get(username="greek101-green").check_password("chosen-here-6")
+        ).status_code == 400
 
     def test_an_existing_individual_is_INVITED_not_enrolled(
         self, classroom, as_admin, individual, client_for
@@ -186,7 +188,7 @@ class TestProvisioning:
         body = response.json()
         # The POST answers exactly what it answers for an unknown address —
         # nothing about whether an account existed, let alone whose.
-        assert set(body) == {"invited", "membershipId", "inviteLink", "temporaryPassword"}
+        assert set(body) == {"invited", "membershipId", "inviteLink"}
         assert body["inviteLink"] is None
         # On the roster the row is PENDING, and carries the address only —
         # their name and user id are not handed to whoever typed it in.
@@ -195,9 +197,7 @@ class TestProvisioning:
             if m["membershipId"] == body["membershipId"]
         )
         assert row["pending"] is True
-        assert row["user"] == {
-            "id": None, "email": "solo@example.com", "handle": "", "name": "",
-        }
+        assert row["user"] == {"id": None, "email": "solo@example.com", "name": ""}
         # The mail that goes out carries no way into the account — no token,
         # no set-password link.
         assert len(mail.outbox) == 1
@@ -308,20 +308,21 @@ class TestProvisioning:
     ):
         made = as_professor.post(
             members_url(classroom),
-            {"role": "student", "handle": "greek101-white"},
+            {"role": "student", "email": "white@example.com"},
             format="json",
         )
         assert made.status_code == 201
-        # Assigned to the professor who made them, whatever the body says.
-        assert made.json()["professor"]["id"] == classroom.professor_m.id
-
         stolen = as_professor.post(
             members_url(classroom),
-            {"role": "student", "handle": "greek101-black",
+            {"role": "student", "email": "black@example.com",
              "professor": classroom.other_professor_m.id},
             format="json",
         )
-        assert stolen.json()["professor"]["id"] == classroom.professor_m.id
+        assert stolen.status_code == 201
+        # Assigned to the professor who made them, whatever the body says.
+        rows = {m["membershipId"]: m for m in as_professor.get(members_url(classroom)).json()}
+        assert rows[made.json()["membershipId"]]["professor"]["id"] == classroom.professor_m.id
+        assert rows[stolen.json()["membershipId"]]["professor"]["id"] == classroom.professor_m.id
 
         refused = as_professor.post(
             members_url(classroom), {"role": "professor", "email": "no@example.com"},
@@ -333,20 +334,17 @@ class TestProvisioning:
     @pytest.mark.parametrize(
         "payload, expected",
         [
-            ({"role": "wizard", "handle": "x"}, "role must be one of"),
-            ({"role": "student"}, "an email or a handle is required"),
-            ({"role": "student", "handle": "a", "email": "a@example.com"},
-             "not both"),
-            ({"role": "student", "handle": "with space"}, "a handle may use"),
-            ({"role": "student", "handle": "looks@like.email"},
-             "that handle is an email address"),
+            ({"role": "wizard", "email": "x@example.com"}, "role must be one of"),
+            ({"role": "student"}, "an email is required"),
+            ({"role": "student", "email": ""}, "an email is required"),
+            ({"role": "student", "email": "   "}, "an email is required"),
             ({"role": "student", "email": "not-an-email"},
              "that does not look like an email address"),
-            ({"role": "student", "handle": "greek101-smith"},
-             "that handle is already taken"),
-            ({"role": "professor", "handle": "prof-x", "professor": 999},
+            ({"role": "student", "email": "smith@example.com"},
+             "already a member of this organization"),
+            ({"role": "professor", "email": "prof-x@example.com", "professor": 999},
              "only a student has a professor"),
-            ({"role": "student", "handle": "s-x", "professor": 999},
+            ({"role": "student", "email": "s-x@example.com", "professor": 999},
              "not a professor in this organization"),
         ],
     )
@@ -355,24 +353,16 @@ class TestProvisioning:
         assert response.status_code == 400
         assert expected in " ".join(response.json()["errors"])
 
-    @pytest.mark.parametrize(
-        "payload, expected",
-        [
-            ({"role": "student", "handle": "h" * 200}, "a handle may be at most"),
-            ({"role": "student", "email": "a" * 300 + "@example.com"},
-             "an email address may be at most"),
-        ],
-    )
     def test_a_value_the_database_would_refuse_is_refused_here(
-        self, classroom, as_admin, payload, expected
+        self, classroom, as_admin
     ):
         """SQLite ignores a varchar limit and PostgreSQL — production — raises
         DataError. A length nothing checked would 201 in development and 500
         in the deployment, leaving a row that cannot be migrated."""
+        payload = {"role": "student", "email": "a" * 300 + "@example.com"}
         response = as_admin.post(members_url(classroom), payload, format="json")
         assert response.status_code == 400
-        assert expected in " ".join(response.json()["errors"])
-        assert User.objects.filter(username__startswith="h" * 20).count() == 0
+        assert "an email address may be at most" in " ".join(response.json()["errors"])
         assert User.objects.filter(username__startswith="a" * 20).count() == 0
 
     def test_invitations_are_rate_limited(self, classroom, as_admin, settings):
@@ -394,12 +384,6 @@ class TestProvisioning:
         assert codes[:3] == [201, 201, 201]
         assert codes[3:] == [429, 429]
         assert len(mail.outbox) == 3
-        # A learning account sends no mail, so it is never held up by this.
-        assert as_admin.post(
-            members_url(classroom),
-            {"role": "student", "handle": "greek101-nomail"},
-            format="json",
-        ).status_code == 201
 
     def test_one_address_cannot_be_invited_by_a_crowd(
         self, classroom, as_admin, as_professor, settings
@@ -445,24 +429,14 @@ class TestProvisioning:
         assert "IT Support" not in mail.outbox[0].body
         assert len(mail.outbox[0].subject) < 130
 
-    def test_a_weak_password_is_refused_before_the_account_is_made(
-        self, classroom, as_admin
-    ):
-        response = as_admin.post(
-            members_url(classroom),
-            {"role": "student", "handle": "greek101-weak", "password": "pass"},
-            format="json",
-        )
-        assert response.status_code == 400
-        assert not User.objects.filter(username="greek101-weak").exists()
-
     @pytest.mark.parametrize("who", ["student", "stranger"])
     def test_nobody_else_may_provision(self, classroom, client_for, who):
         response = client_for(getattr(classroom, who)).post(
-            members_url(classroom), {"role": "student", "handle": "x-y"}, format="json"
+            members_url(classroom), {"role": "student", "email": "x-y@example.com"},
+            format="json",
         )
         assert response.status_code == 403
-        assert not User.objects.filter(username="x-y").exists()
+        assert not User.objects.filter(email="x-y@example.com").exists()
 
 
 class TestMemberPatch:
@@ -564,7 +538,7 @@ class TestMemberPatch:
         )
         assert stepping_down.status_code == 200
 
-    def test_deactivating_a_learning_account_stops_it_signing_in(
+    def test_deactivating_a_provisioned_account_stops_it_signing_in(
         self, classroom, as_admin, set_policy, client_for
     ):
         """§2 does not say what deactivation MEANS; unless it bars the login it
@@ -589,7 +563,7 @@ class TestMemberPatch:
 
         refused = APIClient().post(
             "/api/auth/login",
-            {"login": "greek101-smith", "password": PASSWORD},
+            {"email": "smith@example.com", "password": PASSWORD},
             format="json",
         )
         assert refused.status_code == 400
@@ -606,7 +580,7 @@ class TestMemberPatch:
         assert classroom.student.is_active is True
         assert APIClient().post(
             "/api/auth/login",
-            {"login": "greek101-smith", "password": PASSWORD},
+            {"email": "smith@example.com", "password": PASSWORD},
             format="json",
         ).status_code == 200
 
@@ -635,46 +609,49 @@ class TestMemberPasswordReset:
     def url(self, classroom, membership) -> str:
         return f"{members_url(classroom)}/{membership.id}/reset-password"
 
-    def test_a_learning_account_gets_a_new_temporary_password(
+    def test_a_professor_sends_their_own_student_the_reset_mail(
         self, classroom, as_professor
     ):
         response = as_professor.post(
             self.url(classroom, classroom.student_m), {}, format="json"
         )
         assert response.status_code == 200
-        body = response.json()
-        assert body["sent"] is False
-        assert body["resetLink"] is None
-        temporary = body["temporaryPassword"]
+        assert response.json() == {"sent": True, "resetLink": None}
+        assert len(mail.outbox) == 1
+        assert mail.outbox[0].to == ["smith@example.com"]
+        # The old password stands until the student follows the link.
         classroom.student.refresh_from_db()
-        assert classroom.student.check_password(temporary)
-        assert mail.outbox == []
+        assert classroom.student.check_password(PASSWORD)
 
-    def test_a_chosen_password_is_set(self, classroom, as_admin):
-        body = as_admin.post(
-            self.url(classroom, classroom.student_m),
-            {"password": "handed-over-5"},
+        uid, token = uid_and_token(link_in(mail.outbox[0]))
+        from rest_framework.test import APIClient
+
+        visitor = APIClient()
+        assert visitor.post(
+            "/api/auth/password/reset",
+            {"uid": uid, "token": token, "password": "sams-new-word-19"},
             format="json",
-        ).json()
-        assert body["temporaryPassword"] == "handed-over-5"
-        classroom.student.refresh_from_db()
-        assert classroom.student.check_password("handed-over-5")
+        ).status_code == 200
+        assert visitor.post(
+            "/api/auth/login",
+            {"email": "smith@example.com", "password": "sams-new-word-19"},
+            format="json",
+        ).status_code == 200
 
-    def test_an_email_account_is_never_given_a_password_outright(
-        self, classroom, as_admin
-    ):
-        """§6: an email account gets the reset MAIL. Setting its password from
-        here and reading it back would turn "add a member" into a takeover."""
+    def test_nobody_is_given_a_password_outright(self, classroom, as_admin):
+        """§6: a provisioned account gets the reset MAIL and nothing else.
+        A password in the body is not a field this endpoint has — setting one
+        from here would turn "add a member" into a takeover."""
         response = as_admin.post(
             self.url(classroom, classroom.professor_m),
             {"password": "taken-over-9"},
             format="json",
         )
-        assert response.status_code == 400
-        assert "sets its own password" in " ".join(response.json()["errors"])
+        assert response.status_code == 200
+        assert response.json() == {"sent": True, "resetLink": None}
         classroom.professor.refresh_from_db()
         assert classroom.professor.check_password(PASSWORD)
-        assert mail.outbox == []
+        assert not classroom.professor.check_password("taken-over-9")
 
     def test_an_account_the_org_did_not_make_is_not_touched_at_all(
         self, classroom, as_admin, individual, client_for
@@ -717,7 +694,7 @@ class TestMemberPasswordReset:
         body = as_admin.post(
             self.url(classroom, classroom.professor_m), {}, format="json"
         ).json()
-        assert body == {"sent": True, "resetLink": None, "temporaryPassword": None}
+        assert body == {"sent": True, "resetLink": None}
         assert len(mail.outbox) == 1
         assert mail.outbox[0].to == ["prof@example.com"]
 
@@ -897,7 +874,7 @@ class TestTheTakeoverPath:
             document=small_document(john_1_1),
             notes="private thoughts",
         )
-        attacker = make_user("mallory", email="mallory@example.com", name="Mal Lory")
+        attacker = make_user("mallory@example.com", name="Mal Lory")
         client = client_for(attacker)
 
         org = Organization.objects.create(name="Free Greek", slug="free-greek")
@@ -945,8 +922,8 @@ class TestTheTakeoverPath:
         victim.refresh_from_db()
         assert victim.check_password(PASSWORD)
         # 4. and the address discloses nothing about who holds it: the answer
-        #    is the four neutral keys, the same as for an unknown address.
-        assert set(added.json()) == {"invited", "membershipId", "inviteLink", "temporaryPassword"}
+        #    is the three neutral keys, the same as for an unknown address.
+        assert set(added.json()) == {"invited", "membershipId", "inviteLink"}
 
 
 class TestOrgIsolation:

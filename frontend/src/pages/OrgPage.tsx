@@ -1,11 +1,8 @@
 // The administrator's page (accounts-spec §8): the members of one organization,
-// what each of them is, and the two ways to make a new account —
-//
-//   by email   an invitation carrying a set-password link. When mail cannot be
-//              sent, the server hands the link back instead, and it is shown
-//              here, once, for the admin to pass on.
-//   by handle  a LEARNING ACCOUNT: no email at all, so its password is set by
-//              a person. One is generated when none is typed, and shown here.
+// what each of them is, and the one way to make a new account — by email. An
+// address that already has an account is invited; a new one is made and sent
+// a set-password mail. When mail cannot be sent, the server hands the link
+// back instead, and it is shown here, once, for the admin to pass on.
 //
 // Nothing on this page reads anybody's analyses: that is the professor's, and
 // it lives at /teach.
@@ -19,9 +16,8 @@ import {
   resetMemberPassword,
   updateOrgMember,
 } from '../api';
-import type { OrgMember, ProvisionSecrets, Role } from '../types';
-import { isInvited } from '../types';
-import { displayName, signIn } from '../accounts';
+import type { OrgMember, Role } from '../types';
+import { displayName } from '../accounts';
 
 const ROLE_WORD: Record<Role, string> = {
   admin: 'Administrator',
@@ -37,44 +33,34 @@ export function memberName(m: OrgMember): string {
 }
 
 /**
- * Whether this organization may set the member's password at all.
- *
- * A learning account has no inbox, so a person resets it — that is the whole
- * point of the account kind. An account the org PROVISIONED by email gets the
- * reset mail. An account somebody brought with them when they joined is
- * neither: it is theirs, and they reset it from the sign-in page.
+ * Whether this organization may reset the member's password at all: only an
+ * account the org PROVISIONED gets the reset mail from here. An account
+ * somebody brought with them when they joined is theirs, and they reset it
+ * from the sign-in page. A pending invitation is not a member yet.
  */
-export function resetLabel(m: OrgMember): string | null {
-  if (m.pending) return null;
-  if (!m.hasEmail) return 'New temporary password';
-  return m.provisioned ? 'Send reset link' : null;
+export function canReset(m: OrgMember): boolean {
+  return m.provisioned && !m.pending;
+}
+
+/** A set-password link the server handed back because mail could not be sent. */
+export interface LinkHandout {
+  who: string;
+  link: string;
 }
 
 /**
- * The one thing that is shown ONCE and never again: an invitation link (the
- * provisioning flow calls it `inviteLink`, the reset flow `resetLink` — the
- * same thing, so both are read), or a temporary password.
+ * The one thing that is shown ONCE and never again: the set-password link
+ * (the provisioning flow calls it `inviteLink`, the reset flow `resetLink` —
+ * the same thing). Rendered only when the server returned one.
  */
-export function HandOut({ who, secrets }: { who: string; secrets: ProvisionSecrets }) {
-  // The API sends these as nulls rather than leaving them out, so an absent
-  // secret is a null here, not an undefined.
-  const link = secrets.inviteLink ?? secrets.resetLink ?? null;
-  const temporary = secrets.temporaryPassword ?? null;
-  if (link === null && temporary === null) return null;
+export function HandOut({ who, link }: LinkHandout) {
   return (
     <div className="handout" role="status">
       <strong>{who}</strong>
-      {link !== null && (
-        <p className="handout-line">
-          Set-password link (mail could not be sent — pass it on yourself):{' '}
-          <code className="handout-value">{link}</code>
-        </p>
-      )}
-      {temporary !== null && (
-        <p className="handout-line">
-          Temporary password: <code className="handout-value">{temporary}</code>
-        </p>
-      )}
+      <p className="handout-line">
+        Set-password link (mail could not be sent — pass it on yourself):{' '}
+        <code className="handout-value">{link}</code>
+      </p>
       <p className="muted">This is shown once. Copy it now.</p>
     </div>
   );
@@ -85,17 +71,15 @@ export default function OrgPage() {
   const [members, setMembers] = useState<OrgMember[] | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  const [handout, setHandout] = useState<{ who: string; secrets: ProvisionSecrets } | null>(null);
-  // What just happened, for the case where there is no secret to hand over —
-  // an invitation that went out by mail, or one waiting to be accepted.
+  const [handout, setHandout] = useState<LinkHandout | null>(null);
+  // What just happened, for the usual case where there is no link to hand
+  // over — the mail went out.
   const [notice, setNotice] = useState<string | null>(null);
 
   // The provisioning form.
-  const [kind, setKind] = useState<'email' | 'handle'>('email');
-  const [identifier, setIdentifier] = useState('');
+  const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [role, setRole] = useState<Role>('student');
-  const [password, setPassword] = useState('');
   const [professor, setProfessor] = useState('');
 
   const load = useCallback(async () => {
@@ -119,28 +103,24 @@ export default function OrgPage() {
     setHandout(null);
     setNotice(null);
     try {
-      const who = identifier.trim();
+      const who = email.trim();
       const created = await createOrgMember(id, {
         role,
-        ...(kind === 'email' ? { email: who } : { handle: who }),
+        email: who,
         ...(name.trim() === '' ? {} : { name: name.trim() }),
-        // A temporary password belongs to a LEARNING account only; the field
-        // is hidden for email accounts, so nothing typed there may ride along.
-        ...(kind === 'handle' && password !== '' ? { password } : {}),
         ...(role === 'student' && professor !== '' ? { professor: Number(professor) } : {}),
       });
-      if (isInvited(created)) {
-        // One wording whether or not the address already had an account —
-        // the answer is deliberately the same either way (see types.ts).
-        setHandout(created.inviteLink ? { who, secrets: created } : null);
-        setNotice(`Invited ${who} — they join when they accept, or when they set their password.`);
+      // One wording whether or not the address already had an account — the
+      // answer is deliberately the same either way (see types.ts).
+      if (created.inviteLink) {
+        setHandout({ who, link: created.inviteLink });
       } else {
-        setHandout({ who: memberName(created), secrets: created });
-        setNotice(`${memberName(created)} added.`);
+        setNotice(
+          `${who} has been sent an email to set their password — or, if they already had an account, an invitation to accept.`,
+        );
       }
-      setIdentifier('');
+      setEmail('');
       setName('');
-      setPassword('');
       await load();
     } catch (err) {
       setErrors(errorMessages(err));
@@ -165,13 +145,13 @@ export default function OrgPage() {
   const reset = async (m: OrgMember) => {
     setErrors([]);
     setHandout(null);
+    setNotice(null);
     try {
       const out = await resetMemberPassword(id, m.membershipId);
-      // An email account whose mail went out has nothing to show; anything
-      // else — a link that could not be mailed, a new temporary password —
-      // is shown here and nowhere else, ever.
-      if (out.sent === true) window.alert(`A reset link is on its way to ${memberName(m)}.`);
-      setHandout({ who: memberName(m), secrets: out });
+      // The mail went out and there is nothing to show — or it could not be
+      // sent, and the link is shown here and nowhere else, ever.
+      if (out.resetLink) setHandout({ who: memberName(m), link: out.resetLink });
+      else setNotice(`A reset link is on its way to ${memberName(m)}.`);
     } catch (err) {
       setErrors(errorMessages(err));
     }
@@ -192,7 +172,7 @@ export default function OrgPage() {
           {notice}
         </p>
       )}
-      {handout !== null && <HandOut who={handout.who} secrets={handout.secrets} />}
+      {handout !== null && <HandOut who={handout.who} link={handout.link} />}
       {members === null && <p className="muted">Loading…</p>}
       {members !== null && members.length === 0 && <p className="muted">No members yet.</p>}
       {members !== null && members.length > 0 && (
@@ -200,7 +180,7 @@ export default function OrgPage() {
           <thead>
             <tr>
               <th scope="col">Name</th>
-              <th scope="col">Sign-in</th>
+              <th scope="col">Email</th>
               <th scope="col">Role</th>
               <th scope="col">Professor</th>
               <th scope="col">Status</th>
@@ -216,7 +196,7 @@ export default function OrgPage() {
                     <span className="muted"> — invited, not yet accepted</span>
                   )}
                 </td>
-                <td className="muted">{signIn(m.user) ?? '—'}</td>
+                <td className="muted">{m.user.email}</td>
                 <td>
                   <label>
                     <span className="visually-hidden">Role for {memberName(m)}</span>
@@ -264,14 +244,13 @@ export default function OrgPage() {
                   </button>
                 </td>
                 <td>
-                  {resetLabel(m) === null ? (
-                    <span className="muted">
-                      {m.pending ? 'awaiting their answer' : 'their own account'}
-                    </span>
-                  ) : (
+                  {canReset(m) ? (
                     <button type="button" onClick={() => void reset(m)}>
-                      {resetLabel(m)}
+                      Send reset link
                     </button>
+                  ) : (
+                    // Their password is their own (or they have not joined yet).
+                    <span className="muted">—</span>
                   )}
                 </td>
               </tr>
@@ -283,40 +262,14 @@ export default function OrgPage() {
       <section className="card">
         <h2>Add a member</h2>
         <form onSubmit={(event) => void provision(event)}>
-          <div className="form-row">
-            <span className="form-label">Account kind</span>
-            <div className="level-toggle" role="radiogroup" aria-label="Account kind">
-              <button
-                type="button"
-                role="radio"
-                aria-checked={kind === 'email'}
-                className={kind === 'email' ? 'on' : ''}
-                onClick={() => {
-                  setKind('email');
-                  setPassword(''); // the field disappears; so must its value
-                }}
-              >
-                By email
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={kind === 'handle'}
-                className={kind === 'handle' ? 'on' : ''}
-                onClick={() => setKind('handle')}
-              >
-                Learning account
-              </button>
-            </div>
-          </div>
           <label className="form-row">
-            <span className="form-label">{kind === 'email' ? 'Email' : 'Login handle'}</span>
+            <span className="form-label">Email</span>
             <input
               className="form-input"
-              type={kind === 'email' ? 'email' : 'text'}
-              value={identifier}
-              placeholder={kind === 'email' ? 'student@example.edu' : 'greek101-smith'}
-              onChange={(event) => setIdentifier(event.target.value)}
+              type="email"
+              value={email}
+              placeholder="student@example.edu"
+              onChange={(event) => setEmail(event.target.value)}
             />
           </label>
           <label className="form-row">
@@ -358,22 +311,11 @@ export default function OrgPage() {
               </select>
             </label>
           )}
-          {kind === 'handle' && (
-            <label className="form-row">
-              <span className="form-label">Temporary password</span>
-              <input
-                className="form-input"
-                value={password}
-                placeholder="Leave empty and one is generated"
-                onChange={(event) => setPassword(event.target.value)}
-              />
-            </label>
-          )}
           <div className="row-actions">
             <button
               type="submit"
               className="primary"
-              disabled={busy || identifier.trim() === ''}
+              disabled={busy || email.trim() === ''}
             >
               Add member
             </button>

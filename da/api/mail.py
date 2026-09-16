@@ -5,15 +5,14 @@ SPA's ``/reset-password/<uid>/<token>`` route. An invitation is a reset that
 has never been set.
 
 Nothing here raises. When mail cannot go out — no SMTP provider configured
-yet, the account has no address — the caller is told so and hands the link (or
-a temporary password) to the admin who provisioned the account, which is what
-§3 and §10.1 ask for: an unconfigured mailer must never block provisioning.
+yet — the caller is told so and hands the link to the admin who provisioned
+the account, which is what §3 and §10.1 ask for: an unconfigured mailer must
+never block provisioning.
 """
 
 from __future__ import annotations
 
 import logging
-import secrets
 
 from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
@@ -22,15 +21,6 @@ from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 
 log = logging.getLogger(__name__)
-
-#: Characters for a generated temporary password: no l/1/O/0, because these
-#: get read aloud and written on whiteboards.
-_ALPHABET = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-
-
-def temporary_password(length: int = 12) -> str:
-    """A password an admin can hand to a student out loud."""
-    return "".join(secrets.choice(_ALPHABET) for _ in range(length))
 
 
 def frontend_url(path: str) -> str:
@@ -48,9 +38,7 @@ def reset_link(user) -> str:
 
 def _send(user, subject: str, body: str) -> bool:
     """True when the mail went out; False (logged, never raised) when it could
-    not — no address, or no working mail backend."""
-    if not user.email:
-        return False
+    not — no working mail backend."""
     try:
         sent = send_mail(
             subject,
@@ -88,7 +76,7 @@ def send_invitation(user, link: str, *, organization_name: str) -> bool:
     organization's name is the one variable worth carrying, and it is cut to
     :data:`NAME_LIMIT`.
     """
-    name = (user.get_full_name() or "").strip() or user.username
+    name = (user.get_full_name() or "").strip() or user.email
     organization = _short(organization_name)
     return _send(
         user,
@@ -96,7 +84,7 @@ def send_invitation(user, link: str, *, organization_name: str) -> bool:
         f"Hello {name},\n\n"
         f"An account has been created for you in {organization} on datool.\n\n"
         f"Set your password to get started:\n\n{link}\n\n"
-        f"Your login is {user.email or user.username}.\n\n"
+        f"Your login is {user.email}.\n\n"
         "If you were not expecting this, you can ignore this message — the "
         "account cannot be used until a password is set.\n",
     )
@@ -110,7 +98,7 @@ def send_org_invitation(user, *, organization_name: str) -> bool:
     one, and nothing about it changes until they sign in as themselves and
     accept. That is the whole difference between joining and being taken over.
     """
-    name = (user.get_full_name() or "").strip() or user.username
+    name = (user.get_full_name() or "").strip() or user.email
     organization = _short(organization_name)
     return _send(
         user,
@@ -127,7 +115,7 @@ def send_org_invitation(user, *, organization_name: str) -> bool:
 
 def send_password_reset(user, link: str) -> bool:
     """The "I forgot my password" mail, and an admin-triggered reset."""
-    name = (user.get_full_name() or "").strip() or user.username
+    name = (user.get_full_name() or "").strip() or user.email
     return _send(
         user,
         "Reset your datool password",

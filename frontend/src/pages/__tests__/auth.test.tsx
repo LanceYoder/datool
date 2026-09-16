@@ -4,7 +4,7 @@
 // send, where they go next, and what they say when the server refuses.
 //
 // The api module is mocked whole (the TextFlowPanel test's pattern), so these
-// are about the PAGES — the field that takes an email or a handle, the `next`
+// are about the PAGES — the email field, the `next`
 // a bounced request left behind, the reset that hands you on to sign in — and
 // never about fetch.
 
@@ -16,7 +16,6 @@ import type { Me } from '../../types';
 const ME: Me = {
   id: 1,
   email: 'ada@example.com',
-  handle: null,
   name: 'Ada',
   memberships: [],
   invitations: [],
@@ -99,17 +98,17 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('/login', () => {
-  it('takes an email OR a handle in the one field, and posts it as `login`', async () => {
+  it('takes an email and a password, and posts them as {email, password}', async () => {
     api.login.mockResolvedValue(ME);
     mount(<LoginPage />, '/login', '/login');
     await screen.findByRole('button', { name: 'Sign in' });
 
-    type('Email or login handle', 'greek101-smith');
+    type('Email', 'ada@example.com');
     type('Password', 'hunter2');
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
     await waitFor(() => {
-      expect(api.login).toHaveBeenCalledWith({ login: 'greek101-smith', password: 'hunter2' });
+      expect(api.login).toHaveBeenCalledWith({ email: 'ada@example.com', password: 'hunter2' });
     });
   });
 
@@ -118,7 +117,7 @@ describe('/login', () => {
     mount(<LoginPage />, '/login?next=%2Fanalysis%2F7', '/login');
     await screen.findByRole('button', { name: 'Sign in' });
 
-    type('Email or login handle', 'ada');
+    type('Email', 'ada@example.com');
     type('Password', 'x');
     // The session answers with the user once the sign-in has happened.
     api.getMe.mockResolvedValue(ME);
@@ -132,13 +131,13 @@ describe('/login', () => {
     mount(<LoginPage />, '/login', '/login');
     await screen.findByRole('button', { name: 'Sign in' });
 
-    type('Email or login handle', 'ada');
+    type('Email', 'ada@example.com');
     type('Password', 'nope');
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 
     expect(await screen.findByText('That password is not right.')).toBeTruthy();
     // Still on the form, with what was typed.
-    expect(field('Email or login handle').value).toBe('ada');
+    expect(field('Email').value).toBe('ada@example.com');
   });
 
   it('will not submit an empty form', async () => {

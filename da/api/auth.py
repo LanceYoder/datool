@@ -36,7 +36,7 @@ from .throttles import (
 
 #: The backend a freshly created user is logged in with — login() cannot guess
 #: when the user did not come back from authenticate().
-LOGIN_BACKEND = "da.auth_backends.EmailOrHandleBackend"
+LOGIN_BACKEND = "da.auth_backends.EmailBackend"
 
 User = get_user_model()
 
@@ -49,13 +49,14 @@ def body(request) -> dict:
     return request.data if isinstance(request.data, dict) else {}
 
 
-#: The column limits an address and a handle must fit. An email account's
-#: address is ALSO its login, so it has to fit the narrower of the two — and
-#: it has to be refused here, in the project's error shape, rather than 500 on
-#: PostgreSQL and silently corrupt on SQLite (which ignores varchar limits).
-HANDLE_MAX = User._meta.get_field("username").max_length
+#: The column limits an address must fit. An account's address is ALSO its
+#: login (``username`` holds it lowercased), so it has to fit the narrower of
+#: the two columns — and it has to be refused here, in the project's error
+#: shape, rather than 500 on PostgreSQL and silently corrupt on SQLite (which
+#: ignores varchar limits).
+USERNAME_MAX = User._meta.get_field("username").max_length
 EMAIL_MAX = User._meta.get_field("email").max_length
-ADDRESS_MAX = min(HANDLE_MAX, EMAIL_MAX)
+ADDRESS_MAX = min(USERNAME_MAX, EMAIL_MAX)
 
 
 def clean_email(raw) -> str:
@@ -71,7 +72,7 @@ def clean_email(raw) -> str:
 
 def email_taken(email: str) -> bool:
     """An address already in use — as somebody's address OR somebody's login,
-    since an email account's handle IS its address."""
+    since an account's login IS its address."""
     return (
         User.objects.filter(email__iexact=email).exists()
         or User.objects.filter(username__iexact=email).exists()
@@ -147,25 +148,25 @@ class RegisterView(CsrfMixin, APIView):
 
 
 class LoginView(CsrfMixin, APIView):
-    """``POST /api/auth/login {login, password}`` — login is an email OR a
-    handle; which one matched is never disclosed. Every attempt counts against
-    the rate, right or wrong: the bucket is what stands between a teacher-issued
-    temporary password and a script."""
+    """``POST /api/auth/login {email, password}`` — whether the address is
+    known is never disclosed. Every attempt counts against the rate, right or
+    wrong: the bucket is what stands between a classroom's passwords and a
+    script."""
 
     throttle_classes = [LoginByAddressThrottle, LoginByAccountThrottle]
 
     def post(self, request):
         payload = body(request)
-        credential = payload.get("login")
+        email = payload.get("email")
         password = payload.get("password")
-        if not isinstance(credential, str) or not credential.strip():
-            return errors(["login is required"])
+        if not isinstance(email, str) or not email.strip():
+            return errors(["email is required"])
         if not isinstance(password, str) or not password:
             return errors(["password is required"])
-        user = authenticate(request, username=credential.strip(), password=password)
+        user = authenticate(request, username=email.strip(), password=password)
         if user is None:
             return errors(
-                ["that login and password do not match an account"],
+                ["that email and password do not match an account"],
                 status.HTTP_400_BAD_REQUEST,
             )
         login(request, user)

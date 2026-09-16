@@ -79,7 +79,7 @@ class Command(BaseCommand):
                 link = None
             else:
                 if email_taken(email):
-                    raise CommandError(f"{email} is already in use as a login handle")
+                    raise CommandError(f"{email} is already in use as a login")
                 user = User(username=email.lower(), email=email)
                 set_name(user, options["admin_name"] or None)
                 user.set_unusable_password()  # the link below is how they set one

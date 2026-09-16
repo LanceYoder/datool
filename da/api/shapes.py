@@ -10,18 +10,16 @@ from ..policies import effective_policy
 
 
 def user_json(user) -> dict:
-    """The person: ``handle`` is the login of record, ``email`` may be empty
-    (a learning account has none)."""
+    """The person: ``email`` is the login (every account has one)."""
     return {
         "id": user.id,
-        "email": user.email or "",
-        "handle": user.username,
+        "email": user.email,
         "name": (user.get_full_name() or "").strip(),
     }
 
 
 def invited_json(user) -> dict:
-    """The same four keys for somebody who has been INVITED and has not
+    """The same three keys for somebody who has been INVITED and has not
     accepted: the address the invitation was sent to, and nothing else.
 
     An organization's roster is not a directory. Anyone signed in may make an
@@ -29,7 +27,7 @@ def invited_json(user) -> dict:
     holder's name and user id, that would be a lookup service for every
     account on the site. Their own name appears here the moment they accept.
     """
-    return {"id": None, "email": user.email or "", "handle": "", "name": ""}
+    return {"id": None, "email": user.email, "name": ""}
 
 
 def professor_json(professor: Membership | None) -> dict | None:
@@ -82,7 +80,6 @@ def member_json(membership: Membership) -> dict:
         "role": membership.role,
         "professor": professor_json(membership.professor),
         "active": membership.active,
-        "hasEmail": bool(membership.user.email),
         "policyOverride": membership.policy_override,
         "pending": membership.pending,
         # Whether this organization made the account — which decides whether

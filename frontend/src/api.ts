@@ -6,14 +6,14 @@ import type {
   Document,
   FirstPassResult,
   FirstPassTier,
+  InvitedMember,
   Me,
   MemberPolicyResult,
   Membership,
   OrgMember,
   Policy,
   PolicyOverride,
-  ProvisionResult,
-  ResetPasswordResult,
+  ResetResult,
   Role,
   TaxonomyEntry,
   TextFlow,
@@ -292,8 +292,8 @@ export function register(input: {
   return request<Me>('/api/auth/register', 'POST', input);
 }
 
-/** `login` is the email OR the handle — the server's backend tries both. */
-export function login(input: { login: string; password: string }): Promise<Me> {
+/** Every account signs in by email. */
+export function login(input: { email: string; password: string }): Promise<Me> {
   return request<Me>('/api/auth/login', 'POST', input);
 }
 
@@ -352,24 +352,22 @@ export function listOrgMembers(orgId: string | number): Promise<OrgMember[]> {
 }
 
 /**
- * Provision an account: `email` for one that gets an invitation mail, or
- * `handle` for a learning account with no email at all. The answer may carry
- * an invite link (mail could not be sent) or a temporary password (a handle
- * account made without one) — both to be shown to the provisioner once.
+ * Provision an account by email: an address that already has an account is
+ * invited; a new one is made and sent its set-password mail. The answer may
+ * carry the invite link instead (mail could not be sent) — to be shown to the
+ * provisioner once.
  */
 export function createOrgMember(
   orgId: string | number,
   input: {
     role: Role;
-    email?: string;
-    handle?: string;
+    email: string;
     name?: string;
-    password?: string;
     /** The professor's MEMBERSHIP id, for a student being assigned at once. */
     professor?: number | null;
   },
-): Promise<ProvisionResult> {
-  return request<ProvisionResult>(
+): Promise<InvitedMember> {
+  return request<InvitedMember>(
     `/api/orgs/${encodeURIComponent(String(orgId))}/members`,
     'POST',
     input,
@@ -390,18 +388,18 @@ export function updateOrgMember(
 }
 
 /**
- * Admin, or the student's own professor: set a handle account's password (or
- * have one generated), or send an email account its reset mail.
+ * Admin, or the student's own professor: send an account this organization
+ * PROVISIONED its reset mail. The link comes back only when mail could not be
+ * sent. A member who joined with their own account is a 403 — their password
+ * is their own.
  */
 export function resetMemberPassword(
   orgId: string | number,
   membershipId: number,
-  password?: string,
-): Promise<ResetPasswordResult> {
-  return request<ResetPasswordResult>(
+): Promise<ResetResult> {
+  return request<ResetResult>(
     `/api/orgs/${encodeURIComponent(String(orgId))}/members/${membershipId}/reset-password`,
     'POST',
-    password === undefined ? {} : { password },
   );
 }
 

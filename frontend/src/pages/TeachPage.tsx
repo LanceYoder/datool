@@ -20,10 +20,9 @@ import {
   setOrgPolicy,
 } from '../api';
 import { POLICY_GROUPS, TIER_CHOICES } from '../policy';
-import type { FirstPassTier, OrgMember, Policy, PolicyOverride, ProvisionSecrets } from '../types';
-import { isInvited } from '../types';
-import { signIn } from '../accounts';
-import { HandOut, memberName } from './OrgPage';
+import type { FirstPassTier, OrgMember, Policy, PolicyOverride } from '../types';
+import { HandOut, canReset, memberName } from './OrgPage';
+import type { LinkHandout } from './OrgPage';
 
 /** Read a dotted policy path out of an override, or undefined when unset. */
 function overrideValue(override: PolicyOverride | null, key: string): boolean | undefined {
@@ -85,10 +84,12 @@ export default function TeachPage() {
   const [busy, setBusy] = useState(false);
   const [openStudent, setOpenStudent] = useState<number | null>(null);
   const [overrides, setOverrides] = useState<Record<number, PolicyOverride | null>>({});
-  const [handout, setHandout] = useState<{ who: string; secrets: ProvisionSecrets } | null>(null);
-  // A professor may make their own students (§6): handle or email, assigned to
+  const [handout, setHandout] = useState<LinkHandout | null>(null);
+  // What just happened when there is no link to hand over — the mail went out.
+  const [notice, setNotice] = useState<string | null>(null);
+  // A professor may make their own students (§6): by email, assigned to
   // themselves by the server.
-  const [newStudent, setNewStudent] = useState({ kind: 'handle' as 'handle' | 'email', id: '', name: '' });
+  const [newStudent, setNewStudent] = useState({ email: '', name: '' });
 
   const load = useCallback(async () => {
     try {
@@ -148,18 +149,24 @@ export default function TeachPage() {
     event.preventDefault();
     setErrors([]);
     setHandout(null);
+    setNotice(null);
     try {
-      const who = newStudent.id.trim();
+      const who = newStudent.email.trim();
       const created = await createOrgMember(id, {
         role: 'student',
-        ...(newStudent.kind === 'email' ? { email: who } : { handle: who }),
+        email: who,
         ...(newStudent.name.trim() === '' ? {} : { name: newStudent.name.trim() }),
       });
-      // An email invitation answers with no member row (deliberately — see
-      // types.ts); the roster reload below shows the pending student.
-      if (isInvited(created)) setHandout(created.inviteLink ? { who, secrets: created } : null);
-      else setHandout({ who: memberName(created), secrets: created });
-      setNewStudent({ ...newStudent, id: '', name: '' });
+      // The answer carries no member row (deliberately — see types.ts); the
+      // roster reload below shows the new student.
+      if (created.inviteLink) {
+        setHandout({ who, link: created.inviteLink });
+      } else {
+        setNotice(
+          `${who} has been sent an email to set their password — or, if they already had an account, an invitation to accept.`,
+        );
+      }
+      setNewStudent({ email: '', name: '' });
       await load();
     } catch (err) {
       setErrors(errorMessages(err));
@@ -169,8 +176,11 @@ export default function TeachPage() {
   const resetStudent = async (m: OrgMember) => {
     setErrors([]);
     setHandout(null);
+    setNotice(null);
     try {
-      setHandout({ who: memberName(m), secrets: await resetMemberPassword(id, m.membershipId) });
+      const out = await resetMemberPassword(id, m.membershipId);
+      if (out.resetLink) setHandout({ who: memberName(m), link: out.resetLink });
+      else setNotice(`A reset link is on its way to ${memberName(m)}.`);
     } catch (err) {
       setErrors(errorMessages(err));
     }
@@ -188,7 +198,12 @@ export default function TeachPage() {
           ))}
         </ul>
       )}
-      {handout !== null && <HandOut who={handout.who} secrets={handout.secrets} />}
+      {notice !== null && (
+        <p className="muted" role="status">
+          {notice}
+        </p>
+      )}
+      {handout !== null && <HandOut who={handout.who} link={handout.link} />}
       {members === null && <p className="muted">Loading…</p>}
       {members !== null && students.length === 0 && <p className="muted">No students yet.</p>}
       {students.length > 0 && (
@@ -200,7 +215,7 @@ export default function TeachPage() {
               <li key={m.membershipId} className="student-row">
                 <div className="student-line">
                   <span className="analysis-title">{memberName(m)}</span>
-                  <span className="muted">{signIn(m.user) ?? '—'}</span>
+                  <span className="muted">{m.user.email}</span>
                   {!m.active && <span className="muted">deactivated</span>}
                   {/* An invitation is not a student yet: they have agreed to
                       nothing, so there is nothing here to open, reset or
@@ -212,7 +227,7 @@ export default function TeachPage() {
                       <Link to={`/students/${m.membershipId}?org=${encodeURIComponent(id)}`}>
                         Analyses
                       </Link>
-                      {(m.provisioned || !m.hasEmail) && (
+                      {canReset(m) && (
                         <button type="button" onClick={() => void resetStudent(m)}>
                           Reset password
                         </button>
@@ -349,38 +364,14 @@ export default function TeachPage() {
       <section className="card">
         <h2>Add a student</h2>
         <form onSubmit={(event) => void addStudent(event)}>
-          <div className="form-row">
-            <span className="form-label">Account kind</span>
-            <div className="level-toggle" role="radiogroup" aria-label="Account kind">
-              <button
-                type="button"
-                role="radio"
-                aria-checked={newStudent.kind === 'handle'}
-                className={newStudent.kind === 'handle' ? 'on' : ''}
-                onClick={() => setNewStudent({ ...newStudent, kind: 'handle' })}
-              >
-                Learning account
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={newStudent.kind === 'email'}
-                className={newStudent.kind === 'email' ? 'on' : ''}
-                onClick={() => setNewStudent({ ...newStudent, kind: 'email' })}
-              >
-                By email
-              </button>
-            </div>
-          </div>
           <label className="form-row">
-            <span className="form-label">
-              {newStudent.kind === 'email' ? 'Email' : 'Login handle'}
-            </span>
+            <span className="form-label">Email</span>
             <input
               className="form-input"
-              value={newStudent.id}
-              placeholder={newStudent.kind === 'email' ? 'student@example.edu' : 'greek101-smith'}
-              onChange={(event) => setNewStudent({ ...newStudent, id: event.target.value })}
+              type="email"
+              value={newStudent.email}
+              placeholder="student@example.edu"
+              onChange={(event) => setNewStudent({ ...newStudent, email: event.target.value })}
             />
           </label>
           <label className="form-row">
@@ -392,7 +383,7 @@ export default function TeachPage() {
             />
           </label>
           <div className="row-actions">
-            <button type="submit" className="primary" disabled={newStudent.id.trim() === ''}>
+            <button type="submit" className="primary" disabled={newStudent.email.trim() === ''}>
               Add student
             </button>
           </div>

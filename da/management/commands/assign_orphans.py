@@ -14,20 +14,19 @@ much as the live ones, and one of them may be the row they mean to restore.
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
-from django.db.models import Q
 
 from da.models import Analysis
 
 
 class Command(BaseCommand):
-    help = "Assign every ownerless analysis to the given account (email or handle)."
+    help = "Assign every ownerless analysis to the account with the given email."
 
     def add_arguments(self, parser):
         parser.add_argument(
             "--to",
             required=True,
-            metavar="EMAIL|HANDLE",
-            help="the account that is to own them — its email or its login handle",
+            metavar="EMAIL",
+            help="the email of the account that is to own them",
         )
         parser.add_argument(
             "--dry-run",
@@ -56,18 +55,15 @@ class Command(BaseCommand):
                                f"to {user.username}")
         )
 
-    def _find(self, login: str):
+    def _find(self, email: str):
         User = get_user_model()
-        matches = list(
-            User.objects.filter(
-                Q(username__iexact=login.strip()) | Q(email__iexact=login.strip())
-            )
-        )
+        matches = list(User.objects.filter(email__iexact=email.strip()))
         if not matches:
-            raise CommandError(f"no account with the email or handle {login!r}")
+            raise CommandError(f"no account with the email {email!r}")
         if len(matches) > 1:
             names = ", ".join(u.username for u in matches)
             raise CommandError(
-                f"{login!r} matches more than one account ({names}) — name the handle"
+                f"{email!r} matches more than one account ({names}) — fix that "
+                "in the Django admin first"
             )
         return matches[0]

@@ -12,6 +12,13 @@ tiers and the reading aids — every editing gesture is always available (§5,
 for the gestures are gone from the code, the wire, and the stored policies
 (migration 0005).
 
+Amended 2026-09-16 (one ruling, "drop handle sign-ins"): every account is
+made by email and signs in by email — the second way of provisioning this
+document had invented is gone from the code, the wire, the commands and
+the UI. "Learning account" simply meant a student account and "regular
+account" a professor account: the roles that already exist (§2, §3, §6,
+§8, §9).
+
 ## 1. What exists today (the ground)
 
 - Django 5.2 + DRF 3.18; `django.contrib.auth`/`sessions`/`admin` installed
@@ -41,16 +48,15 @@ for the gestures are gone from the code, the wire, and the stored policies
   - `professor` — has students; sets teaching policies; may OPEN (read)
     their students' analyses **(default: read-only; editing a student's
     work stays the student's)**.
-  - `student` — a **learning account**: works under a policy set by their
-    professor. Assigned to exactly one professor (or none yet).
+  - `student` — works under a policy set by their professor. Assigned to
+    exactly one professor (or none yet).
 - **Provisioned accounts.** Admins (and professors, for their own
-  students) create accounts two ways:
-  - **by email** — an invitation email carries a set-password link (the
-    password-reset machinery), or
-  - **learning account without email** — a login handle (e.g.
-    `greek101-smith`) plus a temporary password the admin/professor hands
-    out; the account has no email, so its password is reset BY the
-    professor/admin, never by email. This is the "learning account".
+  students) create accounts one way: **by email**. The person is sent an
+  invitation mail carrying a set-password link (the password-reset
+  machinery); until they follow it the account has no usable password.
+  An admin or professor can send a provisioned account a fresh reset link
+  at any time; nobody but its holder ever sets its password. (Ruled
+  2026-09-16: this is the ONE way — see the amendment note above.)
 - A user may hold memberships in several organizations; the same login
   works everywhere. Individuals may later be added to an org.
 
@@ -62,8 +68,9 @@ for the gestures are gone from the code, the wire, and the stored policies
   taxonomy?) opt out explicitly. The SPA fetches `/api/auth/csrf` once,
   then sends `X-CSRFToken` on every mutating request; `api.ts` learns
   `credentials: 'same-origin'` and the header.
-- **Login by email OR handle** + password (custom backend; `username`
-  stores the handle, or the email for email accounts).
+- **Login by email** + password (`da/auth_backends.py: EmailBackend`,
+  matching `email` case-insensitively; `username` stores the lowercased
+  address as the login of record). Every account has an email.
 - **Password reset by email**: Django's token flow — `POST
   /api/auth/password/forgot {email}` always answers 200; the mail links to
   `/reset-password/<uid>/<token>`; `POST /api/auth/password/reset` sets it.
@@ -149,9 +156,9 @@ Auth (public unless noted):
 - `GET auth/csrf` → sets csrftoken cookie, `{ok:true}`.
 - `POST auth/register {email, password, name?}` → creates individual, logs
   in, returns `me`.
-- `POST auth/login {login, password}` (login = email or handle) → `me`.
+- `POST auth/login {email, password}` → `me`.
 - `POST auth/logout` (auth) → 204.
-- `GET auth/me` (auth) → `{id, email, handle, name, memberships:[{
+- `GET auth/me` (auth) → `{id, email, name, memberships:[{
   membershipId, org:{id,name,slug}, role, professor?:{id,name}, active}],
   invitations:[{membershipId, org, role}], policy: Policy|null, isStaff}` —
   `memberships` holds only ACCEPTED memberships; `invitations` the pending
@@ -174,16 +181,18 @@ Organizations (auth):
   on `/account`, exactly as provisioning by email does.
 - `GET orgs/mine` → memberships with roles.
 - `GET orgs/<id>/members` (admin, or professor: only their students +
-  themselves) → `[{membershipId, user:{id,email,handle,name}, role,
-  professor, active, hasEmail}]`.
-- `POST orgs/<id>/members {role, email?|handle?, name?, password?,
-  professor?}` (admin; professor may create students assigned to
-  themselves). With a HANDLE → the member row + `temporaryPassword`. With
-  an EMAIL → `{invited: true, membershipId, inviteLink, temporaryPassword:
-  null}` — the SAME shape whether the address already had an account (a
-  pending invitation was created) or not (a new account; `inviteLink` is
-  non-null only when mail could not be sent), so the form cannot be used to
-  discover who holds an account. The roster does show `pending` /
+  themselves) → `[{membershipId, user:{id,email,name}, role, professor,
+  active, policyOverride, pending, provisioned}]`. A PENDING row's `user`
+  is `{id: null, email, name: ""}` — the address the invitation went to
+  and nothing else.
+- `POST orgs/<id>/members {role, email, name?, professor?}` (admin;
+  professor may create students assigned to themselves) → 201
+  `{invited: true, membershipId, inviteLink}` — the SAME shape whether the
+  address already had an account (a pending invitation was created) or not
+  (a new account with no usable password, and the set-password mail;
+  `inviteLink` is non-null only when mail could not be sent), so the form
+  cannot be used to discover who holds an account. A body without an email
+  is a 400 ("an email is required"). The roster does show `pending` /
   `provisioned` per row (the teaching page needs them); the per-caller and
   per-target invitation throttles are what keep that from being a lookup
   service.
@@ -192,11 +201,12 @@ Organizations (auth):
   password/change 10/min per user; invitations 40/day per caller and per
   target. All env-tunable (`DATOOL_*_RATE`), all answering 429 `{errors}`.
 - `PATCH orgs/<id>/members/<mid> {role?, professor?, active?}` (admin).
-- `POST orgs/<id>/members/<mid>/reset-password {password?}` (admin, or the
-  student's professor) — branches on the TARGET, never on the caller: an
-  account WITH an email only ever gets a reset MAIL (the caller can never
-  set its password); only a handle account gets a temporary password.
-  Deactivating (`active: false`) a PROVISIONED account bars its login; a
+- `POST orgs/<id>/members/<mid>/reset-password` (no body; admin, or the
+  student's professor) → 200 `{sent, resetLink}` for an account this org
+  PROVISIONED: the reset mail goes out, and `resetLink` is non-null only
+  when it could not be sent. The caller can never set the password. A
+  member who joined with their own account is a 403 — they reset it
+  themselves from the sign-in page. Deactivating (`active: false`) a PROVISIONED account bars its login; a
   member who joined with their own account simply leaves the class and its
   rules (they are an individual again). No change may leave an organization
   without an active admin.
@@ -222,7 +232,7 @@ Analyses (auth) — ownership added to the existing endpoints:
 - New migration adds Organization/Membership/TeachingPolicy and the two
   Analysis columns; `owner` stays nullable at the DB level so existing
   rows keep loading for staff.
-- Management command `assign_orphans --to <email|handle>` gives every
+- Management command `assign_orphans --to <email>` gives every
   ownerless analysis to that user (the analyst's own account, once it
   exists). Until run, ownerless analyses are visible only to staff via the
   Django admin. The check-script pattern (`da/scripts/`) is reused for a
@@ -255,6 +265,14 @@ default policy, per-student overrides, open a student's analysis),
   gesture handler in the editor, the text flow and the notes reads
   `useReadOnly()` — controls gone, keyboard side-channels closed, reading
   aids all present. It is the one place the gestures are withheld.
+- The roles are named "Administrator", "Professor", "Student" wherever the
+  UI speaks of them. The sign-in field is "Email". The admin's "Add a
+  member" form is email, name, role, professor; the professor's "Add a
+  student" form is email and name. After provisioning, the page says the
+  person has been sent a set-password email (or shows the invite link,
+  only when the server returned one). "Send reset link" appears on a
+  PROVISIONED member only, and shows the link only if the server returned
+  one; a member who joined with their own account gets no reset control.
 - Styling: new pages use the existing card/form/button classes so all four
   skins apply; forms are plain and short (email, password, one button).
   The site design (skin) is a SIGNED-IN reader's choice (ruled 2026-09-12):
@@ -270,9 +288,10 @@ default policy, per-student overrides, open a student's analysis),
 
 Not done until driven in the real browser: register → staff run
 `create_org` with that address → accept the invitation on /account →
-provision a professor (email, console-mail link) and a handle-based
-student with a temp password → assign the student → set a policy
-(`firstPass: [minimal]`, `aids.english: false`) → sign in as the student →
+provision a professor and a student, both by email (console-mail links) →
+assign the student → set a policy (`firstPass: [minimal]`,
+`aids.english: false`) → the student sets a password from their link and
+signs in with the email →
 New analysis shows no tier picker and proposes minimal → the editor hides
 English, and every gesture (connect, delete, relabel, split, blocks, flow,
 notes) still works → professor opens the student's analysis read-only →

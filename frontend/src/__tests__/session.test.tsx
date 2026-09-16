@@ -49,8 +49,7 @@ const { RequireAuth, SessionProvider, useSession } = await import('../session');
 
 const STUDENT: Me = {
   id: 2,
-  email: null,
-  handle: 'greek101-smith',
+  email: 'sam@example.edu',
   name: 'Sam Smith',
   memberships: [
     {
@@ -69,7 +68,6 @@ const PROFESSOR: Me = {
   ...STUDENT,
   id: 3,
   email: 'prof@example.edu',
-  handle: null,
   name: 'Prof Ada',
   memberships: [
     {

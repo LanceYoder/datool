@@ -1608,7 +1608,8 @@ div.error-box {
   margin-bottom: 0;
 }
 
-/* What is shown ONCE: an invitation link, or a temporary password. */
+/* What is shown ONCE: an invitation or reset link the server handed back
+   because mail could not be sent. */
 .handout {
   margin: 0.6rem 0;
   padding: 0.6rem 0.85rem;

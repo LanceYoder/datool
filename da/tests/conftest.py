@@ -88,15 +88,15 @@ def small_document(alignment) -> dict:
 
 @pytest.fixture
 def make_user(db):
-    """Make an account. A handle-only user (no ``email``) is a LEARNING
-    account; passing an email makes an ordinary one, whose handle IS the
-    address, exactly as the API's own provisioning does."""
+    """Make an account. Every account has an email, which is its login: the
+    ``username`` column holds it lowercased, exactly as the API's own
+    registration and provisioning do."""
 
-    def make(handle: str, *, email: str = "", name: str = "", password: str = PASSWORD,
+    def make(email: str, *, name: str = "", password: str = PASSWORD,
              is_staff: bool = False):
         User = get_user_model()
         user = User(
-            username=(email or handle).lower(),
+            username=email.lower(),
             email=email,
             first_name=name,
             is_staff=is_staff,
@@ -129,7 +129,7 @@ def anon_client() -> APIClient:
 @pytest.fixture
 def individual(make_user):
     """A self-registered individual: no organization, no policy."""
-    return make_user("solo", email="solo@example.com", name="Sol Ita")
+    return make_user("solo@example.com", name="Sol Ita")
 
 
 @pytest.fixture
@@ -147,8 +147,8 @@ def classroom(make_user):
     ``stranger`` belongs to a different org entirely.
 
     Every membership in Greek 101 is ``provisioned``: these are the accounts
-    the organization itself made, which is what lets an admin reset their
-    passwords and what makes deactivating one a lockout (see
+    the organization itself made, which is what lets an admin send them a
+    reset link and what makes deactivating one a lockout (see
     :class:`da.models.Membership`). An individual who merely joined is the
     ``joiner`` fixture below.
     """
@@ -157,12 +157,12 @@ def classroom(make_user):
     org = Organization.objects.create(name="Greek 101", slug="greek-101")
     other_org = Organization.objects.create(name="Hebrew 101", slug="hebrew-101")
 
-    admin = make_user("dean", email="dean@example.com", name="Dee Ann")
-    professor = make_user("prof", email="prof@example.com", name="Pro Fessor")
-    other_professor = make_user("prof2", email="prof2@example.com", name="Second Prof")
-    student = make_user("greek101-smith", name="Sam Smith")
-    other_student = make_user("greek101-jones", name="Jo Jones")
-    stranger = make_user("stranger", email="stranger@example.com", name="Stran Ger")
+    admin = make_user("dean@example.com", name="Dee Ann")
+    professor = make_user("prof@example.com", name="Pro Fessor")
+    other_professor = make_user("prof2@example.com", name="Second Prof")
+    student = make_user("smith@example.com", name="Sam Smith")
+    other_student = make_user("jones@example.com", name="Jo Jones")
+    stranger = make_user("stranger@example.com", name="Stran Ger")
 
     admin_m = Membership.objects.create(
         user=admin, organization=org, role=Membership.ADMIN, provisioned=True

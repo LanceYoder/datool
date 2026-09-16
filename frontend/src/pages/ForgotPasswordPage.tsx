@@ -62,7 +62,6 @@ export default function ForgotPasswordPage() {
           </ul>
         )}
         <p className="muted form-foot">
-          A learning account has no email — ask your professor to reset it.{' '}
           <Link to="/login">Back to sign in</Link>
         </p>
       </section>

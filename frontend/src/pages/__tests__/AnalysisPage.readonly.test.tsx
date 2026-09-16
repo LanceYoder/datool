@@ -37,7 +37,6 @@ vi.mock('../../api', () => ({
   getMe: () => Promise.resolve({
     id: 9,
     email: 'prof@example.edu',
-    handle: null,
     name: 'Prof',
     memberships: [],
     policy: null,

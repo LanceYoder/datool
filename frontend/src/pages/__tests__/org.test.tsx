@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 //
 // The two pages a role opens onto (accounts-spec §8): the admin's members
-// table with its two ways to make an account, and the professor's students
-// with the policy they work under.
+// table with its one way to make an account (by email), and the professor's
+// students with the policy they work under.
 //
 // The claim worth pinning on the admin side is the HAND-OUT: when the server
-// answers with an invite link (mail could not be sent) or a temporary password
-// (a handle account), that is the only time anyone will ever see it, so the
-// page must show it rather than swallow it.
+// answers with an invite or reset link (mail could not be sent), that is the
+// only time anyone will ever see it, so the page must show it rather than
+// swallow it — and when mail went out, there is nothing to show but a notice.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -17,24 +17,33 @@ import { DEFAULT_POLICY } from '../../types';
 
 const PROFESSOR_ROW: OrgMember = {
   membershipId: 11,
-  user: { id: 3, email: 'prof@example.edu', handle: null, name: 'Prof Ada' },
+  user: { id: 3, email: 'prof@example.edu', name: 'Prof Ada' },
   role: 'professor',
   professor: null,
   active: true,
-  hasEmail: true,
   pending: false,
   provisioned: true,
 };
 
 const STUDENT_ROW: OrgMember = {
   membershipId: 12,
-  user: { id: 4, email: null, handle: 'greek101-smith', name: 'Sam Smith' },
+  user: { id: 4, email: 'sam@example.edu', name: 'Sam Smith' },
   role: 'student',
   professor: { id: 11, name: 'Prof Ada' },
   active: true,
-  hasEmail: false,
   pending: false,
   provisioned: true,
+};
+
+/** A member who joined with an account of their own: nobody here resets it. */
+const JOINED_ROW: OrgMember = {
+  membershipId: 15,
+  user: { id: 7, email: 'own@example.edu', name: 'Own Account' },
+  role: 'student',
+  professor: { id: 11, name: 'Prof Ada' },
+  active: true,
+  pending: false,
+  provisioned: false,
 };
 
 const api = {
@@ -89,7 +98,7 @@ afterEach(() => {
 });
 
 describe('/org/:id — the members table', () => {
-  it('lists each member with the way they sign in', async () => {
+  it('lists each member with their email', async () => {
     mount(<OrgPage />, '/org/:id', '/org/5');
     // "Prof Ada" also names an <option> in the professor pickers, so the row
     // is looked for where a row lives.
@@ -97,41 +106,37 @@ describe('/org/:id — the members table', () => {
     const cells = [...document.querySelectorAll('.member-table td')].map((td) => td.textContent);
     expect(cells).toContain('Prof Ada');
     expect(cells).toContain('Sam Smith');
-    // A learning account has no email at all — its handle is what it signs in with.
-    expect(screen.getByText('greek101-smith')).toBeTruthy();
+    expect(cells).toContain('sam@example.edu');
+    expect(screen.getByRole('columnheader', { name: 'Email' })).toBeTruthy();
   });
 
-  it('provisions a LEARNING account by handle and shows the temporary password once', async () => {
-    api.createOrgMember.mockResolvedValue({
-      ...STUDENT_ROW,
-      membershipId: 13,
-      user: { id: 5, email: null, handle: 'greek101-jones', name: 'Jones' },
-      temporaryPassword: 'swift-otter-41',
-    });
+  it('adds a member by email, name, role and professor — and says the mail went out', async () => {
+    api.createOrgMember.mockResolvedValue({ invited: true, membershipId: 14, inviteLink: null });
     mount(<OrgPage />, '/org/:id', '/org/5');
     await screen.findByText('prof@example.edu');
 
-    fireEvent.click(screen.getByRole('radio', { name: 'Learning account' }));
-    fireEvent.change(screen.getByLabelText('Login handle'), {
-      target: { value: 'greek101-jones' },
-    });
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'new@example.edu' } });
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Newcomer' } });
+    fireEvent.change(screen.getByLabelText('Professor'), { target: { value: '11' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add member' }));
 
     await waitFor(() => {
       expect(api.createOrgMember).toHaveBeenCalledWith('5', {
         role: 'student',
-        handle: 'greek101-jones',
+        email: 'new@example.edu',
+        name: 'Newcomer',
+        professor: 11,
       });
     });
-    expect(await screen.findByText('swift-otter-41')).toBeTruthy();
-    expect(screen.getByText(/shown once/)).toBeTruthy();
+    expect(await screen.findByText(/new@example\.edu has been sent an email/)).toBeTruthy();
+    // Nothing to hand out: the link went by mail.
+    expect(document.querySelector('.handout')).toBeNull();
   });
 
-  it('provisions BY EMAIL and shows the invite link when mail could not be sent', async () => {
+  it('shows the invite link, once, when mail could not be sent', async () => {
     api.createOrgMember.mockResolvedValue({
-      ...PROFESSOR_ROW,
+      invited: true,
       membershipId: 14,
-      user: { id: 6, email: 'new@example.edu', handle: null, name: '' },
       inviteLink: 'https://datool.example/reset-password/MQ/tok',
     });
     mount(<OrgPage />, '/org/:id', '/org/5');
@@ -143,6 +148,15 @@ describe('/org/:id — the members table', () => {
     expect(
       await screen.findByText('https://datool.example/reset-password/MQ/tok'),
     ).toBeTruthy();
+    expect(screen.getByText(/shown once/)).toBeTruthy();
+  });
+
+  it('offers no account kind and no password: an email is the only way in', async () => {
+    mount(<OrgPage />, '/org/:id', '/org/5');
+    await screen.findByText('prof@example.edu');
+    expect(screen.queryByRole('radiogroup')).toBeNull();
+    expect(screen.queryByLabelText(/password/i)).toBeNull();
+    expect((screen.getByLabelText('Email') as HTMLInputElement).type).toBe('email');
   });
 
   it('assigns a student to a professor by MEMBERSHIP id', async () => {
@@ -165,22 +179,93 @@ describe('/org/:id — the members table', () => {
     });
   });
 
-  it('offers a reset that suits the account: a link by mail, or a new password', async () => {
-    api.resetMemberPassword.mockResolvedValue({ temporaryPassword: 'new-one' });
+  it('sends a reset link to a PROVISIONED member, and offers none to their own account', async () => {
+    api.listOrgMembers.mockResolvedValue([PROFESSOR_ROW, STUDENT_ROW, JOINED_ROW]);
+    api.resetMemberPassword.mockResolvedValue({ sent: true, resetLink: null });
+    mount(<OrgPage />, '/org/:id', '/org/5');
+    await screen.findByText('Own Account');
+    // Two provisioned accounts get the control; the one they brought does not.
+    const buttons = screen.getAllByRole('button', { name: 'Send reset link' });
+    expect(buttons).toHaveLength(2);
+    fireEvent.click(buttons[1]!);
+    await waitFor(() => {
+      expect(api.resetMemberPassword).toHaveBeenCalledWith('5', 12);
+    });
+    expect(await screen.findByText(/A reset link is on its way to Sam Smith/)).toBeTruthy();
+    expect(document.querySelector('.handout')).toBeNull();
+  });
+
+  it('shows the reset link, once, when the reset mail could not be sent', async () => {
+    api.resetMemberPassword.mockResolvedValue({
+      sent: false,
+      resetLink: 'https://datool.example/reset-password/Mg/tok2',
+    });
     mount(<OrgPage />, '/org/:id', '/org/5');
     await screen.findByText('Sam Smith');
-    // The email account is offered the mail; the handle account a password.
-    expect(screen.getByRole('button', { name: 'Send reset link' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'New temporary password' }));
-    expect(await screen.findByText('new-one')).toBeTruthy();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Send reset link' })[1]!);
+    expect(
+      await screen.findByText('https://datool.example/reset-password/Mg/tok2'),
+    ).toBeTruthy();
   });
 });
 
 describe('/teach/:id — the policy editor', () => {
-  it('lists the students and links to their analyses', async () => {
+  it('lists the students, with their email, and links to their analyses', async () => {
     mount(<TeachPage />, '/teach/:id', '/teach/5');
     const link = await screen.findByRole('link', { name: 'Analyses' });
     expect(link.getAttribute('href')).toBe('/students/12?org=5');
+    expect(screen.getByText('sam@example.edu')).toBeTruthy();
+  });
+
+  it('adds a student by email and name, and says the mail went out', async () => {
+    api.createOrgMember.mockResolvedValue({ invited: true, membershipId: 21, inviteLink: null });
+    mount(<TeachPage />, '/teach/:id', '/teach/5');
+    await screen.findByRole('link', { name: 'Analyses' });
+    expect(screen.queryByRole('radiogroup')).toBeNull();
+
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'kid@example.edu' } });
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Kid' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add student' }));
+
+    await waitFor(() => {
+      expect(api.createOrgMember).toHaveBeenCalledWith('5', {
+        role: 'student',
+        email: 'kid@example.edu',
+        name: 'Kid',
+      });
+    });
+    expect(await screen.findByText(/kid@example\.edu has been sent an email/)).toBeTruthy();
+    expect(document.querySelector('.handout')).toBeNull();
+  });
+
+  it('shows the invite link only when the server returned one', async () => {
+    api.createOrgMember.mockResolvedValue({
+      invited: true,
+      membershipId: 21,
+      inviteLink: 'https://datool.example/reset-password/Mw/tok3',
+    });
+    mount(<TeachPage />, '/teach/:id', '/teach/5');
+    await screen.findByRole('link', { name: 'Analyses' });
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'kid@example.edu' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add student' }));
+    expect(
+      await screen.findByText('https://datool.example/reset-password/Mw/tok3'),
+    ).toBeTruthy();
+  });
+
+  it('resets a PROVISIONED student by mail, and offers no reset for their own account', async () => {
+    api.listOrgMembers.mockResolvedValue([PROFESSOR_ROW, STUDENT_ROW, JOINED_ROW]);
+    api.resetMemberPassword.mockResolvedValue({ sent: true, resetLink: null });
+    mount(<TeachPage />, '/teach/:id', '/teach/5');
+    await screen.findByText('Own Account');
+    const buttons = screen.getAllByRole('button', { name: 'Reset password' });
+    expect(buttons).toHaveLength(1);
+    fireEvent.click(buttons[0]!);
+    await waitFor(() => {
+      expect(api.resetMemberPassword).toHaveBeenCalledWith('5', 12);
+    });
+    expect(await screen.findByText(/A reset link is on its way to Sam Smith/)).toBeTruthy();
+    expect(document.querySelector('.handout')).toBeNull();
   });
 
   it('says in plain language what students see — and offers no gesture switch', async () => {
@@ -303,8 +388,7 @@ describe('/teach/:id — the policy editor', () => {
         membershipId: 20,
         pending: true,
         provisioned: false,
-        hasEmail: true,
-        user: { id: null, email: 'joiner@example.edu', handle: '', name: '' },
+        user: { id: null, email: 'joiner@example.edu', name: '' },
       },
     ]);
     mount(<TeachPage />, '/teach/:id', '/teach/5');

@@ -1,41 +1,34 @@
-"""Login by email OR handle (docs/accounts-spec.md §3).
+"""Login by email (docs/accounts-spec.md §3).
 
-``User.username`` holds the LOGIN: a handle (``greek101-smith``) for a
-learning account, or the lowercased email for an account made with one — whose
-``email`` field is set as well, so it can be reset by mail. One backend
-therefore has to try both columns, case-insensitively, and never leak which of
-the two matched.
+Every account is made with an email address and signs in with it (ruled
+2026-09-16). ``User.username`` holds the lowercased address — the login of
+record — and ``email`` holds it as typed, so the match below is on the
+``email`` column, case-insensitively, and never on anything else.
 """
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import ModelBackend
-from django.db.models import Q
 
 
-class EmailOrHandleBackend(ModelBackend):
-    """``login`` (or DRF's ``username``) matched against handle then email."""
+class EmailBackend(ModelBackend):
+    """``email`` (or DRF's ``username``) matched against ``email__iexact``."""
 
     def authenticate(self, request, username=None, password=None, **kwargs):
         User = get_user_model()
-        login = username or kwargs.get("login") or kwargs.get(User.USERNAME_FIELD)
-        if not login or password is None:
+        email = username or kwargs.get("email") or kwargs.get(User.USERNAME_FIELD)
+        if not email or password is None:
             return None
-        login = login.strip()
+        email = email.strip()
 
-        candidates = list(
-            User.objects.filter(Q(username__iexact=login) | Q(email__iexact=login))
-        )
+        candidates = list(User.objects.filter(email__iexact=email))
         if not candidates:
             # Same work as a real check, so a missing account and a wrong
             # password cost the same time (ModelBackend's own defence).
             User().set_password(password)
             return None
-        # A handle is the login of record: if one account owns this handle and
-        # another merely has it as an email address, the handle wins.
-        candidates.sort(key=lambda u: (u.username.lower() != login.lower(), u.pk))
-        if len(candidates) > 1 and candidates[0].username.lower() != login.lower():
-            # Two accounts share the address and neither owns it as a handle:
-            # ambiguous, so nobody gets in by it.
+        if len(candidates) > 1:
+            # Two accounts share the address: ambiguous, so nobody gets in
+            # by it.
             return None
         user = candidates[0]
         if user.check_password(password) and self.user_can_authenticate(user):

@@ -88,7 +88,7 @@ class Membership(models.Model):
       they accept it. Without this an admin could pull a stranger's account
       into their classroom and impose a policy on it.
     * ``provisioned`` — this organization created the account. Only such an
-      account may have its password set or its reset link read by an admin,
+      account may be sent a password-reset link by an admin or professor,
       and only such an account is locked out when its membership is
       deactivated: an individual who merely joined keeps their own account.
     """

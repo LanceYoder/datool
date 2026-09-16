@@ -2,8 +2,9 @@
 
 docs/accounts-spec.md §9 names the one scenario that decides whether accounts
 work: an analyst registers, site staff set their class up for them and they
-accept it, they provision a professor by mail and a learning account by handle,
-the professor sets rules, and the student then lives inside them while the
+accept it, they provision a professor and a student — both by email, the one
+way there is (ruled 2026-09-16) — the professor sets rules, and the student
+then lives inside them while the
 professor reads over their shoulder and no one else sees anything at all.
 
 The unit tests next door cover each endpoint alone. This one covers the SEAMS —
@@ -42,6 +43,7 @@ pytestmark = pytest.mark.django_db
 ANALYST_PASSWORD = "greek-analyst-42"
 PROFESSOR_PASSWORD = "koine-professor-77"
 PROFESSOR_NEW_PASSWORD = "koine-professor-88"
+STUDENT_PASSWORD = "sams-first-word-19"
 STUDENT_CHOSEN_PASSWORD = "sams-own-word-19"
 
 
@@ -94,21 +96,18 @@ class Spa:
 #: ``invitations`` is beyond §6's list for /auth/me: an invitation to an
 #: account that already exists is not a membership until it is accepted, and
 #: the two must not be shown in one array (see da/models.Membership).
-ME_KEYS = {
-    "id", "email", "handle", "name", "memberships", "invitations", "policy",
-    "isStaff",
-}
+ME_KEYS = {"id", "email", "name", "memberships", "invitations", "policy", "isStaff"}
 MEMBERSHIP_KEYS = {"membershipId", "org", "role", "professor", "active"}
 #: ``pending`` likewise: a roster has to be able to say "invited, not yet a
 #: member" rather than show somebody who has agreed to nothing.
 MEMBER_KEYS = {
-    "membershipId", "user", "role", "professor", "active", "hasEmail",
+    "membershipId", "user", "role", "professor", "active",
     "policyOverride", "pending", "provisioned",
 }
-PROVISIONED_KEYS = MEMBER_KEYS | {"inviteLink", "temporaryPassword"}
-#: What provisioning by EMAIL answers — the same four keys whether or not the
+MEMBER_USER_KEYS = {"id", "email", "name"}
+#: What provisioning answers — the same three keys whether or not the
 #: address already had an account, so the form cannot look people up.
-INVITED_KEYS = {"invited", "membershipId", "inviteLink", "temporaryPassword"}
+INVITED_KEYS = {"invited", "membershipId", "inviteLink"}
 ANALYSIS_ROW_KEYS = {"id", "title", "passageRef", "updatedAt", "ownerId"}
 ANALYSIS_DETAIL_KEYS = ANALYSIS_ROW_KEYS | {"document", "notes"}
 
@@ -134,12 +133,11 @@ def test_spec9_walkthrough(john_1_1):
     assert registered.status_code == 201
     me = registered.json()
     assert set(me) == ME_KEYS
-    # An INDIVIDUAL account (§2): the address is also the login, and there are
-    # no rules over them at all. Django normalizes only the DOMAIN half of an
-    # address, so `email` keeps the case it was typed in while `handle` — the
-    # login of record — is folded; either one signs in, in any case (§3).
+    # An INDIVIDUAL account (§2): the address is the login, and there are no
+    # rules over them at all. Django normalizes only the DOMAIN half of an
+    # address, so `email` keeps the case it was typed in; it signs in in any
+    # case (§3).
     assert me["email"] == "Dean@example.com"
-    assert me["handle"] == "dean@example.com"
     assert me["name"] == "Dee Ann"
     assert me["memberships"] == []
     assert me["policy"] is None
@@ -149,7 +147,7 @@ def test_spec9_walkthrough(john_1_1):
     # And the address signs in whatever case it is typed in.
     case_check = Spa()
     assert case_check.post(
-        "/api/auth/login", {"login": "DEAN@EXAMPLE.COM", "password": ANALYST_PASSWORD}
+        "/api/auth/login", {"email": "DEAN@EXAMPLE.COM", "password": ANALYST_PASSWORD}
     ).status_code == 200
 
     # -- 3. the organization is set up FOR them ----------------------------
@@ -205,7 +203,6 @@ def test_spec9_walkthrough(john_1_1):
     assert invited["invited"] is True
     # The mail went, so there is nothing for the admin to hand over.
     assert invited["inviteLink"] is None
-    assert invited["temporaryPassword"] is None
     professor_mid = invited["membershipId"]
     # The roster shows the row the answer did not describe.
     professor_row = next(
@@ -214,7 +211,7 @@ def test_spec9_walkthrough(john_1_1):
     )
     assert set(professor_row) == MEMBER_KEYS
     assert professor_row["role"] == "professor"
-    assert professor_row["hasEmail"] is True
+    assert professor_row["provisioned"] is True
     assert professor_row["professor"] is None
     assert professor_row["policyOverride"] is None
 
@@ -237,7 +234,7 @@ def test_spec9_walkthrough(john_1_1):
 
     signed_in = professor.post(
         "/api/auth/login",
-        {"login": "prof@example.com", "password": PROFESSOR_PASSWORD},
+        {"email": "prof@example.com", "password": PROFESSOR_PASSWORD},
     )
     assert signed_in.status_code == 200
     professor_me = signed_in.json()
@@ -248,29 +245,34 @@ def test_spec9_walkthrough(john_1_1):
     # "everything allowed".
     assert professor_me["policy"] is None
 
-    # -- 5. provision the learning account ---------------------------------
+    # -- 5. provision the student, by email too ----------------------------
     mail.outbox.clear()
     provisioned = analyst.post(
         f"{org_url}/members",
-        {"role": "student", "handle": "greek101-smith", "name": "Sam Smith"},
+        {"role": "student", "email": "smith@example.com", "name": "Sam Smith"},
     )
     assert provisioned.status_code == 201
-    student_row = provisioned.json()
-    assert set(student_row) == PROVISIONED_KEYS
+    invited = provisioned.json()
+    assert set(invited) == INVITED_KEYS
+    assert invited["inviteLink"] is None  # the mail went
+    student_mid = invited["membershipId"]
+    student_row = next(
+        m for m in analyst.get(f"{org_url}/members").json()
+        if m["membershipId"] == student_mid
+    )
+    assert set(student_row) == MEMBER_KEYS
     assert student_row["role"] == "student"
-    # No address at all — so no mail, and a password to read out instead.
-    assert student_row["hasEmail"] is False
-    # The nested user object, whole (types.ts: OrgMemberUser).
-    assert set(student_row["user"]) == {"id", "email", "handle", "name"}
+    assert student_row["provisioned"] is True
+    # The nested user object, whole (types.ts: MemberUser).
+    assert set(student_row["user"]) == MEMBER_USER_KEYS
     assert student_row["user"]["name"] == "Sam Smith"
-    assert student_row["user"]["email"] == ""
-    assert student_row["user"]["handle"] == "greek101-smith"
-    assert student_row["inviteLink"] is None
-    temporary = student_row["temporaryPassword"]
-    assert isinstance(temporary, str) and len(temporary) == 12
-    assert mail.outbox == []
-    student_mid = student_row["membershipId"]
+    assert student_row["user"]["email"] == "smith@example.com"
     assert student_row["professor"] is None  # not assigned yet
+    # The set-password mail is the student's one way in; it names the login.
+    assert len(mail.outbox) == 1
+    assert mail.outbox[0].to == ["smith@example.com"]
+    assert "Your login is smith@example.com" in mail.outbox[0].body
+    student_uid, student_token = uid_and_token(link_in(mail.outbox[0]))
 
     # -- 6. assign the student to the professor ----------------------------
     assigned = analyst.patch(
@@ -350,15 +352,19 @@ def test_spec9_walkthrough(john_1_1):
     )
     assert row["policyOverride"] == {"aids": {"verbs": False}}
 
-    # -- 8. the student signs in -------------------------------------------
+    # -- 8. the student sets a password from the link, and signs in --------
     student = Spa()
+    assert student.post(
+        "/api/auth/password/reset",
+        {"uid": student_uid, "token": student_token, "password": STUDENT_PASSWORD},
+    ).status_code == 200
     signed_in = student.post(
-        "/api/auth/login", {"login": "greek101-smith", "password": temporary}
+        "/api/auth/login", {"email": "smith@example.com", "password": STUDENT_PASSWORD}
     )
     assert signed_in.status_code == 200
     student_me = signed_in.json()
-    assert student_me["email"] == ""  # empty string, NOT null (accounts.ts)
-    assert student_me["handle"] == "greek101-smith"
+    assert set(student_me) == ME_KEYS
+    assert student_me["email"] == "smith@example.com"
     assert student_me["memberships"][0]["professor"] == {
         "id": professor_mid, "name": "Pro Fessor"
     }
@@ -484,19 +490,20 @@ def test_spec9_walkthrough(john_1_1):
     # -- 13. the student changes their own password ------------------------
     changed = student.post(
         "/api/auth/password/change",
-        {"current": temporary, "password": STUDENT_CHOSEN_PASSWORD},
+        {"current": STUDENT_PASSWORD, "password": STUDENT_CHOSEN_PASSWORD},
     )
     assert changed.status_code == 200
     # Changing it does not sign them out of the tab they did it in.
     assert student.get("/api/auth/me").status_code == 200
     assert student.post(
-        "/api/auth/password/change", {"current": temporary, "password": "another-one-52"}
+        "/api/auth/password/change",
+        {"current": STUDENT_PASSWORD, "password": "another-one-52"},
     ).status_code == 400
 
     fresh_tab = Spa()
     assert fresh_tab.post(
         "/api/auth/login",
-        {"login": "greek101-smith", "password": STUDENT_CHOSEN_PASSWORD},
+        {"email": "smith@example.com", "password": STUDENT_CHOSEN_PASSWORD},
     ).status_code == 200
 
     # -- 14. the password-reset round trip ---------------------------------
@@ -516,11 +523,11 @@ def test_spec9_walkthrough(john_1_1):
     # The old password is dead and the new one works.
     assert forgot.post(
         "/api/auth/login",
-        {"login": "prof@example.com", "password": PROFESSOR_PASSWORD},
+        {"email": "prof@example.com", "password": PROFESSOR_PASSWORD},
     ).status_code == 400
     back_in = forgot.post(
         "/api/auth/login",
-        {"login": "prof@example.com", "password": PROFESSOR_NEW_PASSWORD},
+        {"email": "prof@example.com", "password": PROFESSOR_NEW_PASSWORD},
     )
     assert back_in.status_code == 200
     assert back_in.json()["memberships"][0]["membershipId"] == professor_mid
@@ -529,10 +536,3 @@ def test_spec9_walkthrough(john_1_1):
         "/api/auth/password/reset",
         {"uid": uid, "token": token, "password": "third-time-lucky-63"},
     ).status_code == 400
-    # A learning account has no inbox, so this door is not open to it: the
-    # form answers 200 all the same, and nothing is sent (§3).
-    mail.outbox.clear()
-    assert forgot.post(
-        "/api/auth/password/forgot", {"email": "greek101-smith"}
-    ).status_code == 200
-    assert mail.outbox == []

@@ -79,9 +79,9 @@ fly ssh console -C "python da/scripts/orphan_report.py"          # read-only
 fly ssh console -C "python manage.py assign_orphans --to you@example.com"
 ```
 
-`assign_orphans` also takes `--dry-run`, and accepts a login handle in place
-of an email. Until it runs, ownerless analyses are reachable only through the
-Django admin at `/admin/`.
+`assign_orphans` also takes `--dry-run`; `--to` is the account's email. Until
+it runs, ownerless analyses are reachable only through the Django admin at
+`/admin/`.
 
 ## Environment variables
 
@@ -98,7 +98,7 @@ with. Set them as Fly secrets (`fly secrets set NAME=value`).
 | `ESV_API_KEY` | the project's committed key | Crossway API key for the ESV verse panel; empty disables that source (BSB always works). |
 | `FRONTEND_ORIGIN` | `http://localhost:5173` in DEBUG, else `https://datool.fly.dev` | The origin the links in invitation and password-reset mail point at. Set it to your app's URL if you renamed the app, or the links will send people to somebody else's site. |
 | `DEFAULT_FROM_EMAIL` | `datool <no-reply@datool.local>` | The From: address on invitation and reset mail. |
-| `EMAIL_HOST` | empty | SMTP host. **While it is empty, mail cannot go out** — provisioning still works, and the API hands the invitation link (or a temporary password) back to the admin who created the account, to pass on by hand. |
+| `EMAIL_HOST` | empty | SMTP host. **While it is empty, mail cannot go out** — provisioning still works, and the API hands the invitation link back to the admin who created the account, to pass on by hand. |
 | `EMAIL_PORT` | `587` | SMTP port. |
 | `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | empty | SMTP credentials. |
 | `EMAIL_USE_TLS` | `1` | `0` for a provider that wants a plain connection. |

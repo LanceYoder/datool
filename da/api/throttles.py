@@ -10,9 +10,9 @@ Two kinds of abuse, one mechanism:
   address — without the second, a hundred accounts could each mail the same
   person their allowance.
 * GUESSING. Login and password-change are the two places a password is
-  checked against a submitted string; a classroom deployment hands out short
-  temporary passwords, which is exactly what online guessing suits. Login is
-  limited per client address AND per submitted login, so one attacker cannot
+  checked against a submitted string, and a classroom full of first
+  passwords is exactly what online guessing suits. Login is limited per
+  client address AND per submitted email, so one attacker cannot
   spread guesses over many accounts nor one account be attacked from many
   addresses. Registration is limited per client address, because every new
   account refills every per-caller allowance.
@@ -90,13 +90,13 @@ class LoginByAddressThrottle(ScopedRate):
 
 
 class LoginByAccountThrottle(ScopedRate):
-    """Per submitted login: how fast one account may be guessed at, from
-    anywhere. The login is hashed like every other target."""
+    """Per submitted email: how fast one account may be guessed at, from
+    anywhere. The address is hashed like every other target."""
 
     scope = "login"
 
     def get_cache_key(self, request, view):
-        raw = _submitted(request, "login")
+        raw = _submitted(request, "email")
         return None if raw is None else f"login-for-{_digest(raw)}"
 
 
