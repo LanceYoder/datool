@@ -10,7 +10,6 @@ password validators', which is what the register and reset forms show.
 """
 
 from django.contrib.auth import authenticate, get_user_model, login, logout
-from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
@@ -80,13 +79,13 @@ def email_taken(email: str) -> bool:
 
 
 def check_password_strength(password, user=None) -> list[str]:
-    """The configured validators' complaints, in the project's error shape."""
+    """The one rule a password has: it is a non-empty string. Nothing else —
+    no length, no common-password or similarity check (ruled 2026-09-17;
+    ``AUTH_PASSWORD_VALIDATORS`` is empty). ``user`` is kept so every caller
+    reads the same way."""
+    del user
     if not isinstance(password, str) or not password:
         return ["password must be a non-empty string"]
-    try:
-        validate_password(password, user)
-    except ValidationError as e:
-        return list(e.messages)
     return []
 
 

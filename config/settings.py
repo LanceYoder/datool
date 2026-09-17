@@ -83,12 +83,11 @@ AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",
 ]
 
-AUTH_PASSWORD_VALIDATORS = [
-    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
-    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
-    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
-]
+# No password rules (ruled 2026-09-17): any non-empty password is accepted —
+# no minimum length, no common-password or similarity check. The login rate
+# limit (DATOOL_LOGIN_RATE) is what stands between a short password and a
+# guessing script.
+AUTH_PASSWORD_VALIDATORS: list = []
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"

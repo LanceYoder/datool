@@ -165,15 +165,24 @@ class TestRegister:
         # The session is live: no second call needed.
         assert anon_client.get("/api/auth/me").json()["id"] == me["id"]
 
-    def test_the_password_validators_apply(self, anon_client):
-        response = anon_client.post(
+    def test_any_non_empty_password_is_accepted(self, anon_client):
+        """No password rules (ruled 2026-09-17): a four-letter password, or a
+        single character, registers. Only an EMPTY one is refused."""
+        for email, password in (("short@example.com", "pass"), ("one@example.com", "x")):
+            response = anon_client.post(
+                "/api/auth/register",
+                {"email": email, "password": password},
+                format="json",
+            )
+            assert response.status_code == 201, response.json()
+            assert User.objects.get(email=email).check_password(password)
+        empty = anon_client.post(
             "/api/auth/register",
-            {"email": "weak@example.com", "password": "pass"},
+            {"email": "none@example.com", "password": ""},
             format="json",
         )
-        assert response.status_code == 400
-        assert any("too short" in e for e in response.json()["errors"])
-        assert not User.objects.filter(email="weak@example.com").exists()
+        assert empty.status_code == 400
+        assert not User.objects.filter(email="none@example.com").exists()
 
     @pytest.mark.parametrize(
         "payload, expected",
@@ -358,18 +367,27 @@ class TestPasswordReset:
         individual.refresh_from_db()
         assert individual.check_password(PASSWORD)
 
-    def test_the_validators_apply_to_the_new_password(self, anon_client, individual):
+    def test_any_non_empty_new_password_is_accepted(self, anon_client, individual):
+        """No password rules (ruled 2026-09-17): the reset takes whatever the
+        person types, short or numeric; only an empty one is refused."""
         anon_client.post(
             "/api/auth/password/forgot", {"email": "solo@example.com"}, format="json"
         )
         uid, token = uid_and_token(link_in(mail.outbox[0]))
+        empty = anon_client.post(
+            "/api/auth/password/reset",
+            {"uid": uid, "token": token, "password": ""},
+            format="json",
+        )
+        assert empty.status_code == 400
         response = anon_client.post(
             "/api/auth/password/reset",
             {"uid": uid, "token": token, "password": "12345678"},
             format="json",
         )
-        assert response.status_code == 400
-        assert any("numeric" in e or "common" in e for e in response.json()["errors"])
+        assert response.status_code == 200
+        individual.refresh_from_db()
+        assert individual.check_password("12345678")
 
 
 class TestPasswordChange:

@@ -62,6 +62,9 @@ account" a professor account: the roles that already exist (§2, §3, §6,
 
 ## 3. Authentication mechanics
 
+- **No password rules** (ruled 2026-09-17): any non-empty password is
+  accepted at registration, reset and change — no minimum length, no
+  common-password or similarity check. The login rate limit is the defence.
 - **Session cookies + CSRF** (Django's own), same-origin. DRF gets
   `SessionAuthentication` and `IsAuthenticated` by default; the handful of
   public endpoints (login, register, password reset, CSRF bootstrap,
