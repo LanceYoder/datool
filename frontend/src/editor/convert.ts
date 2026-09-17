@@ -2,14 +2,14 @@
 // document. Pure functions — no editor instance required.
 //
 // The editor's document is FLAT (spec §7.7): one proposition per child, in
-// reading order, with the tree riding the doc node's `tree` attribute as a
-// core Forest (schema.ts). So this module is the two ENDS of the load/save
+// reading order, with the tree riding the treeState node's `tree` attribute
+// as a core Forest (schema.ts). So this module is the two ENDS of the load/save
 // pipeline, and the wire adapter (`../tree/serialize`) is its middle:
 //
 //   LOAD  (§7.5)  normalizeDocument -> normalizeHoles -> fromWire(+taxonomy)
-//                 -> flat doc JSON with attrs.tree
+//                 -> flat doc JSON, the forest on its treeState node
 //                 -> on ANY failure: withoutConnections + a console warning
-//   SAVE  (§7.4)  propositions off the flat doc + tryToWire(attrs.tree)
+//   SAVE  (§7.4)  propositions off the flat doc + tryToWire(readTree(doc))
 //
 // Invariants:
 //  - documentToNode . nodeToDocument is the identity for valid v2 documents
@@ -44,7 +44,7 @@ import type {
 import type { Forest } from '../tree/core';
 import type { TaxonomyLike, WireWriteProblem } from '../tree/serialize';
 import { fromWire, tryToWire } from '../tree/serialize';
-import { TREE_ATTR, readTree } from './schema';
+import { TREE_ATTR, TREE_NODE, propositionsInOrder, readTree } from './schema';
 import { normalizeBreaks, pruneBreaks } from './sections';
 
 /**
@@ -230,10 +230,10 @@ export function readStoredForest(
 
 /**
  * Document -> ProseMirror doc JSON (feed to buildEditor / setDocument): the
- * FLAT doc — one child per proposition, in reading order — with the core
- * Forest embedded as `attrs.tree`, ids and mint included (§7.2, §7.5). The two
- * halves travel together because installing one without the other is a window
- * of guaranteed data loss.
+ * FLAT doc — the treeState node first, then one child per proposition, in
+ * reading order — with the core Forest embedded on the treeState node, ids
+ * and mint included (§7.2, §7.5). The two halves travel together because
+ * installing one without the other is a window of guaranteed data loss.
  *
  * v1 documents are normalized on the way in; a forest the model cannot hold
  * (an n-ary bracket, a misplaced room, a proposition the forest drops) opens
@@ -268,7 +268,10 @@ export function documentToNode(
     };
   });
 
-  return { type: 'doc', attrs: { [TREE_ATTR]: forest }, content };
+  return {
+    type: 'doc',
+    content: [{ type: TREE_NODE, attrs: { [TREE_ATTR]: forest } }, ...content],
+  };
 }
 
 /** A snapshot that could not be written, and why (§7.4's two write paths). */
@@ -278,7 +281,7 @@ export type DocumentWrite =
 
 /**
  * THE PER-DOCTICK SNAPSHOT (§7.4 item 4): the propositions rebuilt from the
- * flat doc, and the forest written out of `attrs.tree` by the wire adapter.
+ * flat doc, and the forest written out of the treeState node by the wire adapter.
  *
  * It answers with a typed problem instead of throwing for ONE remaining case:
  * a `rel` this taxonomy does not carry, which is a data mismatch rather than a
@@ -294,10 +297,11 @@ export function trySnapshot(
   const propositions: Proposition[] = [];
   const blockStarts: SectionBreak[] = [];
 
-  if (pmDoc.childCount < 1) {
+  if (propositionsInOrder(pmDoc).length < 1) {
     throw new Error('editor document must contain at least one proposition');
   }
   pmDoc.forEach((node) => {
+    if (node.type.name === TREE_NODE) return; // the tree's carrier, read by readTree
     if (node.type.name !== 'proposition') {
       throw new Error(`unexpected node '${node.type.name}' in editor document`);
     }

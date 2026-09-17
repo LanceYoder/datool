@@ -1,24 +1,34 @@
 // Tiptap/ProseMirror schema for the bracketing editor — FLAT (spec §7.7).
 //
 // The tree left the text document. The doc's content expression is
-// 'proposition+' and nothing else: there is no bracket node, no hole node, no
-// 'unit' group, and therefore no way to write a nested — or an n-ary — tree
-// into the document at all. Structure lives in the pure core
-// (`../tree/core.ts`) and rides the DOC NODE's `tree` attribute (§7.2), which
-// is why that attribute is DECLARED here: ProseMirror silently drops writes to
-// an attribute a node type does not declare, so declaring it is load-bearing,
-// and the stale `sections` write it replaces is the cautionary tale.
+// 'treeState proposition+' and nothing else: there is no bracket node, no hole
+// node, no 'unit' group, and therefore no way to write a nested — or an n-ary
+// — tree into the document at all. Structure lives in the pure core
+// (`../tree/core.ts`) and rides the `tree` attribute of ONE hidden leaf node,
+// `treeState`, which always stands first in the document (§7.2). The
+// attribute is DECLARED here because ProseMirror silently drops writes to an
+// attribute a node type does not declare — declaring it is load-bearing, and
+// the stale `sections` write it replaces is the cautionary tale.
 //
-//   doc         content 'proposition+'  -> the propositions, in reading order
-//               attrs.tree              -> the serialized core Forest, ids and
-//                                          mint included (editor-internal;
-//                                          ids never reach the wire, §7.3)
+// Why a node of its own and not the doc's attrs (where it first lived): the
+// view rebuilds a node whose attributes changed — sameMarkup fails — and for
+// the DOC node that meant destroying and re-creating EVERY row's node view on
+// every connect and delete. The page collapsed to nothing for a task and grew
+// back, and the reader saw it jump. An attribute on a leaf of its own rebuilds
+// that one invisible leaf and touches no row.
+//
+//   doc         content 'treeState proposition+'
+//   treeState   atom leaf, first        -> attrs.tree: the serialized core
+//                                          Forest, ids and mint included
+//                                          (editor-internal; ids never reach
+//                                          the wire, §7.3); renders hidden
 //   proposition atom leaf               -> no text nodes anywhere, no typing
 //
 // Two representations of structure must never both be live (§7.7), so the doc
-// carries the leaves and the attribute carries the tree over them. They are
-// written in ONE transaction by every command in commands.ts, which is what
-// makes text+tree one atomic undo step.
+// carries the leaves and the treeState node carries the tree over them. They
+// are written in ONE transaction by every command in commands.ts (an AttrStep
+// on the treeState node beside any proposition steps), which is what makes
+// text+tree one atomic undo step.
 //
 // Display text is resolved BEFORE conversion (the corpus fetch happens
 // outside the editor); the editor only ever sees final display strings in
@@ -51,20 +61,38 @@ export interface PropositionAttrs {
   rawText: string | null;
 }
 
-/** The doc attribute the core state rides on (§7.2). */
+/** The treeState node's attribute the core state rides on (§7.2). */
 export const TREE_ATTR = 'tree';
+
+/** The node the core state rides on; always the document's first child. */
+export const TREE_NODE = 'treeState';
+
+/** The position of the treeState node: first child of the top node, so 0. */
+export const TREE_POS = 0;
 
 export const EditorDoc = Node.create({
   name: 'doc',
   topNode: true,
-  content: 'proposition+',
+  content: 'treeState proposition+',
+});
+
+/**
+ * The one hidden leaf that carries the tree (see the header). It renders as
+ * an empty, hidden div — it has no text and takes no space — and it is not
+ * selectable, so the arrow keys and the mouse never land on it.
+ */
+export const EditorTreeState = Node.create({
+  name: TREE_NODE,
+  atom: true,
+  selectable: false,
+  draggable: false,
 
   addAttributes() {
     return {
       // The core Forest, verbatim: `{ roots, nextId }` over plain objects, so
       // it is already its own serialization — JSON in the initial content, a
-      // structural value in `doc.attrs`, and the SAME object again after undo
-      // (DocAttrStep inverts to the previous value, which is how §7.3's ids
+      // structural value in the node's attrs, and the SAME object again after
+      // undo (AttrStep inverts to the previous value, which is how §7.3's ids
       // survive an undo unchanged).
       //
       // Default null rather than an empty forest: a forest is only meaningful
@@ -73,6 +101,14 @@ export const EditorDoc = Node.create({
       // answers for.
       [TREE_ATTR]: { default: null as Forest | null, rendered: false },
     };
+  },
+
+  parseHTML() {
+    return [{ tag: 'div[data-tree-state]' }];
+  },
+
+  renderHTML() {
+    return ['div', { 'data-tree-state': '', hidden: 'hidden' }];
   },
 });
 
@@ -146,7 +182,7 @@ export const EditorProposition = Node.create({
  * synthesize, so the dance that kept the atom ahead of the bracket (which
  * would have recursed) is gone with the bracket (§7.7).
  */
-export const editorNodes = [EditorDoc, EditorText, EditorProposition];
+export const editorNodes = [EditorDoc, EditorText, EditorTreeState, EditorProposition];
 
 // ---------------------------------------------------------------------------
 // The doc's two halves, read back
@@ -177,14 +213,16 @@ export function findPropositionPos(doc: PMNode, pid: string): number | null {
  * The core Forest the document carries — the ONE reader every consumer goes
  * through (commands, layout, the overlay, mainPids).
  *
- * Total by construction: a document whose `tree` attr is missing is one PM
- * synthesized for itself (an empty editor), and the only forest that can be
- * true of it is the flat one — every proposition a root of its own. Loading a
- * real analysis always embeds the attribute in the initial JSON (§7.5), so
- * this fallback is never the path a stored tree takes.
+ * Total by construction: a document whose treeState carries no forest is one
+ * PM synthesized for itself (an empty editor), and the only forest that can
+ * be true of it is the flat one — every proposition a root of its own.
+ * Loading a real analysis always embeds the forest in the initial JSON
+ * (§7.5), so this fallback is never the path a stored tree takes.
  */
 export function readTree(doc: PMNode): Forest {
-  const stored: unknown = doc.attrs[TREE_ATTR];
+  const first = doc.firstChild;
+  const stored: unknown =
+    first !== null && first.type.name === TREE_NODE ? first.attrs[TREE_ATTR] : null;
   // BOTH halves are checked before the cast. `nextId` is the id mint (§7.3),
   // and a value that merely LOOKS like a forest — roots without a mint, from a
   // hand-built doc or an older attribute shape — would cast cleanly and then

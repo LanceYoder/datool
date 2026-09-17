@@ -78,7 +78,9 @@ const treeOf = (ed: Editor): Forest => readTree(ed.state.doc);
 const shape = (ed: Editor): string => formatForest(treeOf(ed));
 const labels = (ed: Editor): string[] => {
   const out: string[] = [];
-  ed.state.doc.forEach((node) => out.push(String(node.attrs.label)));
+  ed.state.doc.forEach((node) => {
+    if (node.type.name === 'proposition') out.push(String(node.attrs.label));
+  });
   return out;
 };
 
@@ -101,8 +103,9 @@ describe('loading a stored analysis', () => {
     const doc = fixture('john11-46');
     const ed = open(doc);
 
-    // One child per proposition, in reading order — the tree is not in there.
-    expect(ed.state.doc.childCount).toBe(doc.propositions.length);
+    // The tree's carrier, then one child per proposition, in reading order —
+    // the tree itself is not in there.
+    expect(ed.state.doc.childCount).toBe(doc.propositions.length + 1);
     expect(pidsInOrder(ed.state.doc)).toEqual(doc.propositions.map((p) => p.id));
     // ...it is here, over the same leaves in the same order (I4/I6).
     expect(leafOrder(treeOf(ed))).toEqual(doc.propositions.map((p) => p.id));
@@ -141,7 +144,7 @@ describe('loading a stored analysis', () => {
     console.warn = (...args: unknown[]) => warned.push(args);
     try {
       const ed = open(doc);
-      expect(ed.state.doc.childCount).toBe(doc.propositions.length);
+      expect(ed.state.doc.childCount).toBe(doc.propositions.length + 1);
       expect(treeOf(ed).roots.every((u) => u.kind === 'leaf')).toBe(true);
     } finally {
       console.warn = warn;
@@ -589,7 +592,7 @@ describe('split and merge: the propositions and the tree, together', () => {
       ),
     );
     expect(splitProposition(ed, pid, 1, words)).toBe(true);
-    expect(ed.state.doc.childCount).toBe(doc.propositions.length + 1);
+    expect(ed.state.doc.childCount).toBe(doc.propositions.length + 2);
     // Whatever the split did to the tree, the result is still storable.
     const out = saved(ed, doc);
     expect(out.propositions).toHaveLength(doc.propositions.length + 1);

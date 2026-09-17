@@ -14,7 +14,7 @@ import {
   withoutConnections,
 } from '../convert';
 import { buildEditor, getDocument, setDocument } from '../editor';
-import { readTree } from '../schema';
+import { TREE_POS, readTree } from '../schema';
 import {
   CORPUS_WORDS,
   RAW_1JOHN_1_6E,
@@ -98,17 +98,17 @@ describe('documentToNode / nodeToDocument', () => {
     const json = documentToNode(doc, buildTextById(doc, CORPUS_WORDS), TAXONOMY);
     editor = buildEditor([], json);
 
-    // The document is the PROPOSITIONS, one child each, in reading order —
-    // whatever the tree over them says (§7.7). There is no bracket node left
-    // to find, and no way to write one.
+    // The document is the tree's carrier and then the PROPOSITIONS, one child
+    // each, in reading order — whatever the tree over them says (§7.7). There
+    // is no bracket node left to find, and no way to write one.
     const live = editor.state.doc;
-    expect(live.childCount).toBe(5);
+    expect(live.childCount).toBe(6);
     expect([...Array(live.childCount).keys()].map((i) => live.child(i).type.name)).toEqual(
-      Array(5).fill('proposition'),
+      ['treeState', ...Array(5).fill('proposition')],
     );
     expect(live.type.schema.nodes.bracket).toBeUndefined();
     expect(live.type.schema.nodes.hole).toBeUndefined();
-    // ...and the structure is the core Forest on the doc's `tree` attribute.
+    // ...and the structure is the core Forest on the treeState node.
     expect(formatForest(readTree(live))).toBe('[a, Ser[b, c], d, e]');
     expect(nodeToDocument(live, doc, TAXONOMY)).toEqual(doc);
   });
@@ -116,14 +116,14 @@ describe('documentToNode / nodeToDocument', () => {
   it('round-trips a forest of nothing but loose propositions', () => {
     const doc = looseDoc();
     editor = buildEditor([], documentToNode(doc, buildTextById(doc), TAXONOMY));
-    expect(editor.state.doc.childCount).toBe(3);
+    expect(editor.state.doc.childCount).toBe(4); // the carrier, then three
     expect(nodeToDocument(editor.state.doc, doc, TAXONOMY)).toEqual(doc);
   });
 
   it('loads a legacy v1 document and writes it back as v2', () => {
     const v1 = firstJohn16V1();
     editor = buildEditor([], documentToNode(v1, buildTextById(v1, CORPUS_WORDS), TAXONOMY));
-    expect(editor.state.doc.childCount).toBe(5); // the propositions, flat
+    expect(editor.state.doc.childCount).toBe(6); // the carrier + the propositions, flat
 
     const out = nodeToDocument(editor.state.doc, v1, TAXONOMY);
     expect(out.schemaVersion).toBe(2);
@@ -172,7 +172,7 @@ describe('documentToNode / nodeToDocument', () => {
       warn.mockRestore();
     }
     // Every proposition survived, each a root of its own.
-    expect(editor.state.doc.childCount).toBe(5);
+    expect(editor.state.doc.childCount).toBe(6);
     expect(formatForest(readTree(editor.state.doc))).toBe('[p1, p2, p3, p4, p5]');
     expect(nodeToDocument(editor.state.doc, doc, TAXONOMY).forest).toEqual(
       doc.propositions.map((prop) => ({ kind: 'prop', ref: prop.id })),
@@ -265,7 +265,7 @@ describe('holes', () => {
 
     const ed = editor;
     const put = (value: unknown): Forest => {
-      ed.view.dispatch(ed.state.tr.setDocAttribute('tree', value));
+      ed.view.dispatch(ed.state.tr.setNodeAttribute(TREE_POS, 'tree', value));
       return readTree(ed.state.doc);
     };
     const flat = '[a, b, c]';
@@ -293,7 +293,7 @@ describe('holes', () => {
       ],
       nextId: 10,
     };
-    editor.view.dispatch(editor.state.tr.setDocAttribute('tree', joined));
+    editor.view.dispatch(editor.state.tr.setNodeAttribute(TREE_POS, 'tree', joined));
 
     const snapshot = trySnapshot(editor.state.doc, doc, TAXONOMY);
     expect(snapshot.ok).toBe(false);

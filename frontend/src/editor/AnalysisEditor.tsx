@@ -116,59 +116,63 @@ const VERSE_LABEL_W = 72;
 
 /** Nominal popover boxes, used to keep them inside the shell. */
 const WORD_SIZE = { width: 280, height: 170 };
-const MENU_SIZE = { width: 272, height: 400 };
+const MENU_SIZE = { width: 116, height: 400 };
+
 
 /** Width the color-block strip stands in: the band plus air before the text. */
 const STRIP_LANE = 26;
 
 /**
- * Where the relationship menu goes. In order of what it must not cover:
+ * Where the relationship menu goes: in its BERTH, to the left of the tree.
  *
- *  1. the TEXT — never, so its right edge stays left of the text column;
- *  2. the TREE — if the whole tree fits to the right of the menu, it stands
- *     clear of the outermost spine and covers nothing at all;
- *  3. failing that, as much of the tree as it can: it goes as far LEFT as the
- *     shell allows, where the outermost columns are the sparsest, rather than
- *     landing wherever the click did;
- *  4. and always the BRACKET being labeled — if the far-left berth would sit
- *     on it, the menu moves above or below that bracket's own span; if
- *     neither has room, it stands just right of the bracket's spine instead.
+ * The shell keeps a margin of MENU_GUTTER on its left for exactly this, so the
+ * menu always has room — beside a tree that fits, and beside the viewport of
+ * a tree that scrolls, since the berth is outside the scroll (ruled
+ * 2026-09-17). It covers no text and no visible spine; its x is negative,
+ * which is the whole point.
  *
  * The menu is a child of the SHELL, so it is placed in shell coordinates,
  * while the tree's geometry is in the overlay's own (scrollable) coordinates.
  * `scrollLeft` is what separates the two: an overlay x is on screen at
- * `x - scrollLeft`, and the text column begins at `overlay.viewport`.
+ * `x - scrollLeft`.
  */
-function menuPlacement(
-  desired: Point,
-  geom: BracketGeom,
-  overlay: Overlay,
-  scrollLeft: number,
-): Point {
-  const edge = overlay.viewport;
-  const bracketX = geom.x - scrollLeft;
-  const treeLeft = overlay.brackets.reduce((left, b) => Math.min(left, b.x - scrollLeft), edge);
-  const leftOfTree = treeLeft - MENU_SIZE.width - TEXT_GAP;
-  if (leftOfTree >= TEXT_GAP) return { x: leftOfTree, y: desired.y };
-
-  // No berth outside the tree: hug the left edge, and keep the bracket being
-  // worked on out from under the menu.
-  const x = Math.min(TEXT_GAP, edge - MENU_SIZE.width - TEXT_GAP);
-  if (bracketX < x || bracketX > x + MENU_SIZE.width) return { x, y: desired.y };
-
-  const above = geom.top - MENU_SIZE.height - TEXT_GAP;
-  const below = geom.bottom + TEXT_GAP;
-  if (above >= TEXT_GAP) return { x, y: above };
-  if (below + MENU_SIZE.height <= overlay.height) return { x, y: below };
-
-  // Nowhere above or below either: stand to the RIGHT of this bracket's
-  // spine, still clear of the text.
-  const rightOfBracket = Math.min(bracketX + TEXT_GAP, edge - MENU_SIZE.width - TEXT_GAP);
-  return { x: Math.max(TEXT_GAP, rightOfBracket), y: desired.y };
+function menuPlacement(overlay: Overlay, scrollLeft: number): number {
+  // Where the tree begins ON SCREEN: its outermost spine, or the viewport's
+  // own left edge when the outermost spines are scrolled out of sight. The
+  // menu stands clear of that, in the berth the shell keeps for it
+  // (MENU_GUTTER — a margin outside the shell, so the x is negative).
+  // As far LEFT as the berth goes (ruled 2026-09-17: "even closer to the
+  // left edge"), and never nearer the tree than TEXT_GAP.
+  const treeLeft = Math.max(
+    0,
+    overlay.brackets.reduce((left, b) => Math.min(left, b.x - scrollLeft), overlay.viewport),
+  );
+  const x = Math.min(BERTH_PAD - BERTH_REACH - MENU_GUTTER, treeLeft - MENU_SIZE.width - TEXT_GAP);
+  return x;
 }
 
 /** Clear space kept between the relationship menu and the text column. */
 const TEXT_GAP = 12;
+/**
+ * The berth the relationship menu ALWAYS has to the left of the tree (ruled
+ * 2026-09-17: "even at max tree height, the label box will always have
+ * room"). It is a margin OUTSIDE the editor shell — outside the tree's scroll
+ * viewport — so a tree wider than its window, which scrolls, cannot scroll
+ * the berth away with it; the menu stands there at a negative x. The menu is
+ * kept narrow for the same reason (styles.css).
+ */
+/** Air between the menu and whatever is left of its berth. */
+const BERTH_PAD = 4;
+/** Air the menu keeps above the window's bottom edge while it hovers there. */
+const MENU_BOTTOM_AIR = 16;
+/**
+ * How far the menu reaches out of the shell's berth into the page's own
+ * padding (ruled 2026-09-17: "twice as close to the left"): the berth the
+ * shell keeps is that much narrower, and the menu stands that much nearer the
+ * page's edge, its right edge still TEXT_GAP clear of the tree.
+ */
+const BERTH_REACH = 36;
+const MENU_GUTTER = MENU_SIZE.width + BERTH_PAD + TEXT_GAP - BERTH_REACH;
 
 /**
  * How long the shake class stays on a refused gesture's dot — a shade longer
@@ -1107,7 +1111,10 @@ function EditorInner({
   // about it there would be a side effect in the middle of one.
   // What the skins want is the fold — where the tree ENDS on screen and the
   // words begin — so it is the viewport, not the tree's full width.
-  const foldAt = overlay?.viewport ?? null;
+  // The page measures from ITS left edge, and the shell stands MENU_GUTTER in
+  // from it (the menu's berth), so the fold the page is told is that much
+  // further along than the viewport the shell lays out.
+  const foldAt = overlay === null ? null : overlay.viewport + MENU_GUTTER;
   useEffect(() => {
     if (foldAt !== null) onTreeMargin?.(foldAt);
   }, [foldAt, onTreeMargin]);
@@ -1497,6 +1504,38 @@ function EditorInner({
 
   // ---- Popovers -----------------------------------------------------------
 
+  /**
+   * Where the relationship menu's top is, in window coordinates: as low as
+   * MENU_BOTTOM_AIR above the window's bottom edge allows, clamped so the menu
+   * never leaves the shell — it stops at the shell's top on the way up and at
+   * the shell's bottom on the way down, and follows the section from there
+   * (ruled 2026-09-17). Recomputed on every scroll and resize while the menu
+   * is open, and only then.
+   */
+  const [menuTop, setMenuTop] = useState<number | null>(null);
+  const menuOpen = popover !== null && popover.kind === 'menu';
+  useEffect(() => {
+    if (!menuOpen) {
+      setMenuTop(null);
+      return;
+    }
+    const place = () => {
+      const shell = shellRef.current;
+      if (shell === null) return;
+      const r = shell.getBoundingClientRect();
+      const h = popoverRef.current?.offsetHeight ?? MENU_SIZE.height;
+      const wanted = window.innerHeight - MENU_BOTTOM_AIR - h;
+      setMenuTop(Math.max(r.top, Math.min(wanted, r.bottom - h)));
+    };
+    place();
+    window.addEventListener('scroll', place, { passive: true });
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('scroll', place);
+      window.removeEventListener('resize', place);
+    };
+  }, [menuOpen]);
+
   let popoverNode: ReactNode = null;
   if (popover !== null && overlay !== null) {
     const bounds = {
@@ -1538,17 +1577,19 @@ function EditorInner({
       const geom = overlay.brackets.find((b) => b.bracketId === popover.bracketId);
       const bracket = forest === null ? null : bracketById(forest, popover.bracketId);
       if (geom !== undefined && bracket !== null) {
-        const desired = popover.at ?? { x: geom.x + 8, y: geom.connectY + 8 };
-        const at = clampPopover(
-          menuPlacement(desired, geom, overlay, treeScroll),
-          MENU_SIZE,
-          bounds,
-        );
+        // The menu is FIXED to the window (ruled 2026-09-17): it hovers above
+        // the bottom edge of the screen and tracks the scroll, but stays
+        // BOUNDED by the shell — never above the top of the tree and text,
+        // never below their bottom; at either end it follows the section
+        // instead (menuTop, kept by the scroll listener below). Only its x is
+        // the shell's — the berth — so it is turned into a window coordinate.
+        const shellLeft = shellRef.current?.getBoundingClientRect().left ?? 0;
+        const left = shellLeft + menuPlacement(overlay, treeScroll);
         popoverNode = (
           <div
             ref={popoverRef}
             className="popover menu-popover"
-            style={{ left: at.x, top: at.y }}
+            style={{ left, top: menuTop ?? window.innerHeight - MENU_BOTTOM_AIR - MENU_SIZE.height }}
           >
             <RelationshipMenu
               taxonomy={taxonomy}
@@ -1709,6 +1750,8 @@ function EditorInner({
             // for a tree that fits. Print reads this: paper cannot scroll, so
             // it lays the whole width out and scales it down instead.
             '--tree-overflow': `${overlay === null ? 0 : overlay.margin - overlay.viewport}px`,
+            // The menu's berth: a margin the shell keeps on its left.
+            '--menu-gutter': `${MENU_GUTTER}px`,
           } as CSSProperties
         }
       >
@@ -1717,6 +1760,13 @@ function EditorInner({
             more, this scrolls sideways and the text column does not move.
             While a connection is being aimed, the tree is drawn AS IT WOULD
             BE: making it then moves nothing. */}
+        {/* A tree wider than its window scrolls, and what is scrolled out of
+            sight is simply not drawn — so the EDGE it goes out at is drawn
+            instead (ruled 2026-09-17): a rule down the viewport's left side,
+            outside the scroller, saying "the tree continues past here". */}
+        {shown !== null && shown.margin > shown.viewport && (
+          <div className="tree-edge" aria-hidden="true" style={{ height: shown.height }} />
+        )}
         {shown !== null && (
           <div
             ref={treeRef}

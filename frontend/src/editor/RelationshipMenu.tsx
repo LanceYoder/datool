@@ -31,9 +31,12 @@ export default function RelationshipMenu({
   const groups = groupByFamily(taxonomy);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const currentRef = useRef<HTMLButtonElement | null>(null);
-  // The relationship whose description is open, if any. One at a time: the
-  // menu is a list to read down, not a stack of open drawers.
-  const [explained, setExplained] = useState<string | null>(null);
+  // The relationship whose description is open, if any, and where its box
+  // stands: a SEPARATE box beside the menu (ruled 2026-09-17), not a drawer
+  // in the column — the menu stays a narrow list to read down. Anchored to
+  // the menu's own box (absolute, beside it, level with the row whose "i"
+  // was pressed), so it goes wherever the menu goes. One at a time.
+  const [explained, setExplained] = useState<{ code: string; top: number } | null>(null);
 
   // Open on the relationship the bracket already has: scroll it to the middle
   // of the list rather than making the reader hunt for the marked row.
@@ -72,7 +75,7 @@ export default function RelationshipMenu({
           {group.entries.map((entry) => {
             const key = shortcutFor(entry.code);
             const isCurrent = entry.code === current;
-            const open = explained === entry.code;
+            const open = explained?.code === entry.code;
             return (
               <div key={entry.code} className="menu-row">
                 {/* The line is the positioning context for the "i", so the
@@ -86,7 +89,6 @@ export default function RelationshipMenu({
                     onClick={() => onPick(entry.code)}
                   >
                     <span className="menu-symbol">{entry.symbol}</span>
-                    <span className="menu-name">{entry.name}</span>
                     {key !== null && <span className="menu-key muted">({key})</span>}
                   </button>
                   <button
@@ -98,23 +100,44 @@ export default function RelationshipMenu({
                     onClick={(event) => {
                       // Reading about a relationship is not choosing it.
                       event.stopPropagation();
-                      setExplained(open ? null : entry.code);
+                      if (open) {
+                        setExplained(null);
+                        return;
+                      }
+                      // Beside the "i" that was pressed: the row's top,
+                      // measured against the menu the box is anchored to.
+                      const line = event.currentTarget.closest('.menu-line') ?? event.currentTarget;
+                      const menu = bodyRef.current?.closest('.popover') ?? bodyRef.current;
+                      const menuTop = (menu ?? line).getBoundingClientRect().top;
+                      setExplained({ code: entry.code, top: line.getBoundingClientRect().top - menuTop });
                     }}
                   >
                     i
                   </button>
                 </div>
-                {open && (
-                  <p className="menu-description">
-                    {entry.description?.trim() ||
-                      'No description — reload the page if this persists.'}
-                  </p>
-                )}
               </div>
             );
           })}
         </div>
       ))}
+      {explained !== null && (() => {
+        const entry = taxonomy.find((e) => e.code === explained.code);
+        if (entry === undefined) return null;
+        return (
+          <div
+            className="popover menu-explain"
+            role="note"
+            style={{ top: explained.top }}
+          >
+            {/* The full name lives here, not in the row (ruled 2026-09-17):
+                the menu is kept narrow enough to stand beside the tree, and
+                the "i" is where the name is. */}
+            <strong className="menu-fullname">{entry.name}</strong>
+            {entry.description?.trim() ||
+              'No description — reload the page if this persists.'}
+          </div>
+        );
+      })()}
     </div>
   );
 }

@@ -15,7 +15,7 @@ import { UndoRedo } from '@tiptap/extensions';
 import type { Document as AnalysisDocument, DocumentV2 } from '../types';
 import type { TaxonomyLike } from '../tree/serialize';
 import { documentToNode, nodeToDocument } from './convert';
-import { TREE_ATTR, editorNodes } from './schema';
+import { EditorDoc, EditorProposition, EditorText, EditorTreeState } from './schema';
 
 const NoTextInput = Extension.create({
   name: 'noTextInput',
@@ -37,10 +37,16 @@ const NoTextInput = Extension.create({
  * and the text-input guard.
  */
 export function editorExtensions(
-  propositionNode: AnyExtension = editorNodes[2] as AnyExtension,
+  propositionNode: AnyExtension = EditorProposition as AnyExtension,
 ): AnyExtension[] {
-  const [doc, text] = editorNodes;
-  return [doc, text, propositionNode, UndoRedo, NoTextInput] as AnyExtension[];
+  return [
+    EditorDoc,
+    EditorText,
+    EditorTreeState,
+    propositionNode,
+    UndoRedo,
+    NoTextInput,
+  ] as AnyExtension[];
 }
 
 /**
@@ -65,10 +71,11 @@ export function buildEditor(
 }
 
 /**
- * Load a Document into an existing editor: flat content and the tree attribute
- * in ONE dispatch (§7.5), outside history — replacing the whole document
- * should not be undoable back to the previous analysis, and neither half of it
- * should ever be installed without the other.
+ * Load a Document into an existing editor: flat content and the tree — the
+ * treeState node is part of the content — in ONE dispatch (§7.5), outside
+ * history: replacing the whole document should not be undoable back to the
+ * previous analysis, and neither half of it should ever be installed without
+ * the other.
  */
 export function setDocument(
   editor: Editor,
@@ -80,7 +87,6 @@ export function setDocument(
   const next = editor.schema.nodeFromJSON(json);
   const tr = editor.state.tr;
   tr.replaceWith(0, editor.state.doc.content.size, next.content);
-  tr.setDocAttribute(TREE_ATTR, next.attrs[TREE_ATTR]);
   tr.setMeta('addToHistory', false);
   editor.view.dispatch(tr);
 }

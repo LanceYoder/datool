@@ -43,14 +43,16 @@ export interface Perch {
 }
 
 /**
- * A stable hash of a point into [0, 1). Used to decide which of the margin's
- * creatures a bracket gets and whether it gets one at all: a plain weighted
- * sum will not do, because the columns are a fixed width apart and the rows a
- * fixed height, so any linear seed lands on the same few residues and every
- * bracket in the tree comes out holding the same snail.
+ * A stable hash of a bracket's ID into [0, 1). Used to decide which of the
+ * margin's creatures a bracket gets, which way it faces, and whether it gets
+ * one at all. The ID and nothing else (ruled 2026-09-17): a creature is
+ * assigned when its bracket is made and stays with it however the tree moves,
+ * and a deleted bracket takes its creature away — the core mints ids once and
+ * never reuses them. (Seeding from the spine's position, as this once did,
+ * gave a bracket a new creature every time the tree shifted under it.)
  */
-function hash01(x: number, y: number, salt: number): number {
-  const v = Math.sin(x * 12.9898 + y * 78.233 + salt * 37.719) * 43758.5453;
+function hash01(id: number, salt: number): number {
+  const v = Math.sin(id * 12.9898 + salt * 37.719 + 0.5) * 43758.5453;
   return v - Math.floor(v);
 }
 
@@ -83,7 +85,7 @@ export function drolleryPerches(
 ): Perch[] {
   const out: Perch[] = [];
   for (const b of brackets) {
-    if (hash01(b.x, b.top, 1) >= 0.34) continue;
+    if (hash01(b.bracketId, 1) >= 0.34) continue;
     const box = [boxAt(b.x, b.top), boxAt(b.x, b.bottom)].find((candidate) =>
       isClearOfInk(candidate, ink),
     );
@@ -92,9 +94,9 @@ export function drolleryPerches(
       key: `drollery-${b.bracketId}`,
       which: Math.min(
         DROLLERY_COUNT - 1,
-        Math.floor(hash01(b.x, b.top, 2) * DROLLERY_COUNT),
+        Math.floor(hash01(b.bracketId, 2) * DROLLERY_COUNT),
       ),
-      facingLeft: hash01(b.x, b.top, 3) < 0.5,
+      facingLeft: hash01(b.bracketId, 3) < 0.5,
       x: box.x,
       y: box.y,
     });

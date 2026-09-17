@@ -141,15 +141,32 @@ function wobble(seed: number): number {
 }
 
 /**
+ * A number for a NAME — a dot's id, a bracket's id and which of its strokes.
+ * The doodles are seeded from these and never from geometry (ruled
+ * 2026-09-17): a stroke is drawn once, when its bracket is made, and keeps
+ * that drawing however the tree around it moves. The core's ids are minted at
+ * creation and never reused, so a deleted bracket's doodle goes with it and a
+ * new bracket gets a new one.
+ */
+function seedOf(name: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < name.length; i += 1) {
+    h ^= name.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0) / 4294967296;
+}
+
+/**
  * A dot scribbled in, the way a pen actually fills a circle: back and forth
  * across it, and past the line at the turns, because nobody stops exactly on
  * it. A fill cannot do this — a fill is clipped to the shape it fills — so
  * the scribble is a drawn stroke laid over the ring.
  *
- * Seeded from the dot's own position, so the same dot is scribbled the same
- * way on every render.
+ * Seeded from the dot's NAME (seedOf), so the same dot is scribbled the same
+ * way on every render and wherever the tree carries it.
  */
-function scribblePath(cx: number, cy: number, r: number): string {
+function scribblePath(cx: number, cy: number, r: number, seed: number): string {
   const passes = 11;
   const reach = r * 1.3;
   const point = (i: number): [number, number] => {
@@ -157,7 +174,7 @@ function scribblePath(cx: number, cy: number, r: number): string {
     // Half-width of the circle at this height, opened out so the stroke
     // crosses the line — and, above and below the circle, a short overrun.
     const inside = Math.max(0, r * r - Math.min(r, Math.abs(y)) ** 2);
-    const w = Math.sqrt(inside) * 1.12 + r * 0.34 + r * 0.16 * wobble(cx + cy * 3 + i);
+    const w = Math.sqrt(inside) * 1.12 + r * 0.34 + r * 0.16 * wobble(seed * 1000 + i);
     return [cx + (i % 2 === 0 ? -w : w), cy + y];
   };
   const [x0, y0] = point(0);
@@ -176,8 +193,9 @@ function scribblePath(cx: number, cy: number, r: number): string {
 /**
  * A line as a hand draws it: bowed off its chord, and a touch long at both
  * ends, the way a stroke overruns the corner it was aiming for. The bow is
- * seeded from the line's own endpoints, so a spine bends the same way on
- * every render and does not shiver when the document changes elsewhere.
+ * seeded from the stroke's NAME (seedOf) — never its endpoints — so a spine
+ * bends the same way on every render and keeps its bend when the tree moves
+ * it; only a new bracket is drawn afresh.
  *
  * Generated geometry, not a displacement filter: a filter shifts neighbouring
  * pixels of a 1.5px line by different amounts and eats the line away in
@@ -188,11 +206,11 @@ function handLine(
   y1: number,
   x2: number,
   y2: number,
+  seed: number,
   amp = 0.02,
   cap = 2.6,
   over = 1.2,
 ): string {
-  const seed = x1 * 0.37 + y1 * 0.71 + x2 * 1.13 + y2 * 0.29;
   const dx = x2 - x1;
   const dy = y2 - y1;
   const length = Math.hypot(dx, dy) || 1;
@@ -338,6 +356,7 @@ function Stroke({
   width,
   color,
   hand,
+  name,
   hanging = false,
 }: {
   x1: number;
@@ -347,6 +366,8 @@ function Stroke({
   width: number;
   color: string;
   hand: Hand;
+  /** What this stroke IS — the seed of its hand-drawn wobble (seedOf). */
+  name: string;
   /** Nothing on the far end: draw it as a line that stops. */
   hanging?: boolean;
 }) {
@@ -370,7 +391,11 @@ function Stroke({
   return (
     <path
       {...loose}
-      d={pen ? handLine(x1, y1, x2, y2) : handLine(x1, y1, x2, y2, 0.008, 1.3, 0.4)}
+      d={
+        pen
+          ? handLine(x1, y1, x2, y2, seedOf(name))
+          : handLine(x1, y1, x2, y2, seedOf(name), 0.008, 1.3, 0.4)
+      }
       fill="none"
       style={{ stroke: color }}
       strokeWidth={pen ? width + 0.5 : width}
@@ -512,6 +537,7 @@ export default function BracketLayer({
               width={1.8}
               color={inkOf(b, LINE)}
               hand={hand}
+              name={`bracket:${b.bracketId}:spine`}
             />
             {quill && (
               <>
@@ -550,6 +576,7 @@ export default function BracketLayer({
                   width={1.5}
                   color={inkOf(b, LINE)}
                   hand={hand}
+                  name={`bracket:${b.bracketId}:tick:${t.side}`}
                   hanging={t.hanging}
                 />
               );
@@ -650,7 +677,7 @@ export default function BracketLayer({
               {pen && selected && (
                 <path
                   className="dot-scribble"
-                  d={scribblePath(d.x, d.y, DOT_R)}
+                  d={scribblePath(d.x, d.y, DOT_R, seedOf(d.id))}
                   fill="none"
                   style={{ stroke: ACCENT }}
                   strokeWidth={1.05}

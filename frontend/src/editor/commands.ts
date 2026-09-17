@@ -3,11 +3,12 @@
 //
 // Each command does exactly three things, in this order, and nothing else:
 //
-//   1. read the core Forest off `doc.attrs.tree` (schema.ts's readTree);
+//   1. read the core Forest off the treeState node (schema.ts's readTree);
 //   2. run ONE pure op from the core, which either answers with a new Forest
 //      or refuses (a refusal changes nothing — no transaction is dispatched);
 //   3. dispatch ONE transaction carrying the new state: the proposition
-//      ReplaceSteps a split or a merge needs, PLUS the doc-attr step, together.
+//      ReplaceSteps a split or a merge needs, PLUS the AttrStep on the
+//      treeState node, together.
 //
 // That third rule is §7.2, and everything downstream depends on it. An
 // AttrStep is a real, invertible step, so prosemirror-history gives atomic
@@ -42,6 +43,7 @@ import {
 import { displayWordText } from './convert';
 import {
   TREE_ATTR,
+  TREE_POS,
   findPropositionPos,
   pidsInOrder,
   propositionsInOrder,
@@ -52,12 +54,12 @@ import { addBreak, removeBreak } from './sections';
 /**
  * Run a document change without letting the page move under the reader.
  *
- * Replacing a range rebuilds the React node views inside it, and for a moment
- * the document is SHORTER than the position it is scrolled to — measured at
- * 2399px falling to 2105px on a single disconnect. The browser clamps the
- * scroll to what is left, and when the rows come back there is nothing to
- * scroll back to: the clamp is permanent. Connect two units near the top of a
- * long analysis and the page snaps to the top of the page.
+ * Replacing a range (a split, a merge) rebuilds the React node views inside
+ * it, and for a moment the document is SHORTER than the position it is
+ * scrolled to. The browser clamps the scroll to what is left, and when the
+ * rows come back there is nothing to scroll back to: the clamp is permanent.
+ * (A connect or a delete used to rebuild EVERY row for the same reason —
+ * the tree rode the doc's attrs — and now rebuilds none; see `commit`.)
  *
  * So the position is taken before the change and put back after — at once,
  * and again on the next two frames, because the rows do not all return in the
@@ -95,14 +97,20 @@ function dispatch(editor: Editor, tr: Transaction): void {
 }
 
 /**
- * The ONE way a new core state reaches the document: the doc-attr step, plus
- * whatever proposition steps the gesture also needs, in a single transaction
- * (§7.2). `steps` runs before the attribute is written, on the same `tr`.
+ * The ONE way a new core state reaches the document: the AttrStep on the
+ * treeState node, plus whatever proposition steps the gesture also needs, in
+ * a single transaction (§7.2). `steps` runs before the attribute is written,
+ * on the same `tr`; the treeState node stands at position 0 whatever they do
+ * to the propositions after it, so the position needs no mapping.
+ *
+ * On the treeState node and NOT the doc's attrs: the view rebuilds every node
+ * whose attributes changed, and for the doc that was every row on every
+ * gesture — the page collapsed and grew back, which the reader saw as a jump.
  */
 function commit(editor: Editor, forest: Forest, steps?: (tr: Transaction) => void): boolean {
   const tr = editor.state.tr;
   steps?.(tr);
-  tr.setDocAttribute(TREE_ATTR, forest);
+  tr.setNodeAttribute(TREE_POS, TREE_ATTR, forest);
   dispatch(editor, tr);
   return true;
 }

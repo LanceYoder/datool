@@ -404,6 +404,11 @@ div.error-box {
   flex-direction: column;
 }
 
+/* The treeState node (schema.ts): the tree's carrier, never a row. */
+.prop-rows [data-tree-state] {
+  display: none;
+}
+
 /* A row stacks the English reference line above the label + Greek line, so
    the label's baseline is the GREEK's. */
 .prop-row {
@@ -705,6 +710,9 @@ div.error-box {
 .editor-shell {
   position: relative;
   margin-top: 0.75rem;
+  /* The relationship menu's berth (AnalysisEditor's MENU_GUTTER): kept OUTSIDE
+     the shell, so a tree that scrolls cannot scroll it away. */
+  margin-left: var(--menu-gutter, 0px);
   padding: 0.5rem 0;
 }
 
@@ -724,6 +732,19 @@ div.error-box {
   /* A rubber band reaches out over the text while a connection is aimed; a
      tree that fits must not have it cut off at the margin. */
   overflow: visible;
+  pointer-events: none;
+}
+
+/* The edge a scrolling tree goes out at: a rule beside the viewport's left
+   side, with a breath of shadow on the tree's side, so a spine that stops
+   dead there reads as continuing past the edge rather than ending. */
+.tree-edge {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 10px;
+  border-left: 1px solid var(--border);
+  background: linear-gradient(90deg, rgb(0 0 0 / 7%), transparent);
   pointer-events: none;
 }
 
@@ -874,20 +895,25 @@ div.error-box {
   font-weight: 600;
 }
 
+/* Narrow on purpose (ruled 2026-09-17): the abbreviation, its key and the "i"
+   — the full name is behind the "i" — so the menu can stand to the LEFT of
+   the tree, in the gutter the layout reserves for it (MENU_SIZE). */
 .menu-popover {
-  width: 17rem;
+  position: fixed;
+  z-index: 30;
+  width: 7.25rem;
 }
 
-/* The list itself scrolls, so opening the menu can put the bracket's current
-   relationship in the middle of it (RelationshipMenu). */
+/* The WHOLE list shows, without scrolling (ruled 2026-09-17) — the rows are
+   set close for it. Only a window shorter than the list makes it scroll. */
 .menu-body {
-  max-height: 24rem;
+  max-height: calc(100vh - 2.5rem);
   overflow-y: auto;
 }
 
 .menu-heading {
-  padding: 0.3rem 0.55rem 0.1rem;
-  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem 0.05rem;
+  font-size: 0.68rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -896,17 +922,12 @@ div.error-box {
 
 .menu-symbol {
   flex: none;
-  width: 3rem;
+  width: 2.7rem;
   font-weight: 600;
 }
 
-.menu-name {
-  flex: 1;
-  color: var(--muted);
-}
-
 .menu-key {
-  flex: none;
+  flex: 1;
   font-size: 0.8rem;
   font-variant-numeric: tabular-nums;
 }
@@ -929,7 +950,8 @@ div.error-box {
 
 .menu-item {
   flex: 1;
-  padding-right: 0.35rem;
+  padding: 0.12rem 0.35rem 0.12rem 0.5rem;
+  font-size: 0.88rem;
 }
 
 /* Sits on the item's own baseline, beside the shortcut key — and clear of the
@@ -937,7 +959,7 @@ div.error-box {
 .menu-info {
   flex: none;
   width: 1.1rem;
-  margin-right: 0.7rem;
+  margin-right: 0.35rem;
   padding: 0;
   border: none;
   background: none;
@@ -948,7 +970,7 @@ div.error-box {
   font-size: 0.9rem;
   line-height: 1.2;
   text-align: center;
-  opacity: 0;
+  opacity: 0.55;
 }
 
 .menu-line:hover .menu-info,
@@ -961,21 +983,25 @@ div.error-box {
   color: var(--accent);
 }
 
-.menu-description {
-  width: calc(100% - 0.6rem);
-  margin: 0 0.3rem 0.4rem;
-  padding: 0.35rem 0.5rem;
-  border-left: 2px solid var(--accent);
-  background: var(--bg-soft);
-  border-radius: 0 4px 4px 0;
+/* The description, in a box of its OWN beside the menu (never inside its
+   column): positioned against the menu's box — its containing block is the
+   menu, which is why the list's overflow cannot clip it — so it follows the
+   menu wherever the menu goes. */
+.menu-explain {
+  position: absolute;
+  left: calc(100% + 8px);
+  width: 16rem;
+  padding: 0.45rem 0.65rem 0.55rem;
+  border-left: 3px solid var(--accent);
   font-size: 0.85rem;
   line-height: 1.45;
   color: var(--text);
   white-space: normal;
 }
 
-.menu-line.current .menu-name {
-  color: var(--text);
+.menu-fullname {
+  display: block;
+  margin-bottom: 0.15rem;
 }
 
 .menu-item.action {
@@ -1303,6 +1329,7 @@ div.error-box {
      where the reader sees it fall. */
   .editor-shell {
     zoom: var(--print-scale, 1);
+    margin-left: 0; /* no menu on paper, so no berth for one */
     /* Paper cannot scroll. A tree that reads by scrolling on screen is laid
        out WHOLE here — the margin opens by exactly what was hidden — and the
        zoom above brings the whole width back onto the page. */

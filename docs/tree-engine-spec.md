@@ -399,15 +399,17 @@ landmine found in review):
    → `{state, newBracketId, broken: BracketId[]} | Refusal` (powers
    §5.2; the broken list is exact).
 2. **Persistence of core state**: the serialized core state is a
-   DECLARED attribute on the PM doc node (`attrs.tree`, with a default —
-   PM silently drops writes to undeclared attrs, so declaring it is
-   load-bearing). Every op is ONE transaction: proposition steps (for
-   split/merge) plus the doc-attr step. AttrSteps are real, invertible
-   steps, so prosemirror-history gives atomic undo of text+tree
-   together, `docChanged` fires onUpdate/docTick/onChange unchanged,
-   and `closeHistory` per op keeps one-gesture-one-undo-step. No
-   parallel plugin-owned state; the "plugin" is a memoized lens over
-   `doc.attrs.tree`.
+   DECLARED attribute on ONE hidden leaf node, `treeState`, that always
+   stands first in the PM doc (`'treeState proposition+'`; the attribute
+   has a default — PM silently drops writes to undeclared attrs, so
+   declaring it is load-bearing). Every op is ONE transaction:
+   proposition steps (for split/merge) plus the AttrStep on the
+   treeState node. AttrSteps are real, invertible steps, so
+   prosemirror-history gives atomic undo of text+tree together,
+   `docChanged` fires onUpdate/docTick/onChange unchanged, and
+   `closeHistory` per op keeps one-gesture-one-undo-step. No parallel
+   plugin-owned state; the "plugin" is a memoized lens (`readTree`) over
+   the treeState node. (A9 explains why it is not the doc's own attr.)
 3. **Ids**: minted by the core, monotonic per document session, never
    reused; kept in the editor-internal serialization (undo restores the
    same ids) and STRIPPED from the wire. Dot grammar: `prop:<pid>`,
@@ -590,3 +592,17 @@ AND NOTHING EVER COMPLETES OR DESTROYS ITSELF.
   `Alt[FtIn[Ser[41b,41c], ⟨inner Ser[42b,42c]⟩], FtIn[⟨42d⟩, 42e]]` —
   the Alt and both Ft/Ins all stand; the Alt's internal boundary slid
   past 42c; preview shows ZERO endangered brackets.
+- **A9 — the tree rides a node of its own, not the doc's attrs (fixed
+  2026-09-17, from the analyst's report that "everything on the page
+  jumps" on every connect and delete).** prosemirror-view rebuilds a node
+  view whose node fails `sameMarkup` — type OR attrs — and for the DOC
+  node that meant destroying and re-creating EVERY row's node view on
+  every gesture: the page collapsed by the tree's whole height for one
+  task and grew back (measured 5551px → 3614px → 5551px over ~600ms),
+  which the reader saw as a jump up and back. The core state now rides a
+  hidden leaf node `treeState`, always the doc's first child; a gesture is
+  an AttrStep on that node, the view rebuilds that one invisible leaf and
+  touches no row, and `keepPageScroll` has nothing left to restore on a
+  connect or delete (it still guards split/merge, which replace rows).
+  Pinned by `rowStability.test.tsx`: the same row elements are in the
+  DOM before and after a delete, a connect, and an undo.
