@@ -68,14 +68,6 @@
   }
 }
 
-/* The home page's "Take the tour", set on the heading's line. */
-.card-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
 .help-tour {
   margin: 0.5rem 0 0;
   font-size: 0.85rem;

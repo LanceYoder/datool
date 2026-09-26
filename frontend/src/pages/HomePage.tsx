@@ -73,7 +73,6 @@ export default function HomePage() {
   const [listError, setListError] = useState<string | null>(null);
   const [deleted, setDeleted] = useState<DeletedAnalysisSummary[]>([]);
   const [showTrash, setShowTrash] = useState(false);
-  const tour = useTour();
 
   // What the class allows. An individual's policy allows everything, so the
   // picker is the three-way one; a policy naming a single tier hides it
@@ -169,7 +168,7 @@ export default function HomePage() {
   // A reader with nothing analyzed yet is new here: the walkthrough offers
   // itself once, and never again after it is finished or skipped.
   const hasNone = analyses !== null && analyses.length === 0;
-  const { offer } = tour;
+  const { offer } = useTour();
   useEffect(() => {
     if (hasNone) offer();
   }, [hasNone, offer]);
@@ -247,14 +246,7 @@ export default function HomePage() {
   return (
     <div className="home-page">
       <section className="card">
-        <div className="card-head">
-          <h2>New analysis</h2>
-          {tour.available && (
-            <button type="button" className="link-button" onClick={() => tour.start()}>
-              Take the tour
-            </button>
-          )}
-        </div>
+        <h2>New analysis</h2>
         <textarea
           ref={pasteRef}
           className="greek paste-area"

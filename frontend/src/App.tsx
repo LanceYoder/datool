@@ -1,5 +1,5 @@
 import type { MouseEvent } from 'react';
-import { Link, Route, Routes } from 'react-router-dom';
+import { Link, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import HomePage from './pages/HomePage';
 import AnalysisPage from './pages/AnalysisPage';
 import LoginPage from './pages/LoginPage';
@@ -14,7 +14,7 @@ import { UnsavedChangesProvider, useConfirmDiscard } from './unsavedChanges';
 import { ThemeProvider, ThemeSwitcher } from './theme';
 import { RequireAuth, SessionProvider, useSession } from './session';
 import { displayName } from './accounts';
-import { TourProvider } from './tour/Tour';
+import { TourProvider, useTour } from './tour/Tour';
 
 /**
  * The header's account links, by role: an Organization link for every org the
@@ -61,6 +61,7 @@ function AccountLinks({ guard }: { guard: (event: MouseEvent) => void }) {
           {name('Teaching', teaching.length, m.org.name)}
         </Link>
       ))}
+      <TourLink guard={guard} />
       <button
         type="button"
         className="link-button app-signout"
@@ -72,6 +73,38 @@ function AccountLinks({ guard }: { guard: (event: MouseEvent) => void }) {
         Sign out
       </button>
     </>
+  );
+}
+
+/**
+ * The header's "Take tour". The tour opens on the home page, so from there it
+ * starts at the beginning; on an analysis it starts at the editor's own steps
+ * rather than sending the reader away from their work; anywhere else it goes
+ * home first (through the unsaved-changes guard, like every header link).
+ */
+function TourLink({ guard }: { guard: (event: MouseEvent) => void }) {
+  const tour = useTour();
+  const location = useLocation();
+  const navigate = useNavigate();
+  if (!tour.available) return null;
+  return (
+    <button
+      type="button"
+      className="link-button app-account"
+      onClick={(event) => {
+        if (location.pathname === '/') {
+          tour.start();
+        } else if (location.pathname.startsWith('/analysis/')) {
+          tour.start('text');
+        } else {
+          if (!guardAllows(guard, event)) return;
+          navigate('/');
+          tour.start();
+        }
+      }}
+    >
+      Take tour
+    </button>
   );
 }
 
@@ -93,10 +126,10 @@ function Header() {
       </Link>
       <span className="muted app-tagline">discourse analysis</span>
       <ThemeSwitcher />
-      <AccountLinks guard={guard} />
       <Link to="/?new=1" className="app-add" onClick={guard}>
         New analysis
       </Link>
+      <AccountLinks guard={guard} />
     </header>
   );
 }
