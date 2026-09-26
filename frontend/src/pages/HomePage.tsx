@@ -9,6 +9,7 @@ import type {
 import { TIER_LABELS } from '../types';
 import { normalizeDocument } from '../editor/convert';
 import { allowedTiers, pickTier, usePolicy } from '../policy';
+import { useTour } from '../tour/Tour';
 import {
   createAnalysis,
   deleteAnalysis,
@@ -72,6 +73,7 @@ export default function HomePage() {
   const [listError, setListError] = useState<string | null>(null);
   const [deleted, setDeleted] = useState<DeletedAnalysisSummary[]>([]);
   const [showTrash, setShowTrash] = useState(false);
+  const tour = useTour();
 
   // What the class allows. An individual's policy allows everything, so the
   // picker is the three-way one; a policy naming a single tier hides it
@@ -164,6 +166,14 @@ export default function HomePage() {
     }
   };
 
+  // A reader with nothing analyzed yet is new here: the walkthrough offers
+  // itself once, and never again after it is finished or skipped.
+  const hasNone = analyses !== null && analyses.length === 0;
+  const { offer } = tour;
+  useEffect(() => {
+    if (hasNone) offer();
+  }, [hasNone, offer]);
+
   // Arriving via the header's + button: start typing the new passage right away.
   const startNew = searchParams.get('new') !== null;
   useEffect(() => {
@@ -237,7 +247,14 @@ export default function HomePage() {
   return (
     <div className="home-page">
       <section className="card">
-        <h2>New analysis</h2>
+        <div className="card-head">
+          <h2>New analysis</h2>
+          {tour.available && (
+            <button type="button" className="link-button" onClick={() => tour.start()}>
+              Take the tour
+            </button>
+          )}
+        </div>
         <textarea
           ref={pasteRef}
           className="greek paste-area"
@@ -263,7 +280,7 @@ export default function HomePage() {
         />
         <div className="row-actions">
           <button
-            className="primary"
+            className="primary create-button"
             onClick={() => {
               if (result !== null) void create(result);
             }}

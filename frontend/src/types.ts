@@ -265,7 +265,7 @@ export const FIRST_PASS_TIERS: readonly FirstPassTier[] = ['none', 'minimal', 'f
 export const TIER_LABELS: Readonly<Record<FirstPassTier, string>> = {
   none: 'Nothing',
   minimal: 'Minimal',
-  full: 'Full',
+  full: 'Max',
 };
 
 export type Role = 'admin' | 'professor' | 'student';

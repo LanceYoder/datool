@@ -3,6 +3,8 @@
 // button opens it and closes it again, so the panel needs no control of its
 // own.
 
+import { useTour } from '../tour/Tour';
+
 /**
  * Two columns: what you do to the TREE, and what you do to the PASSAGE —
  * dividing and joining its propositions, and the color blocks over them.
@@ -35,6 +37,7 @@ const COLUMNS: { what: string; how: string }[][] = [
 ];
 
 export default function HelpPanel() {
+  const tour = useTour();
   return (
     <div className="help-panel" role="dialog" aria-label="How this editor works">
       <div className="help-columns">
@@ -49,6 +52,14 @@ export default function HelpPanel() {
           </dl>
         ))}
       </div>
+      {/* The editor half of the walkthrough, from the top of this page. */}
+      {tour.available && (
+        <p className="help-tour">
+          <button type="button" className="link-button" onClick={() => tour.start('text')}>
+            Take the tour
+          </button>
+        </p>
+      )}
     </div>
   );
 }

@@ -14,6 +14,7 @@ import { UnsavedChangesProvider, useConfirmDiscard } from './unsavedChanges';
 import { ThemeProvider, ThemeSwitcher } from './theme';
 import { RequireAuth, SessionProvider, useSession } from './session';
 import { displayName } from './accounts';
+import { TourProvider } from './tour/Tour';
 
 /**
  * The header's account links, by role: an Organization link for every org the
@@ -107,6 +108,7 @@ export default function App() {
     <SessionProvider>
       <ThemeProvider>
         <UnsavedChangesProvider>
+          <TourProvider>
           <div className="app">
             <Header />
             <main className="app-main">
@@ -168,6 +170,7 @@ export default function App() {
               </Routes>
             </main>
           </div>
+          </TourProvider>
         </UnsavedChangesProvider>
       </ThemeProvider>
     </SessionProvider>

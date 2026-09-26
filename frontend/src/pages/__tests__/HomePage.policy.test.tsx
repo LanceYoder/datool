@@ -78,7 +78,7 @@ describe('the tier picker', () => {
     const group = picker();
     expect(group).not.toBeNull();
     const names = [...group!.querySelectorAll('button')].map((b) => b.textContent);
-    expect(names).toEqual(['Nothing', 'Minimal', 'Full']);
+    expect(names).toEqual(['Nothing', 'Minimal', 'Max']);
   });
 
   it('offers only the tiers the policy names', async () => {
@@ -100,7 +100,7 @@ describe('the tier picker', () => {
 
   it('sends `tier`, never the retired `maximal` boolean', async () => {
     mount(DEFAULT_POLICY);
-    fireEvent.click(screen.getByRole('radio', { name: 'Full' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Max' }));
     await locate();
     expect(api.firstPass).toHaveBeenCalledWith('Eph 1:3', 'full');
   });
