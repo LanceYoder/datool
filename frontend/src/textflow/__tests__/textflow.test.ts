@@ -2,18 +2,25 @@ import { describe, expect, it } from 'vitest';
 import type { CorpusWord, TextFlow } from '../../types';
 import {
   MAX_INDENT,
-  embeddedAt,
   indentLine,
   initTextFlow,
+  insertMark,
   isAligned,
   isSentenceEnd,
   lineIndexOf,
+  markAt,
   mergeWithNext,
+  normalizeFlow,
   reconcileFlow,
+  removeMark,
   splitLineAfter,
   startsSentence,
-  toggleEmbedded,
 } from '../textflow';
+
+/** Type a string of marks at a caret, one character at a time. */
+function type(flow: TextFlow, at: number, side: 'before' | 'after', chars: string): TextFlow {
+  return [...chars].reduce((f, ch) => insertMark(f, { at, side }, ch), flow);
+}
 
 /** A corpus word with only what the flow cares about. */
 function word(index: number, text: string, verse = 1): CorpusWord {
@@ -138,16 +145,18 @@ describe('splitLineAfter', () => {
     expect(splitLineAfter(base, 999)).toBe(base);
   });
 
-  it('sends each embedding to the side it falls on', () => {
-    const withEmb = toggleEmbedded(toggleEmbedded(base, 100, 100, 'paren'), 102, 103, 'bracket');
-    const flow = splitLineAfter(withEmb, 101);
-    expect(flow.lines[0]!.embedded).toEqual([{ start: 100, end: 100, style: 'paren' }]);
-    expect(flow.lines[1]!.embedded).toEqual([{ start: 102, end: 103, style: 'bracket' }]);
+  it('sends each mark with its word', () => {
+    const marked = type(type(base, 100, 'before', '('), 103, 'after', ']');
+    const flow = splitLineAfter(marked, 101);
+    expect(flow.lines[0]!.marks).toEqual([{ at: 100, before: '(' }]);
+    expect(flow.lines[1]!.marks).toEqual([{ at: 103, after: ']' }]);
   });
 
-  it('refuses to cut an embedding in two', () => {
-    const withEmb = toggleEmbedded(base, 101, 103, 'paren');
-    expect(splitLineAfter(withEmb, 102)).toBe(withEmb);
+  it('never has to cut a mark: one on the dividing word stays with it', () => {
+    const marked = type(base, 101, 'after', ')');
+    const flow = splitLineAfter(marked, 101);
+    expect(flow.lines[0]!.marks).toEqual([{ at: 101, after: ')' }]);
+    expect(flow.lines[1]!.marks).toBeUndefined();
   });
 });
 
@@ -164,12 +173,12 @@ describe('mergeWithNext', () => {
     expectContiguous(flow);
   });
 
-  it('carries both lines’ embeddings across', () => {
-    const withEmb = toggleEmbedded(toggleEmbedded(base, 100, 100, 'paren'), 102, 103, 'bracket');
-    const flow = mergeWithNext(withEmb, 0);
-    expect(flow.lines[0]!.embedded).toEqual([
-      { start: 100, end: 100, style: 'paren' },
-      { start: 102, end: 103, style: 'bracket' },
+  it('carries both lines’ marks across, in word order', () => {
+    const marked = type(type(base, 102, 'before', '['), 100, 'after', ')');
+    const flow = mergeWithNext(marked, 0);
+    expect(flow.lines[0]!.marks).toEqual([
+      { at: 100, after: ')' },
+      { at: 102, before: '[' },
     ]);
   });
 
@@ -211,50 +220,86 @@ describe('indentLine', () => {
   });
 });
 
-describe('toggleEmbedded', () => {
+describe('insertMark / removeMark', () => {
   const base = initTextFlow(passage('α β γ δ ε.'));
 
-  it('adds a range, in either click order', () => {
-    expect(toggleEmbedded(base, 101, 103, 'paren').lines[0]!.embedded).toEqual([
-      { start: 101, end: 103, style: 'paren' },
+  it('types a mark before or after a word', () => {
+    expect(insertMark(base, { at: 101, side: 'before' }, '(').lines[0]!.marks).toEqual([
+      { at: 101, before: '(' },
     ]);
-    expect(toggleEmbedded(base, 103, 101, 'bracket').lines[0]!.embedded).toEqual([
-      { start: 101, end: 103, style: 'bracket' },
+    expect(insertMark(base, { at: 103, side: 'after' }, ']').lines[0]!.marks).toEqual([
+      { at: 103, after: ']' },
     ]);
   });
 
-  it('removes an identical range', () => {
-    const added = toggleEmbedded(base, 101, 102, 'paren');
-    const removed = toggleEmbedded(added, 101, 102, 'paren');
-    expect(removed.lines[0]!.embedded).toBeUndefined();
+  it('appends in the order typed, on both sides of one word', () => {
+    const flow = type(type(base, 101, 'before', '(['), 101, 'after', '])');
+    expect(flow.lines[0]!.marks).toEqual([{ at: 101, before: '([', after: '])' }]);
   });
 
-  it('keeps ranges in start order', () => {
-    const flow = toggleEmbedded(toggleEmbedded(base, 103, 104, 'paren'), 100, 101, 'bracket');
-    expect(flow.lines[0]!.embedded!.map((e) => e.start)).toEqual([100, 103]);
+  it('keeps marks in word order however they were typed', () => {
+    const flow = type(type(base, 103, 'after', ')'), 100, 'before', '(');
+    expect(flow.lines[0]!.marks!.map((m) => m.at)).toEqual([100, 103]);
   });
 
-  it('refuses a range overlapping an existing one', () => {
-    const added = toggleEmbedded(base, 101, 103, 'paren');
-    expect(toggleEmbedded(added, 102, 104, 'bracket')).toBe(added);
-    expect(toggleEmbedded(added, 100, 101, 'bracket')).toBe(added);
-    // A nested range overlaps too.
-    expect(toggleEmbedded(added, 102, 102, 'bracket')).toBe(added);
+  it('takes only the four mark characters, and only on the flow’s words', () => {
+    expect(insertMark(base, { at: 101, side: 'before' }, 'a')).toBe(base);
+    expect(insertMark(base, { at: 101, side: 'before' }, '{')).toBe(base);
+    expect(insertMark(base, { at: 900, side: 'before' }, '(')).toBe(base);
   });
 
-  it('refuses a range crossing a line boundary', () => {
-    const two = splitLineAfter(base, 102);
-    expect(toggleEmbedded(two, 102, 103, 'paren')).toBe(two);
-    expect(toggleEmbedded(two, 100, 104, 'paren')).toBe(two);
-  });
-
-  it('refuses a range outside the flow', () => {
-    expect(toggleEmbedded(base, 900, 901, 'paren')).toBe(base);
+  it('backspaces the last character on that side, and drops an emptied mark', () => {
+    const flow = type(base, 101, 'before', '([');
+    const one = removeMark(flow, { at: 101, side: 'before' });
+    expect(one.lines[0]!.marks).toEqual([{ at: 101, before: '(' }]);
+    const none = removeMark(one, { at: 101, side: 'before' });
+    expect(none.lines[0]!.marks).toBeUndefined();
+    // Nothing on the other side to take: the flow comes back as it was.
+    expect(removeMark(flow, { at: 101, side: 'after' })).toBe(flow);
+    expect(removeMark(base, { at: 101, side: 'before' })).toBe(base);
   });
 
   it('leaves the source flow untouched', () => {
-    toggleEmbedded(base, 101, 102, 'paren');
-    expect(base.lines[0]!.embedded).toBeUndefined();
+    type(base, 101, 'before', '(');
+    expect(base.lines[0]!.marks).toBeUndefined();
+  });
+});
+
+describe('normalizeFlow', () => {
+  it('turns an older document’s embedded ranges into the marks they were drawn as', () => {
+    const legacy = {
+      lines: [
+        {
+          start: 100,
+          end: 104,
+          indent: 1,
+          embedded: [
+            { start: 101, end: 102, style: 'paren' },
+            { start: 104, end: 104, style: 'bracket' },
+          ],
+        },
+      ],
+    } as unknown as TextFlow;
+    expect(normalizeFlow(legacy)).toEqual({
+      lines: [
+        {
+          start: 100,
+          end: 104,
+          indent: 1,
+          marks: [
+            { at: 101, before: '(' },
+            { at: 102, after: ')' },
+            { at: 104, before: '[', after: ']' },
+          ],
+        },
+      ],
+    });
+  });
+
+  it('hands a current flow back by identity', () => {
+    const base = initTextFlow(passage('α β.'));
+    expect(normalizeFlow(base)).toBe(base);
+    expect(normalizeFlow(null)).toBeNull();
   });
 });
 
@@ -346,40 +391,43 @@ describe('reconcileFlow', () => {
     expect(flow.lines.map((l) => l.indent)).toEqual([5, 0, 0]);
   });
 
-  it('carries an embedding that still fits inside one line', () => {
-    const withEmb = toggleEmbedded(base, 100, 101, 'paren');
-    const flow = reconcileFlow(withEmb, [
+  it('carries the marks with their words', () => {
+    const marked = type(type(base, 100, 'before', '('), 101, 'after', ')');
+    const flow = reconcileFlow(marked, [
       { start: 100, end: 104 },
       { start: 105, end: 106 },
     ]);
-    expect(flow.lines[0]!.embedded).toEqual([{ start: 100, end: 101, style: 'paren' }]);
-    expect(flow.lines[1]!.embedded).toBeUndefined();
+    expect(flow.lines[0]!.marks).toEqual([
+      { at: 100, before: '(' },
+      { at: 101, after: ')' },
+    ]);
+    expect(flow.lines[1]!.marks).toBeUndefined();
   });
 
-  it('keeps both lines’ embeddings when two lines become one', () => {
-    const withEmb = toggleEmbedded(toggleEmbedded(base, 101, 102, 'paren'), 103, 104, 'bracket');
-    const flow = reconcileFlow(withEmb, [{ start: 100, end: 106 }]);
-    expect(flow.lines[0]!.embedded).toEqual([
-      { start: 101, end: 102, style: 'paren' },
-      { start: 103, end: 104, style: 'bracket' },
+  it('keeps both lines’ marks when two lines become one', () => {
+    const marked = type(type(base, 102, 'after', ')'), 103, 'before', '[');
+    const flow = reconcileFlow(marked, [{ start: 100, end: 106 }]);
+    expect(flow.lines[0]!.marks).toEqual([
+      { at: 102, after: ')' },
+      { at: 103, before: '[' },
     ]);
   });
 
-  it('drops an embedding a new division would cut in two', () => {
-    const withEmb = toggleEmbedded(base, 100, 102, 'paren');
-    const flow = reconcileFlow(withEmb, [
+  it('keeps a mark on its word across a new division', () => {
+    const marked = type(type(base, 100, 'before', '('), 102, 'after', ')');
+    const flow = reconcileFlow(marked, [
       { start: 100, end: 101 },
       { start: 102, end: 106 },
     ]);
-    expect(flow.lines[0]!.embedded).toBeUndefined();
-    expect(flow.lines[1]!.embedded).toBeUndefined();
+    expect(flow.lines[0]!.marks).toEqual([{ at: 100, before: '(' }]);
+    expect(flow.lines[1]!.marks).toEqual([{ at: 102, after: ')' }]);
   });
 
   it('leaves the source flow untouched', () => {
-    const withEmb = toggleEmbedded(base, 100, 101, 'paren');
-    reconcileFlow(withEmb, [{ start: 100, end: 106 }]);
-    expect(ranges(withEmb)).toEqual(ranges(base));
-    expect(withEmb.lines[0]!.embedded).toEqual([{ start: 100, end: 101, style: 'paren' }]);
+    const marked = type(base, 100, 'before', '(');
+    reconcileFlow(marked, [{ start: 100, end: 106 }]);
+    expect(ranges(marked)).toEqual(ranges(base));
+    expect(marked.lines[0]!.marks).toEqual([{ at: 100, before: '(' }]);
   });
 
   it('leaves what it makes aligned', () => {
@@ -403,11 +451,10 @@ describe('lookups', () => {
     expect(lineIndexOf(base, 999)).toBe(-1);
   });
 
-  it('finds the embedding covering a word', () => {
-    const flow = toggleEmbedded(base, 102, 103, 'paren');
-    expect(embeddedAt(flow, 103)).toEqual({ start: 102, end: 103, style: 'paren' });
-    expect(embeddedAt(flow, 104)).toBeNull();
-    expect(embeddedAt(flow, 100)).toBeNull();
+  it('finds the marks on a word', () => {
+    const flow = type(base, 103, 'after', ')');
+    expect(markAt(flow.lines[1]!, 103)).toEqual({ at: 103, after: ')' });
+    expect(markAt(flow.lines[1]!, 104)).toBeNull();
   });
 
   it('marks the lines that open a sentence', () => {

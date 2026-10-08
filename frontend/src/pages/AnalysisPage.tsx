@@ -9,7 +9,7 @@ import AnalysisEditor from '../editor/AnalysisEditor';
 import type { EditorActions } from '../editor/AnalysisEditor';
 import NotesEditor from '../notes/NotesEditor';
 import TextFlowPanel from '../textflow/TextFlowPanel';
-import { isAligned, reconcileFlow } from '../textflow/textflow';
+import { isAligned, normalizeFlow, reconcileFlow } from '../textflow/textflow';
 
 /**
  * The propositions the flow's lines ARE: every corpus-sourced proposition, in
@@ -61,7 +61,7 @@ export default function AnalysisPage() {
         setAnalysis(a);
         setInitialDoc(a.document);
         draftRef.current = a.document;
-        setTextFlow(a.document.textFlow ?? null);
+        setTextFlow(normalizeFlow(a.document.textFlow ?? null));
         setTitle(a.title);
         setNotes(a.notes);
       })

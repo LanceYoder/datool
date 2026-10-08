@@ -1947,9 +1947,10 @@ def build_text_flow(segments: Sequence["Segment"], words=None) -> dict:
     returns to the margin (Matt 8:29's ἦλθες ὧδε πρὸ καιροῦ, which the PDF
     keeps at the speech's depth — see the goldens).
 
-    ``embedded`` ranges come straight from the segments (interrupting relative
-    clauses the segmenter kept in place) and are set off with parentheses, the
-    PDF's first-choice mark.
+    The ``marks`` come straight from the segments' embedded ranges
+    (interrupting relative clauses the segmenter kept in place): a "(" typed
+    before the range's first word and a ")" after its last — the PDF's
+    first-choice mark, exactly as the analyst would type it.
     """
     if not segments:
         raise ValueError("build_text_flow needs at least one segment")
@@ -1976,10 +1977,12 @@ def build_text_flow(segments: Sequence["Segment"], words=None) -> dict:
     for gi, seg in enumerate(segments):
         line: dict = {"start": seg.start, "end": seg.end,
                       "indent": max(0, min(indents.get(gi, 0), MAX_INDENT))}
-        marks = [{"start": a, "end": b, "style": "paren"}
-                 for a, b in getattr(seg, "embedded", ())]
-        if marks:
-            line["embedded"] = marks
+        typed: dict[int, dict] = {}
+        for a, b in getattr(seg, "embedded", ()):
+            typed.setdefault(a, {"at": a})["before"] = typed.get(a, {}).get("before", "") + "("
+            typed.setdefault(b, {"at": b})["after"] = typed.get(b, {}).get("after", "") + ")"
+        if typed:
+            line["marks"] = [typed[k] for k in sorted(typed)]
         lines.append(line)
     return {"lines": lines}
 

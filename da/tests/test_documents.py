@@ -559,13 +559,13 @@ class TestSections:
 
 def flow_doc() -> dict:
     """The worked example with a Text Flow over the same words: three clause
-    lines, the second indented under the first, one embedded mark."""
+    lines, the second indented under the first, one clause marked off."""
     doc = partial_doc()
     doc["textFlow"] = {
         "lines": [
             {"start": 0, "end": 1, "indent": 0},
             {"start": 2, "end": 6, "indent": 1,
-             "embedded": [{"start": 3, "end": 4, "style": "paren"}]},
+             "marks": [{"at": 3, "before": "("}, {"at": 4, "after": ")"}]},
             {"start": 7, "end": 12, "indent": 2},
         ],
     }
@@ -675,91 +675,64 @@ class TestTextFlow:
         doc["textFlow"]["lines"][1]["indent"] = 8
         validate_document(doc)
 
-    def test_embedded_absent_or_empty_is_fine(self):
+    def test_marks_absent_or_empty_is_fine(self):
         doc = flow_doc()
-        del doc["textFlow"]["lines"][1]["embedded"]
+        del doc["textFlow"]["lines"][1]["marks"]
         validate_document(doc)
-        doc["textFlow"]["lines"][1]["embedded"] = []
-        validate_document(doc)
-
-    def test_embedded_must_be_a_list_of_objects(self):
-        doc = flow_doc()
-        doc["textFlow"]["lines"][1]["embedded"] = {"start": 3, "end": 4}
-        assert problems_of(doc) == ["textFlow.lines[1].embedded must be a list"]
-        doc["textFlow"]["lines"][1]["embedded"] = ["3-4"]
-        assert problems_of(doc) == [
-            "textFlow.lines[1].embedded[0] must be an object"]
-
-    def test_embedded_needs_ints_in_order(self):
-        doc = flow_doc()
-        doc["textFlow"]["lines"][1]["embedded"] = [
-            {"start": 5, "end": 3, "style": "paren"}]
-        assert problems_of(doc) == [
-            "textFlow.lines[1].embedded[0] needs ints start <= end"]
-
-    def test_embedded_must_lie_inside_its_line(self):
-        doc = flow_doc()
-        doc["textFlow"]["lines"][1]["embedded"] = [
-            {"start": 1, "end": 4, "style": "paren"}]  # line starts at 2
-        assert problems_of(doc) == [
-            "textFlow.lines[1].embedded[0] must lie inside its line"]
-        doc["textFlow"]["lines"][1]["embedded"] = [
-            {"start": 3, "end": 7, "style": "paren"}]  # line ends at 6
-        assert problems_of(doc) == [
-            "textFlow.lines[1].embedded[0] must lie inside its line"]
-
-    def test_embedded_may_fill_its_whole_line(self):
-        doc = flow_doc()
-        doc["textFlow"]["lines"][1]["embedded"] = [
-            {"start": 2, "end": 6, "style": "bracket"}]
+        doc["textFlow"]["lines"][1]["marks"] = []
         validate_document(doc)
 
-    def test_embedded_ranges_must_not_overlap(self):
+    def test_marks_must_be_a_list_of_objects(self):
         doc = flow_doc()
-        doc["textFlow"]["lines"][1]["embedded"] = [
-            {"start": 2, "end": 4, "style": "paren"},
-            {"start": 4, "end": 6, "style": "bracket"},
-        ]
+        doc["textFlow"]["lines"][1]["marks"] = {"at": 3, "before": "("}
+        assert problems_of(doc) == ["textFlow.lines[1].marks must be a list"]
+        doc["textFlow"]["lines"][1]["marks"] = ["(3"]
+        assert problems_of(doc) == ["textFlow.lines[1].marks[0] must be an object"]
+
+    def test_a_mark_names_a_word_inside_its_line(self):
+        doc = flow_doc()
+        doc["textFlow"]["lines"][1]["marks"] = [{"at": "3", "before": "("}]
+        assert problems_of(doc) == ["textFlow.lines[1].marks[0].at must be an int"]
+        doc["textFlow"]["lines"][1]["marks"] = [{"at": 1, "before": "("}]  # line starts at 2
         assert problems_of(doc) == [
-            "textFlow.lines[1].embedded[1] overlaps the previous embedded range"]
-
-    def test_embedded_ranges_must_be_ordered(self):
-        doc = flow_doc()
-        doc["textFlow"]["lines"][1]["embedded"] = [
-            {"start": 5, "end": 6, "style": "paren"},
-            {"start": 2, "end": 3, "style": "paren"},
-        ]
+            "textFlow.lines[1].marks[0] must lie inside its line"]
+        doc["textFlow"]["lines"][1]["marks"] = [{"at": 7, "after": ")"}]  # line ends at 6
         assert problems_of(doc) == [
-            "textFlow.lines[1].embedded[1] overlaps the previous embedded range"]
+            "textFlow.lines[1].marks[0] must lie inside its line"]
 
-    def test_adjacent_embedded_ranges_are_fine(self):
+    def test_marks_come_in_word_order(self):
         doc = flow_doc()
-        doc["textFlow"]["lines"][1]["embedded"] = [
-            {"start": 2, "end": 3, "style": "paren"},
-            {"start": 4, "end": 6, "style": "bracket"},
-        ]
-        validate_document(doc)
+        doc["textFlow"]["lines"][1]["marks"] = [
+            {"at": 4, "after": ")"}, {"at": 3, "before": "("}]
+        assert problems_of(doc) == [
+            "textFlow.lines[1].marks[1] must follow the previous mark's word"]
+        doc["textFlow"]["lines"][1]["marks"] = [
+            {"at": 3, "before": "("}, {"at": 3, "after": ")"}]  # one word, twice
+        assert problems_of(doc) == [
+            "textFlow.lines[1].marks[1] must follow the previous mark's word"]
 
-    def test_embedded_style_must_be_paren_or_bracket(self):
+    def test_a_mark_is_made_of_the_four_characters_only(self):
         doc = flow_doc()
-        for bad in ("curly", "", None, 1):
-            doc["textFlow"]["lines"][1]["embedded"] = [
-                {"start": 3, "end": 4, "style": bad}]
+        for bad in ("", "x", "(x)", 3, None):
+            doc["textFlow"]["lines"][1]["marks"] = [{"at": 3, "before": bad}]
             assert problems_of(doc) == [
-                "textFlow.lines[1].embedded[0].style must be 'paren' or 'bracket'"]
-        doc["textFlow"]["lines"][1]["embedded"] = [{"start": 3, "end": 4}]
-        assert problems_of(doc) == [
-            "textFlow.lines[1].embedded[0].style must be 'paren' or 'bracket'"]
+                "textFlow.lines[1].marks[0].before must be one or more of ( ) [ ]"], bad
+        doc["textFlow"]["lines"][1]["marks"] = [{"at": 3, "before": "([", "after": "])"}]
+        validate_document(doc)
+
+    def test_a_mark_carries_something(self):
+        doc = flow_doc()
+        doc["textFlow"]["lines"][1]["marks"] = [{"at": 3}]
+        assert problems_of(doc) == ["textFlow.lines[1].marks[0] carries nothing"]
 
     def test_every_flow_problem_reported(self):
         doc = flow_doc()
         doc["textFlow"]["lines"][1]["indent"] = 99
-        doc["textFlow"]["lines"][1]["embedded"] = [
-            {"start": 3, "end": 4, "style": "curly"}]
+        doc["textFlow"]["lines"][1]["marks"] = [{"at": 3, "before": "{"}]
         doc["textFlow"]["lines"][2]["start"] = 8
         assert problems_of(doc) == [
             "textFlow.lines[1].indent must be an int 0 <= indent <= 8",
-            "textFlow.lines[1].embedded[0].style must be 'paren' or 'bracket'",
+            "textFlow.lines[1].marks[0].before must be one or more of ( ) [ ]",
             "textFlow.lines[2].start must continue the previous line",
         ]
 

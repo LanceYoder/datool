@@ -159,7 +159,11 @@
   border-left: 1px solid var(--gold);
 }
 
-[data-theme='book'] .level-toggle button.on {
+/* The chosen tier stays gold under the pointer: the parchment hover the other
+   buttons take would make it look exactly like its neighbours, and the reader
+   could no longer see which one is chosen (ruled 2026-09-26). */
+[data-theme='book'] .level-toggle button.on,
+[data-theme='book'] .level-toggle button.on:hover:not(:disabled) {
   background: linear-gradient(#c9a227, #a07d1c);
   color: #2c1710;
 }
@@ -382,45 +386,6 @@
   background: transparent;
 }
 
-/* The fold runs the height of the SPREAD — the toolbar and the two written
-   pages — and stops there: the text flow and the notes below run the full
-   width of the leaf, and a crease through them would cut the flow in half.
-   Drawn OVER everything above the panels: the shadow of a page curving into
-   its spine falls on whatever is written there, the toolbar included. Inert,
-   and light enough at the seam that the verse numbers standing beside it are
-   untouched. */
-[data-theme='book'] .analysis-spread {
-  position: relative;
-}
-
-[data-theme='book'] .analysis-spread::before {
-  content: '';
-  position: absolute;
-  z-index: 5;
-  pointer-events: none;
-  /* Up over the frame at the top — the crease starts at the leaf's edge —
-     but flush at the bottom, where the full-width panels take the page. */
-  top: calc(-1 * var(--frame-w) - var(--page-pad));
-  bottom: 0;
-  left: calc(var(--page-pad) + var(--tree-margin, 50%) - 104px);
-  width: 208px;
-  background: linear-gradient(
-    90deg,
-    rgb(92 60 30 / 0%) 0%,
-    rgb(92 60 30 / 2%) 22%,
-    rgb(92 60 30 / 6%) 35%,
-    rgb(86 54 26 / 12%) 43%,
-    rgb(74 44 20 / 21%) 47.6%,
-    rgb(58 32 14 / 31%) 49.7%,
-    rgb(58 32 14 / 31%) 50.3%,
-    rgb(74 44 20 / 21%) 52.4%,
-    rgb(86 54 26 / 12%) 57%,
-    rgb(92 60 30 / 6%) 65%,
-    rgb(92 60 30 / 2%) 78%,
-    rgb(92 60 30 / 0%) 100%
-  );
-}
-
 /* The scribe's ruling: the pale red rule that bounds the written column on
    the recto, pricked and ruled before a word was set down. */
 [data-theme='book'] .editor-shell::after {
@@ -565,7 +530,7 @@
   color: var(--rubric);
 }
 
-[data-theme='book'] .textflow-embedded {
+[data-theme='book'] .textflow-mark {
   color: var(--sepia);
 }
 
@@ -743,7 +708,8 @@
   border-left: 2px solid rgb(31 63 143 / 25%);
 }
 
-[data-theme='notebook'] .level-toggle button.on {
+[data-theme='notebook'] .level-toggle button.on,
+[data-theme='notebook'] .level-toggle button.on:hover:not(:disabled) {
   background: var(--pen);
   color: #fdfcf6;
 }
@@ -987,13 +953,10 @@
 }
 
 /* An aside pencilled in beside the clause. */
-[data-theme='notebook'] .textflow-embedded {
+[data-theme='notebook'] .textflow-mark {
   color: rgb(31 63 143 / 70%);
 }
 
-[data-theme='notebook'] .textflow-word:hover {
-  background: rgb(31 63 143 / 13%);
-}
 
 [data-theme='notebook'] .paste-area {
   border-radius: 26px 6px 22px 8px / 8px 22px 6px 26px;
@@ -1169,7 +1132,8 @@
   border-left: none;
 }
 
-[data-theme='slate'] .level-toggle button.on {
+[data-theme='slate'] .level-toggle button.on,
+[data-theme='slate'] .level-toggle button.on:hover:not(:disabled) {
   background: #ffffff;
   color: var(--slate-900);
   box-shadow: 0 1px 2px rgb(23 25 28 / 14%);
@@ -1293,14 +1257,7 @@
   color: var(--muted);
 }
 
-[data-theme='slate'] .textflow-word:hover {
-  background: var(--slate-200);
-}
 
-[data-theme='slate'] .textflow-word.textflow-anchor {
-  background: var(--slate-200);
-  box-shadow: inset 0 0 0 1px var(--accent);
-}
 
 [data-theme='slate'] .verse-panel {
   background: var(--slate-100);

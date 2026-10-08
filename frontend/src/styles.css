@@ -1131,8 +1131,11 @@ div.error-box {
   line-height: 1.45;
 }
 
+/* No focus ring on a line (ruled 2026-09-17): the blinking cursor is the
+   only sign of where the keys go, as in any text editor. */
 .textflow-line:focus-visible {
-  box-shadow: inset 0 0 0 2px var(--accent);
+  box-shadow: none;
+  outline: none;
 }
 
 /* A blank breath before every new sentence — the flow's paragraphing. */
@@ -1144,79 +1147,35 @@ div.error-box {
   min-width: 0;
 }
 
-.textflow-word {
-  border-radius: 3px;
-  cursor: pointer;
+/* The whole box is the editor: the pointer is a text cursor everywhere in it,
+   and a word is never a target of its own — no highlight, no selection. */
+.textflow-body,
+.textflow-line {
+  cursor: text;
+  user-select: none;
 }
 
-.textflow-word:hover {
-  background: #eef2ff;
-}
-
-/* The word an embedding is being drawn FROM, until the second click. */
-.textflow-word.textflow-anchor {
-  background: #e0e7ff;
-  box-shadow: inset 0 0 0 1px var(--accent);
-}
-
-/* Left where it stands in the word order, but set off so the eye can step
-   over it. */
-.textflow-embedded {
-  font-style: italic;
+/* A mark the analyst typed around a word — the handout's ( ) [ ] — set a
+   shade quieter than the word, so the clause still reads first. */
+.textflow-mark {
   color: var(--muted);
 }
 
-/* Unobtrusive: the indent controls appear on the line the reader is on. */
-.textflow-indent {
-  display: inline-flex;
-  flex: none;
-  gap: 0.1rem;
-  opacity: 0;
-  transition: opacity 0.12s ease;
+/* The caret: a bar between the words, blinking the way an editor's does. */
+.textflow-caret {
+  display: inline-block;
+  width: 1.5px;
+  height: 1.05em;
+  margin: 0 -0.75px;
+  vertical-align: -0.15em;
+  background: var(--accent);
+  animation: textflow-blink 1s steps(2, start) infinite;
 }
 
-/* Shown on hover, and for the KEYBOARD (focus-visible) — a mouse click on an
-   arrow leaves plain focus behind, which must not pin the arrows on after
-   the pointer moves away. */
-.textflow-line:hover .textflow-indent,
-.textflow-line:focus-visible .textflow-indent,
-.textflow-line:has(:focus-visible) .textflow-indent {
-  opacity: 1;
-}
-
-.textflow-indent button {
-  padding: 0 0.2rem;
-  border: none;
-  background: none;
-  font-size: 0.7rem;
-  line-height: 1;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.textflow-indent button:hover {
-  color: var(--text);
-}
-
-.textflow-popover {
-  min-width: 11rem;
-  padding: 0.25rem;
-}
-
-.textflow-popover-label {
-  display: block;
-  padding: 0.15rem 0.55rem;
-  font-size: 0.8rem;
-}
-
-.textflow-style-row {
-  display: flex;
-  gap: 0.3rem;
-  padding: 0.15rem 0.35rem 0.25rem;
-}
-
-.textflow-style-row button {
-  flex: 1;
+@keyframes textflow-blink {
+  to {
+    visibility: hidden;
+  }
 }
 
 /* ---- Recently deleted ---- */
@@ -1275,8 +1234,7 @@ div.error-box {
   .notes-tools,
   .color-settings,
   .popover,
-  .textflow-indent,
-  .textflow-hint,
+  .textflow-caret,
   .trash-section,
   .verse-panel,
   .home-page .card {

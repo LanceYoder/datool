@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
 //
-// The panel's GESTURES, at the one place they differ from the tree's: a
-// right-click on a word divides the propositions the lines are, and the panel
-// only reports it — the division itself is made in the document.
+// The panel's GESTURES, at the one place they differ from the tree's: Enter,
+// and Backspace / Delete at a line's ends, divide and join the propositions
+// the lines are, and the panel only reports it — the division itself is made
+// in the document.
 //
 // Which of the two gestures a word offers is the panel's to decide (it is the
 // shape of the line under the pointer). WHETHER the gesture is legal is not:
 // §5.4 and §5.5 belong to the engine, and the panel attempts and lets a
 // refusal or a no-op happen rather than keeping a second copy of the rule. The
-// last describe below closes that loop for real — panel right-click through
+// last describe below closes that loop for real — the panel's Enter through
 // the editor's own commands, which is the path AnalysisPage's actionsRef
 // carries — because a deferring UI is only honest if the judge it defers to
 // actually answers.
@@ -80,27 +81,52 @@ async function panel(handlers: {
 }
 
 const word = (text: string) => screen.getByText(text);
+const lineOf = (text: string) => word(text).closest('.textflow-line') as HTMLElement;
+/** Put the cursor after a word (jsdom lays nothing out, so every click lands
+ *  on the word's "after" side) and press a key on its line. */
+const cursorAfter = (text: string) => fireEvent.mouseDown(word(text), { button: 0 });
+const press = (text: string, key: string, extra: object = {}) =>
+  fireEvent.keyDown(lineOf(text), { key, ...extra });
+/** Enter after a word: divide the line there. */
+const divideAfter = (text: string) => {
+  cursorAfter(text);
+  press(text, 'Enter');
+};
+/** Delete at a line's end: join the line below. */
+const joinBelow = (text: string) => {
+  cursorAfter(text);
+  press(text, 'Delete');
+};
 
-describe('TextFlowPanel right-click', () => {
+describe('TextFlowPanel dividing and joining, through the keys', () => {
   it('divides the line after a word that is not its last', async () => {
     const onSplitWord = vi.fn();
     const onMergeAfterLine = vi.fn();
     await panel({ onSplitWord, onMergeAfterLine });
 
-    fireEvent.contextMenu(word('α'));
+    divideAfter('α');
     expect(onSplitWord).toHaveBeenCalledWith(100);
-    fireEvent.contextMenu(word('γ'));
+    divideAfter('γ');
     expect(onSplitWord).toHaveBeenCalledWith(102);
     expect(onMergeAfterLine).not.toHaveBeenCalled();
   });
 
-  it('joins the line below on a line’s LAST word', async () => {
+  it('joins the line below with Delete at a line’s end, and the line above with Backspace at a start', async () => {
     const onSplitWord = vi.fn();
     const onMergeAfterLine = vi.fn();
     await panel({ onSplitWord, onMergeAfterLine });
 
-    fireEvent.contextMenu(word('β'));
+    joinBelow('β');
     expect(onMergeAfterLine).toHaveBeenCalledWith(101);
+    expect(onSplitWord).not.toHaveBeenCalled();
+
+    onMergeAfterLine.mockClear();
+    cursorAfter('γ');
+    press('γ', 'ArrowLeft'); // before γ: the start of line two
+    press('γ', 'Backspace');
+    expect(onMergeAfterLine).toHaveBeenCalledWith(101);
+    // Enter at a line's very start or end divides nothing.
+    press('γ', 'Enter');
     expect(onSplitWord).not.toHaveBeenCalled();
   });
 
@@ -113,26 +139,79 @@ describe('TextFlowPanel right-click', () => {
     const onMergeAfterLine = vi.fn();
     await panel({ onSplitWord, onMergeAfterLine });
 
-    fireEvent.contextMenu(word('δ'));
+    joinBelow('δ');
     expect(onSplitWord).not.toHaveBeenCalled();
-    expect(onMergeAfterLine).toHaveBeenCalledWith(103);
+    // …except that the panel CAN see there is no line below, and says nothing.
+    expect(onMergeAfterLine).not.toHaveBeenCalled();
   });
 
-  it('opens no popover: a right-click is the whole gesture', async () => {
-    await panel({ onSplitWord: () => {} });
+  it('gives a right-click no gesture of its own — a text editor has none', async () => {
+    const onSplitWord = vi.fn();
+    const onMergeAfterLine = vi.fn();
+    await panel({ onSplitWord, onMergeAfterLine });
     fireEvent.contextMenu(word('α'));
+    fireEvent.contextMenu(word('β'));
+    expect(onSplitWord).not.toHaveBeenCalled();
+    expect(onMergeAfterLine).not.toHaveBeenCalled();
     expect(screen.queryByRole('menu')).toBeNull();
   });
 });
 
-describe('TextFlowPanel left-click', () => {
-  it('offers the embedding only — dividing is the right-click’s', async () => {
+describe('TextFlowPanel typing (ruled 2026-09-17: a plain text editor)', () => {
+  const line = (text: string) => word(text).closest('.textflow-line') as HTMLElement;
+
+  it('puts the cursor where the line was clicked, and no menu', async () => {
     await panel({});
-    fireEvent.click(word('α'));
-    const menu = screen.getByRole('menu');
-    expect(menu.textContent).toContain('Embed from here');
-    expect(menu.textContent).not.toContain('Split');
-    expect(menu.textContent).not.toContain('Merge');
+    fireEvent.mouseDown(word('α'), { button: 0 });
+    expect(document.querySelector('.textflow-caret')).not.toBeNull();
+    expect(screen.queryByRole('menu')).toBeNull();
+    // Clicking the box itself — a gap, the padding — puts the cursor on the
+    // NEAREST line. jsdom lays nothing out, so every line is equally near and
+    // the first wins; the point is that the cursor lands on a line at all.
+    fireEvent.mouseDown(document.querySelector('.textflow-body')!, { button: 0 });
+    const bar = document.querySelector('.textflow-caret')!;
+    expect(bar.closest('.textflow-line')).toBe(lineOf('α'));
+  });
+
+  it('types the handout’s marks at the caret and backspaces them', async () => {
+    const onChange = vi.fn();
+    await panel({ onChange });
+    // jsdom lays nothing out: every click lands on the word's "after" side.
+    cursorAfter('β');
+    fireEvent.keyDown(line('β'), { key: ')' });
+    expect(onChange).toHaveBeenLastCalledWith({
+      lines: [
+        { start: 100, end: 101, indent: 0, marks: [{ at: 101, after: ')' }] },
+        { start: 102, end: 103, indent: 1 },
+      ],
+    });
+    // Anything that is not a mark is not typed into the passage.
+    onChange.mockClear();
+    fireEvent.keyDown(line('β'), { key: 'x' });
+    fireEvent.keyDown(line('β'), { key: '{' });
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.keyDown(line('β'), { key: 'Backspace' });
+    expect(onChange).not.toHaveBeenCalled(); // nothing typed here yet: a no-op
+  });
+
+  it('indents with Tab and Shift+Tab, no buttons needed', async () => {
+    const onChange = vi.fn();
+    await panel({ onChange });
+    fireEvent.keyDown(line('α'), { key: 'Tab' });
+    expect(onChange).toHaveBeenLastCalledWith({
+      lines: [
+        { start: 100, end: 101, indent: 1 },
+        { start: 102, end: 103, indent: 1 },
+      ],
+    });
+    fireEvent.keyDown(line('γ'), { key: 'Tab', shiftKey: true });
+    expect(onChange).toHaveBeenLastCalledWith({
+      lines: [
+        { start: 100, end: 101, indent: 0 },
+        { start: 102, end: 103, indent: 0 },
+      ],
+    });
+    expect(screen.queryByRole('button')).toBeNull();
   });
 
   it('waits, rather than offering to start a flow, while it has none', () => {
@@ -147,28 +226,29 @@ describe('TextFlowPanel left-click', () => {
 // ---------------------------------------------------------------------------
 // READ-ONLY (accounts-spec §8): a professor reading a student's work. Two
 // separate things meet in this panel: `editable` governs SHAPING the flow —
-// the ◀ ▶ and the embedding — while DIVIDING the lines, which are
-// propositions, is the page's: it withholds the two divisions by handing the
-// panel no callbacks at all, and the panel takes it from there. No class rule
-// touches either (§5): the flow is always the student's to edit.
+// the keyboard: Tab and the typed marks — while DIVIDING the lines, which
+// are propositions, is the page's: it withholds the two divisions by handing
+// the panel no callbacks at all, and the panel takes it from there. No class
+// rule touches either (§5): the flow is always the student's to edit.
 
 describe('TextFlowPanel read-only', () => {
-  it('draws no ◀ ▶, and refuses Tab, when the flow is read-only', async () => {
+  it('takes no focus and refuses Tab when the flow is read-only', async () => {
     const onChange = vi.fn();
     await panel({ editable: false, onChange });
-    expect(screen.queryByLabelText('Move line in')).toBeNull();
-    expect(screen.queryByLabelText('Move line out')).toBeNull();
-
     const line = word('α').closest('.textflow-line');
     expect(line).not.toBeNull();
+    expect(line!.getAttribute('tabindex')).toBeNull();
     fireEvent.keyDown(line!, { key: 'Tab' });
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it('opens no embedding popover when the flow is read-only', async () => {
-    await panel({ editable: false });
-    fireEvent.click(word('α'));
-    expect(screen.queryByRole('menu')).toBeNull();
+  it('puts no caret, and types no mark, when the flow is read-only', async () => {
+    const onChange = vi.fn();
+    await panel({ editable: false, onChange });
+    fireEvent.mouseDown(word('α'), { button: 0 });
+    expect(document.querySelector('.textflow-caret')).toBeNull();
+    fireEvent.keyDown(word('α').closest('.textflow-line')!, { key: '(' });
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it('still READS: the lines and their words are all there', async () => {
@@ -178,10 +258,10 @@ describe('TextFlowPanel read-only', () => {
 
   it('divides nothing when the page hands it no split callback', async () => {
     // What AnalysisPage does on a read-only page — the prop is simply not
-    // passed, so the right-click reaches nothing.
+    // passed, so Enter and Delete reach nothing.
     await panel({ editable: true });
-    fireEvent.contextMenu(word('α')); // would have split
-    fireEvent.contextMenu(word('β')); // would have merged
+    divideAfter('α'); // would have split
+    joinBelow('β'); // would have merged
     // Nothing to assert but the absence of a crash and of a popover: the
     // panel has no other way to change the document.
     expect(screen.queryByRole('menu')).toBeNull();
@@ -190,7 +270,7 @@ describe('TextFlowPanel read-only', () => {
   it('keeps indenting when only the DIVISIONS are withheld', async () => {
     const onChange = vi.fn();
     await panel({ editable: true, onChange });
-    fireEvent.click(screen.getAllByLabelText('Move line in')[0]!);
+    fireEvent.keyDown(word('α').closest('.textflow-line')!, { key: 'Tab' });
     expect(onChange).toHaveBeenCalled();
   });
 });
@@ -202,7 +282,7 @@ describe('TextFlowPanel read-only', () => {
 // AnalysisEditor's `actionsRef` (EditorActions.splitAfter / .mergeAt), which
 // name a word by CORPUS INDEX, find the proposition holding it, and run one
 // core command. The two lines below are those two propositions, so the flow's
-// right-click and the tree's right-click are the same division of the same
+// Enter and the tree's right-click are the same division of the same
 // document — and one undo step, because each command dispatches once.
 
 const WORD_MAP: ReadonlyMap<number, CorpusWord> = new Map(words.map((w) => [w.index, w]));
@@ -276,11 +356,11 @@ describe('TextFlowPanel gestures through the editor’s commands', () => {
     return ed;
   }
 
-  it('divides the proposition a right-click falls in, and re-labels from the verses', async () => {
+  it('divides the proposition Enter falls in, and re-labels from the verses', async () => {
     const ed = await wired();
     expect(rows(ed)).toEqual(['1a: α β', '1b: γ δ']);
 
-    fireEvent.contextMenu(word('α'));
+    divideAfter('α');
     // The division landed in the DOCUMENT: three propositions, the corpus
     // labels re-derived (one verse, so they letter a/b/c).
     expect(rows(ed)).toEqual(['1a: α', '1b: β', '1c: γ δ']);
@@ -288,7 +368,7 @@ describe('TextFlowPanel gestures through the editor’s commands', () => {
 
   it('joins the line below on a line’s last word', async () => {
     const ed = await wired();
-    fireEvent.contextMenu(word('β')); // last word of line one -> merge
+    joinBelow('β'); // Delete at the end of line one -> merge
     expect(rows(ed)).toEqual(['1: α β γ δ']);
   });
 
@@ -296,7 +376,7 @@ describe('TextFlowPanel gestures through the editor’s commands', () => {
     const ed = await wired();
     const before = rows(ed);
     const steps = ed.state.doc;
-    fireEvent.contextMenu(word('δ')); // attempted, and refused: nothing below
+    joinBelow('δ'); // nothing below: nothing asked, nothing changes
     expect(rows(ed)).toEqual(before);
     expect(ed.state.doc).toBe(steps); // byte-identical: no transaction at all
     expect(ed.can().undo()).toBe(false);
@@ -304,7 +384,7 @@ describe('TextFlowPanel gestures through the editor’s commands', () => {
 
   it('is ONE undo step, text and tree together', async () => {
     const ed = await wired();
-    fireEvent.contextMenu(word('α'));
+    divideAfter('α');
     expect(rows(ed)).toHaveLength(3);
     ed.commands.undo();
     expect(rows(ed)).toEqual(['1a: α β', '1b: γ δ']);

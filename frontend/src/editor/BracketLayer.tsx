@@ -276,6 +276,13 @@ export interface BracketLayerProps {
   selectedDotId: string | null;
   shake: ShakeState | null;
   onDotClick: (dot: DotGeom) => void;
+  /**
+   * The button went down on a dot / came up on one — how a DRAG from one dot
+   * to another is told apart from two clicks. Both are optional: the click is
+   * the whole gesture on its own.
+   */
+  onDotPress?: (dot: DotGeom) => void;
+  onDotRelease?: (dot: DotGeom) => void;
   onLabelClick: (bracketId: number, at: Point) => void;
   onStarClick: (bracketId: number) => void;
   /** Right-click: remove the connections at this dot. */
@@ -412,6 +419,8 @@ export default function BracketLayer({
   selectedDotId,
   shake,
   onDotClick,
+  onDotPress,
+  onDotRelease,
   onLabelClick,
   onStarClick,
   onDotDelete,
@@ -639,7 +648,13 @@ export default function BracketLayer({
               key={shaking && shake !== null ? `${d.id}!${shake.seq}` : d.id}
               className={classes.join(' ')}
               data-dot={d.id}
-              onMouseDown={swallow}
+              onMouseDown={(event) => {
+                swallow(event);
+                if (event.button === 0) onDotPress?.(d);
+              }}
+              onMouseUp={(event) => {
+                if (event.button === 0) onDotRelease?.(d);
+              }}
               // §5.2's two hover signals both start here: the span this dot
               // names, and — while another dot is armed — the preview of the
               // join it would land.
