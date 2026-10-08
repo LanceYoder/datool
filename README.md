@@ -5,9 +5,9 @@ paste a chunk of Greek text, get an automated first-pass analysis (proposition
 segmentation + logical-relationship classification into a bracket tree), then refine
 the structure and annotations in an editor built for the method.
 
-See [`docs/DESIGN.md`](docs/DESIGN.md) for the full design: the method being modeled,
-the tree data model, the MorphGNT corpus foundation, the first-pass rules, and the
-editor architecture.
+See [`docs/OVERVIEW.md`](docs/OVERVIEW.md) for what datool does and how it is built,
+and the other files in [`docs/`](docs) for the editor, the auto-analyzer, accounts,
+development and deployment.
 
 ## Running locally
 
