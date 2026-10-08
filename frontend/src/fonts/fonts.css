@@ -1,0 +1,8 @@
+/* SBL Greek, bundled so every reader sees the Greek in it, installed or not
+   (styles.css's .greek asks for it first). Free for non-commercial use and
+   web embedding; the license travels with it (SBL_Font_License.pdf). */
+@font-face {
+  font-family: 'SBL Greek';
+  src: local('SBL Greek'), local('SBLGreek'), url('./SBL_grk.ttf') format('truetype');
+  font-display: swap;
+}
