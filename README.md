@@ -1,13 +1,10 @@
 # datool
 
-A web tool for **discourse analysis (bracketing) of Greek New Testament passages**:
-paste a chunk of Greek text, get an automated first-pass analysis (proposition
-segmentation + logical-relationship classification into a bracket tree), then refine
-the structure and annotations in an editor built for the method.
+A web tool for **discourse analysis of Greek New Testament passages**:
+select a text, DAtool automatically builds definite relationships, then use the DA-specific editor to 
+finish your analysis. Much easier than paper or Microsoft Excel!
 
-See [`docs/DESIGN.md`](docs/DESIGN.md) for the full design: the method being modeled,
-the tree data model, the MorphGNT corpus foundation, the first-pass rules, and the
-editor architecture.
+See [`docs/DESIGN.md`](docs/DESIGN.md) for the full design.
 
 ## Running locally
 
