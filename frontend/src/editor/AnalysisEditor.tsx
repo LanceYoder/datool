@@ -1343,6 +1343,43 @@ function EditorInner({
    * Returns true when the pair was a pickup-dot gesture at all, settled or
    * refused, so the caller knows not to try connecting them.
    */
+  /**
+   * DRAGGING from one dot to another is the same gesture as clicking the two
+   * (ruled 2026-09-26): the press arms the first dot — so the aim line follows
+   * the pointer as it would after a click — and releasing on a second dot
+   * lands the click on it. Releasing on the same dot, or anywhere else, leaves
+   * things exactly as a click would: armed on the dot, or dropped by the
+   * click-away above.
+   */
+  const pressArmed = useRef<string | null>(null);
+  const onDotPress = (dot: DotGeom) => {
+    if (readOnly || selectedDotId !== null) return;
+    pressArmed.current = dot.id;
+    setPopover(null);
+    setSelectedDotId(dot.id);
+  };
+  const onDotRelease = (dot: DotGeom) => {
+    const from = pressArmed.current;
+    if (from === null || from === dot.id) return;
+    // A drag that ended on another dot: the click it stands for.
+    pressArmed.current = null;
+    onDotClick(dot);
+  };
+  useEffect(() => {
+    // A release anywhere else ends the press: the next click on the armed
+    // dot is a real click again (and unarms it, as a click does). A tick
+    // later, so the click that follows a same-dot release still sees it.
+    const onUp = () => {
+      window.setTimeout(() => {
+        pressArmed.current = null;
+      }, 0);
+    };
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, []);
+
   const trySettle = (armed: DotRef, target: DotRef, shakeAt: string): boolean => {
     const hang = armed.kind === 'hang' ? armed : target.kind === 'hang' ? target : null;
     if (hang === null) return false;
@@ -1367,6 +1404,12 @@ function EditorInner({
     // Read-only has no use for a selected dot at all, so the dots stop arming:
     // nothing on the overlay pretends to be a handle.
     if (readOnly) return;
+    // The press that began this very click already armed the dot (a drag may
+    // have been starting): the click that follows it must not unarm it.
+    if (pressArmed.current === dot.id) {
+      pressArmed.current = null;
+      return;
+    }
     if (selectedDotId === null) {
       // A room's pickup dot arms like any other handle — the tree flexes
       // around it while it is carried — and it is a real endpoint now (A2).
@@ -1783,6 +1826,8 @@ function EditorInner({
               selectedDotId={selectedDotId}
               shake={shake}
               onDotClick={onDotClick}
+              onDotPress={onDotPress}
+              onDotRelease={onDotRelease}
               onLabelClick={onLabelClick}
               onStarClick={onStarClick}
               onDotDelete={(dot) => onDotDelete(dot.id)}

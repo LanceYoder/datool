@@ -91,16 +91,18 @@ export interface SectionBreak {
 }
 
 /**
- * A stretch of one flow line set off from the clause around it: left where it
- * stands in the word order, but wrapped and italicized so the eye can step
- * over it. Ranges within a line are ordered and never overlap.
+ * The marks TYPED around one word of a flow line — the ( ) and [ ] the
+ * handout puts around an embedded clause (Text Flow Instructions §10), left
+ * where the words stand. Only those four characters, and a word may carry
+ * several of them ("([", "])"). Marks within a line are ordered by word.
  */
-export interface TextFlowEmbedded {
-  /** Inclusive corpus word index, within the owning line. */
-  start: number;
-  /** Inclusive corpus word index, within the owning line. */
-  end: number;
-  style: 'paren' | 'bracket';
+export interface TextFlowMark {
+  /** Corpus word index, within the owning line. */
+  at: number;
+  /** Characters typed just before the word. */
+  before?: string;
+  /** Characters typed just after the word. */
+  after?: string;
 }
 
 /** One clause line of the text flow. */
@@ -110,7 +112,7 @@ export interface TextFlowLine {
   end: number;
   /** Steps of indentation under what the clause modifies, 0..8. */
   indent: number;
-  embedded?: TextFlowEmbedded[];
+  marks?: TextFlowMark[];
 }
 
 /**

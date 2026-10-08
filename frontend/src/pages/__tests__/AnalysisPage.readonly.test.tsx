@@ -145,12 +145,13 @@ describe('an analysis opened read-only', () => {
     expect(document.querySelector('.notes-editor.read-only')).not.toBeNull();
   });
 
-  it('shows the text flow without its indent controls', async () => {
+  it('shows the text flow without its keyboard', async () => {
     mount('/analysis/1?readonly=1');
     await waitFor(() => {
       expect(document.querySelector('.textflow-panel.has-flow')).not.toBeNull();
     });
-    expect(screen.queryByLabelText('Move line in')).toBeNull();
+    // Read-only lines take no focus and so no keys: no caret, no marks, no Tab.
+    expect(document.querySelector('.textflow-line[tabindex]')).toBeNull();
   });
 
   it('is the OWNER’s ordinary editable page without the flag', async () => {

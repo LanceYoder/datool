@@ -195,6 +195,27 @@ describe('connecting two propositions', () => {
     });
   });
 
+  it('joins them by DRAGGING from one dot to the other — the same gesture as two clicks', async () => {
+    await cleared(DEFAULT_POLICY);
+    fireEvent.mouseDown(dot('prop:p1'), { button: 0 });
+    // The press arms the dot, as a click would.
+    expect(document.querySelector('.dot-group.selected')).not.toBeNull();
+    fireEvent.mouseUp(dot('prop:p2'), { button: 0 });
+    await waitFor(() => {
+      expect(changes.length).toBe(2);
+    });
+  });
+
+  it('keeps a pressed-and-released dot armed, as a click leaves it', async () => {
+    await cleared(DEFAULT_POLICY);
+    const p1 = dot('prop:p1');
+    fireEvent.mouseDown(p1, { button: 0 });
+    fireEvent.mouseUp(p1, { button: 0 });
+    fireEvent.click(p1);
+    expect(document.querySelector('.dot-group.selected')).not.toBeNull();
+    expect(changes.length).toBe(1); // only the clear: nothing joined yet
+  });
+
   it('stops the dots arming at all when read-only', async () => {
     await readOnly();
     fireEvent.click(dots()[0]!);

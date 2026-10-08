@@ -1,26 +1,38 @@
-// The TEXT FLOW's core: the passage laid out as clause lines, and the four
-// edits an analyst makes to it. Every function here is pure — a flow goes in,
-// a NEW flow comes out — so the panel above it only has to render and to hand
-// the result back to the document.
+// The TEXT FLOW's core: the passage laid out as clause lines, and the edits
+// an analyst makes to it. Every function here is pure — a flow goes in, a NEW
+// flow comes out — so the panel above it only has to render and to hand the
+// result back to the document.
 //
 // The one invariant every function keeps: the lines are CONTIGUOUS and in
 // order. Each line's start is the previous line's end + 1, so the flow covers
 // one gapless corpus range and no word of the passage can be lost or doubled
-// by an edit. An edit that cannot keep that (or the embedding rules below)
-// changes nothing and returns the flow it was given, unchanged.
+// by an edit. An edit that cannot keep that changes nothing and returns the
+// flow it was given, unchanged.
 //
 // Where the lines are DIVIDED is not the flow's own: one line per corpus
 // proposition, always, whichever view the analyst divided in. reconcileFlow
 // re-cuts a flow to the propositions after such an edit, keeping the indents
-// and embeddings that still fit; isAligned says whether it need run at all.
+// and the typed marks; isAligned says whether it need run at all.
+//
+// The MARKS are the handout's parentheses and brackets around an embedded
+// clause (Text Flow Instructions §10), typed by the analyst between the words
+// exactly as in a text editor (ruled 2026-09-17): they belong to the word they
+// stand beside, so a division or a join never has to cut one.
 
-import type { CorpusWord, TextFlow, TextFlowEmbedded, TextFlowLine } from '../types';
+import type { CorpusWord, TextFlow, TextFlowLine, TextFlowMark } from '../types';
 
 /** Deepest indentation a clause may take. */
 export const MAX_INDENT = 8;
 
-/** How far one press of ◀ / ▶ (or Tab) moves a line. */
+/** How far one press of Tab (or Shift+Tab) moves a line. */
 export const INDENT_STEP = 1;
+
+/** The only characters a mark may hold. */
+export const MARK_CHARS = '()[]';
+
+export function isMarkChar(ch: string): boolean {
+  return ch.length === 1 && MARK_CHARS.includes(ch);
+}
 
 /**
  * Sentence-final punctuation in the SBLGNT: the full stop, the Greek question
@@ -70,11 +82,9 @@ export function lineIndexOf(flow: TextFlow, wordIndex: number): number {
   return flow.lines.findIndex((l) => wordIndex >= l.start && wordIndex <= l.end);
 }
 
-/** The embedded range covering this word on its line, if any. */
-export function embeddedAt(flow: TextFlow, wordIndex: number): TextFlowEmbedded | null {
-  const line = flow.lines[lineIndexOf(flow, wordIndex)];
-  if (line === undefined) return null;
-  return (line.embedded ?? []).find((e) => wordIndex >= e.start && wordIndex <= e.end) ?? null;
+/** The marks on this word, if any. */
+export function markAt(line: TextFlowLine, wordIndex: number): TextFlowMark | null {
+  return (line.marks ?? []).find((m) => m.at === wordIndex) ?? null;
 }
 
 /** Does this line open a new sentence — i.e. did the line above close one? */
@@ -90,31 +100,82 @@ export function startsSentence(
   return last !== undefined && isSentenceEnd(last);
 }
 
-function withEmbedded(line: TextFlowLine, embedded: TextFlowEmbedded[]): TextFlowLine {
+/** A line carrying exactly these marks — empty ones dropped, in word order. */
+function withMarks(line: TextFlowLine, marks: readonly TextFlowMark[]): TextFlowLine {
   const out: TextFlowLine = { start: line.start, end: line.end, indent: line.indent };
-  if (embedded.length > 0) out.embedded = embedded;
+  const kept = marks
+    .filter((m) => (m.before ?? '') !== '' || (m.after ?? '') !== '')
+    .map((m) => {
+      const mark: TextFlowMark = { at: m.at };
+      if (m.before) mark.before = m.before;
+      if (m.after) mark.after = m.after;
+      return mark;
+    })
+    .sort((a, b) => a.at - b.at);
+  if (kept.length > 0) out.marks = kept;
   return out;
+}
+
+/**
+ * A flow as this module understands it, whatever it was stored as: an older
+ * document's `embedded` ranges (start, end, style) become the marks they
+ * were drawn as — "(" before the first word, ")" after the last — and a line
+ * that carries neither comes back as it is.
+ */
+export function normalizeFlow(flow: TextFlow | null): TextFlow | null {
+  if (flow === null) return null;
+  let changed = false;
+  const lines = flow.lines.map((line) => {
+    const legacy = (line as TextFlowLine & { embedded?: unknown }).embedded;
+    if (!Array.isArray(legacy)) return line;
+    changed = true;
+    const marks: TextFlowMark[] = [...(line.marks ?? [])];
+    for (const raw of legacy) {
+      const span = raw as { start?: unknown; end?: unknown; style?: unknown };
+      if (typeof span.start !== 'number' || typeof span.end !== 'number') continue;
+      const [open, shut] = span.style === 'bracket' ? ['[', ']'] : ['(', ')'];
+      addChar(marks, span.start, 'before', open, true);
+      addChar(marks, span.end, 'after', shut, false);
+    }
+    return withMarks(line, marks);
+  });
+  return changed ? { lines } : flow;
+}
+
+/** Add one character to a word's before/after string, in place. */
+function addChar(
+  marks: TextFlowMark[],
+  at: number,
+  side: 'before' | 'after',
+  ch: string,
+  front: boolean,
+): void {
+  let mark = marks.find((m) => m.at === at);
+  if (mark === undefined) {
+    mark = { at };
+    marks.push(mark);
+  }
+  const have = mark[side] ?? '';
+  mark[side] = front ? ch + have : have + ch;
 }
 
 /**
  * Divide a line after `wordIndex`: the words up to it stay, the rest become
  * the next line at the same indent. A no-op on the last word of a line
- * (nothing left to divide) or when an embedded range would be cut in two —
- * remove the embedding first, then split.
+ * (nothing left to divide). Each mark goes with its word.
  */
 export function splitLineAfter(flow: TextFlow, wordIndex: number): TextFlow {
   const idx = lineIndexOf(flow, wordIndex);
   const line = flow.lines[idx];
   if (line === undefined || wordIndex === line.end) return flow;
-  const embedded = line.embedded ?? [];
-  if (embedded.some((e) => e.start <= wordIndex && e.end > wordIndex)) return flow;
-  const head = withEmbedded(
+  const marks = line.marks ?? [];
+  const head = withMarks(
     { start: line.start, end: wordIndex, indent: line.indent },
-    embedded.filter((e) => e.end <= wordIndex),
+    marks.filter((m) => m.at <= wordIndex),
   );
-  const tail = withEmbedded(
+  const tail = withMarks(
     { start: wordIndex + 1, end: line.end, indent: line.indent },
-    embedded.filter((e) => e.start > wordIndex),
+    marks.filter((m) => m.at > wordIndex),
   );
   const lines = [...flow.lines];
   lines.splice(idx, 1, head, tail);
@@ -124,15 +185,15 @@ export function splitLineAfter(flow: TextFlow, wordIndex: number): TextFlow {
 /**
  * Join a line to the one below it. The merged line keeps THIS line's indent
  * (the one above is the one the reader has already placed) and both lines'
- * embeddings. A no-op on the last line.
+ * marks. A no-op on the last line.
  */
 export function mergeWithNext(flow: TextFlow, lineIdx: number): TextFlow {
   const line = flow.lines[lineIdx];
   const next = flow.lines[lineIdx + 1];
   if (line === undefined || next === undefined) return flow;
-  const merged = withEmbedded(
+  const merged = withMarks(
     { start: line.start, end: next.end, indent: line.indent },
-    [...(line.embedded ?? []), ...(next.embedded ?? [])],
+    [...(line.marks ?? []), ...(next.marks ?? [])],
   );
   const lines = [...flow.lines];
   lines.splice(lineIdx, 2, merged);
@@ -164,14 +225,12 @@ export function isAligned(
 
 /**
  * Re-cut a flow to the propositions: exactly one line per proposition, in
- * order. The flow keeps what is its OWN — the indents and the embedded
- * stretches — as far as they still make sense:
+ * order. The flow keeps what is its OWN — the indents and the marks:
  *
  *   * a line's indent is the indent of the old line its first word sat on
  *     (0 where there was none), so a divided line leaves both halves where
  *     the reader had put it and a joined one keeps the upper line's place;
- *   * an embedded stretch survives if it still falls entirely inside ONE new
- *     line; one that a new division would cut in two is dropped.
+ *   * a mark stays on its word, whichever new line that word falls in.
  *
  * With no flow at all, every line comes back flush left.
  */
@@ -179,47 +238,56 @@ export function reconcileFlow(
   flow: TextFlow | null,
   props: readonly { start: number; end: number }[],
 ): TextFlow {
-  const marks = flow === null ? [] : flow.lines.flatMap((l) => l.embedded ?? []);
+  const marks = flow === null ? [] : flow.lines.flatMap((l) => l.marks ?? []);
   const lines = props.map((p) => {
     const old = flow === null ? undefined : flow.lines[lineIndexOf(flow, p.start)];
-    return withEmbedded(
+    return withMarks(
       { start: p.start, end: p.end, indent: old?.indent ?? 0 },
-      marks.filter((e) => e.start >= p.start && e.end <= p.end),
+      marks.filter((m) => m.at >= p.start && m.at <= p.end),
     );
   });
   return { lines };
 }
 
+/** Where the analyst's caret stands: just before or just after one word. */
+export interface Caret {
+  at: number;
+  side: 'before' | 'after';
+}
+
 /**
- * Set off — or release — the words from `from` to `to` (either order).
- *
- *   * an existing range with exactly these bounds is REMOVED;
- *   * otherwise the range is added, kept in start order;
- *   * a range that would overlap an existing one, or that crosses a line
- *     boundary, is refused: the flow comes back untouched.
+ * Type one mark character at the caret — before its word, or after it. Any
+ * other character, or a word outside the flow, changes nothing.
  */
-export function toggleEmbedded(
-  flow: TextFlow,
-  from: number,
-  to: number,
-  style: TextFlowEmbedded['style'],
-): TextFlow {
-  const start = Math.min(from, to);
-  const end = Math.max(from, to);
-  const idx = lineIndexOf(flow, start);
+export function insertMark(flow: TextFlow, caret: Caret, ch: string): TextFlow {
+  if (!isMarkChar(ch)) return flow;
+  const idx = lineIndexOf(flow, caret.at);
   const line = flow.lines[idx];
-  // Both ends must sit on the SAME line: an embedding belongs to a clause.
-  if (line === undefined || end > line.end) return flow;
-  const embedded = line.embedded ?? [];
-  const existing = embedded.findIndex((e) => e.start === start && e.end === end);
-  let next: TextFlowEmbedded[];
-  if (existing >= 0) {
-    next = embedded.filter((_, i) => i !== existing);
-  } else {
-    if (embedded.some((e) => start <= e.end && end >= e.start)) return flow;
-    next = [...embedded, { start, end, style }].sort((a, b) => a.start - b.start);
-  }
+  if (line === undefined) return flow;
+  const marks = (line.marks ?? []).map((m) => ({ ...m }));
+  addChar(marks, caret.at, caret.side, ch, false);
   const lines = [...flow.lines];
-  lines[idx] = withEmbedded(line, next);
+  lines[idx] = withMarks(line, marks);
+  return { lines };
+}
+
+/**
+ * Backspace at the caret: the last character typed on that side of the word
+ * goes — or, with `fromFront`, the first (Delete, reaching forward into the
+ * next word's marks). Nothing there, nothing changes.
+ */
+export function removeMark(flow: TextFlow, caret: Caret, fromFront = false): TextFlow {
+  const idx = lineIndexOf(flow, caret.at);
+  const line = flow.lines[idx];
+  if (line === undefined) return flow;
+  const mark = markAt(line, caret.at);
+  const have = mark?.[caret.side] ?? '';
+  if (have === '') return flow;
+  const left = fromFront ? have.slice(1) : have.slice(0, -1);
+  const marks = (line.marks ?? []).map((m) =>
+    m.at === caret.at ? { ...m, [caret.side]: left } : { ...m },
+  );
+  const lines = [...flow.lines];
+  lines[idx] = withMarks(line, marks);
   return { lines };
 }

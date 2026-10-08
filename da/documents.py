@@ -18,8 +18,8 @@ The document shape (see docs/DESIGN.md §3, §7):
     }
 
     line := {"start": int, "end": int, "indent": int,
-             "embedded": [{"start": int, "end": int,
-                           "style": "paren" | "bracket"}, ...]?}
+             "marks": [{"at": int, "before": str?, "after": str?}, ...]?}
+             # marks: the ( ) [ ] typed around a word, chars from "()[]" only
 
     node := {"kind": "prop", "ref": str}
           | {"kind": "bracket", "rel": str, "prominent": 0 | 1 | None,
@@ -78,9 +78,10 @@ Invariants enforced here (mirrored client-side by the editor schema):
     proposition order, never the first one — every document opens inside its
     first block, so only the LATER starts are recorded;
   * "textFlow" (the student's Text Flow — the passage broken clause per line,
-    dependent clauses indented, embedded clauses marked in place) is one
-    gapless, ordered run of corpus words: each line picks up exactly where the
-    previous one stopped, and every embedded mark sits inside its own line.
+    dependent clauses indented, embedded clauses marked in place with typed
+    parentheses) is one gapless, ordered run of corpus words: each line picks
+    up exactly where the previous one stopped, and every mark sits on a word
+    inside its own line.
     It is a SEPARATE reading of the passage, so its range is its own — the
     student may flow more or less than the propositions cover, and nothing
     here cross-checks the two.
@@ -332,7 +333,8 @@ def _walk_tree(
 
 
 MAX_INDENT = 8  # deeper than any clause a student nests by hand
-EMBEDDED_STYLES = ("paren", "bracket")
+#: What a mark may be typed from: the handout's parentheses and brackets.
+MARK_CHARS = "()[]"
 
 
 def _is_index(value) -> bool:
@@ -342,7 +344,7 @@ def _is_index(value) -> bool:
 
 def _check_text_flow(flow, corpus_size: int | None, problems: list[str]) -> None:
     """Check the Text Flow: one gapless run of corpus words, line by line,
-    each line's embedded marks inside it and in order."""
+    each line's typed marks on words inside it, in word order."""
     if not isinstance(flow, dict):
         problems.append("textFlow must be an object")
         return
@@ -374,31 +376,36 @@ def _check_text_flow(flow, corpus_size: int | None, problems: list[str]) -> None
         if not _is_index(indent) or not (0 <= indent <= MAX_INDENT):
             problems.append(f"{where}.indent must be an int 0 <= indent <= {MAX_INDENT}")
 
-        if line.get("embedded") is None:
+        if line.get("marks") is None:
             continue
-        embedded = line["embedded"]
-        if not isinstance(embedded, list):
-            problems.append(f"{where}.embedded must be a list")
+        marks = line["marks"]
+        if not isinstance(marks, list):
+            problems.append(f"{where}.marks must be a list")
             continue
-        previous_embedded_end = None
-        for j, span in enumerate(embedded):
-            spot = f"{where}.embedded[{j}]"
-            if not isinstance(span, dict):
+        previous_at = None
+        for j, mark in enumerate(marks):
+            spot = f"{where}.marks[{j}]"
+            if not isinstance(mark, dict):
                 problems.append(f"{spot} must be an object")
-                previous_embedded_end = None
+                previous_at = None
                 continue
-            e_start, e_end = span.get("start"), span.get("end")
-            if not (_is_index(e_start) and _is_index(e_end) and e_start <= e_end):
-                problems.append(f"{spot} needs ints start <= end")
-                e_start = e_end = None
-            elif start is not None and not (start <= e_start and e_end <= end):
+            at = mark.get("at")
+            if not _is_index(at):
+                problems.append(f"{spot}.at must be an int")
+                at = None
+            elif start is not None and not (start <= at <= end):
                 problems.append(f"{spot} must lie inside its line")
-            if (e_start is not None and previous_embedded_end is not None
-                    and e_start <= previous_embedded_end):
-                problems.append(f"{spot} overlaps the previous embedded range")
-            previous_embedded_end = e_end
-            if span.get("style") not in EMBEDDED_STYLES:
-                problems.append(f"{spot}.style must be 'paren' or 'bracket'")
+            if at is not None and previous_at is not None and at <= previous_at:
+                problems.append(f"{spot} must follow the previous mark's word")
+            previous_at = at
+            for side in ("before", "after"):
+                if side not in mark:
+                    continue
+                text = mark[side]
+                if not isinstance(text, str) or not text or any(c not in MARK_CHARS for c in text):
+                    problems.append(f"{spot}.{side} must be one or more of ( ) [ ]")
+            if "before" not in mark and "after" not in mark:
+                problems.append(f"{spot} carries nothing")
 
 
 def main_point(doc) -> list[str]:

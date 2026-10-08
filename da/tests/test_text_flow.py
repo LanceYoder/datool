@@ -178,19 +178,21 @@ def test_inter_sentence_logic_does_not_indent():
 
 def test_embedded_interrupting_relative_is_marked_in_place():
     """Matt 2:9's ὁ ἀστὴρ ⟨ὃν εἶδον ἐν τῇ ἀνατολῇ⟩ προῆγεν: the segmenter
-    keeps the relative inline, and the flow sets it off with parentheses
+    keeps the relative inline, and the flow types parentheses around it
     without moving a single boundary."""
     words = load_words()
     start, end = _range("Matthew 2:7-12")
     segments = segment(start, end)
     flow = build_text_flow(segments, words)
-    marked = [(line, span) for line in flow["lines"]
-              for span in line.get("embedded", ())]
+    marked = [(line, line["marks"]) for line in flow["lines"] if line.get("marks")]
     assert marked, "the interrupting relative should be reported"
-    line, span = marked[0]
-    assert span["style"] == "paren"
-    assert line["start"] <= span["start"] <= span["end"] <= line["end"]
-    assert " ".join(words[i].text for i in range(span["start"], span["end"] + 1)) \
+    line, marks = marked[0]
+    # Typed as the analyst would: "(" before the first word, ")" after the last.
+    opened = [m for m in marks if "before" in m]
+    closed = [m for m in marks if "after" in m]
+    assert opened[0]["before"] == "(" and closed[0]["after"] == ")"
+    assert line["start"] <= opened[0]["at"] <= closed[0]["at"] <= line["end"]
+    assert " ".join(words[i].text for i in range(opened[0]["at"], closed[0]["at"] + 1)) \
         == "ὃν εἶδον ἐν τῇ ἀνατολῇ"
     # … and a document carrying those marks validates.
     document = build_document(segments)
