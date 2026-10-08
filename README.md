@@ -4,7 +4,7 @@ A web tool for **discourse analysis of Greek New Testament passages**:
 select a text, DAtool automatically builds definite relationships, then use the DA-specific editor to 
 finish your analysis. Much easier than paper or Microsoft Excel!
 
-See [`docs/DESIGN.md`](docs/DESIGN.md) for the full design.
+See [`docs/DESIGN.md`](docs/DESIGN.md) for the full design. Docs are Claude-speak, not intended for human consumption.
 
 ## Running locally
 
