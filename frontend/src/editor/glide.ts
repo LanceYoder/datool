@@ -49,6 +49,17 @@ interface Drawn {
   dots: DotGeom[];
 }
 
+/**
+ * Where a dot that did not exist before should glide FROM. A loose-end dot
+ * is born by the delete: it starts at the old end of its bracket's tick on
+ * that side, so it travels with its line instead of appearing at the end.
+ */
+function bornAt(dot: DotGeom, oldBrackets: ReadonlyMap<number, BracketGeom>): DotGeom | undefined {
+  if (dot.kind !== 'hang' || typeof dot.ref !== 'number') return undefined;
+  const tick = oldBrackets.get(dot.ref)?.ticks.find((t) => t.side === dot.side);
+  return tick === undefined ? undefined : { ...dot, x: tick.x1, y: tick.y };
+}
+
 /** One frame of the glide from `from` to `to`. */
 export function glideFrame<T extends Drawn>(from: Drawn, to: T, t: number): T {
   const e = ease(Math.min(1, Math.max(0, t)));
@@ -61,7 +72,7 @@ export function glideFrame<T extends Drawn>(from: Drawn, to: T, t: number): T {
       return a === undefined ? b : lerpGeom(a, b, e);
     }),
     dots: to.dots.map((d) => {
-      const a = oldDots.get(d.id);
+      const a = oldDots.get(d.id) ?? bornAt(d, oldBrackets);
       return a === undefined ? d : lerpGeom(a, d, e);
     }),
   };
