@@ -261,26 +261,20 @@ export function newlyAnchored(before: Forest, after: Forest): number[] {
 }
 
 /**
- * The pids of the analysis's MAIN POINT — where the star walk from the top of
- * the tree lands — but only when the analysis is COMPLETE: exactly one forest
- * root, and that root a bracket (every proposition connected into one tree).
- * Otherwise empty.
+ * The pids to mark as PROMINENT — where the star walk from the top of each
+ * tree lands. While the analysis is still several trees, every tree that is
+ * a bracket shows its own top point; once it is one tree, that is the one
+ * main point. A lone proposition has no star and is never marked, and a tree
+ * with a hanging side is mid-edit, so it shows nothing until it is finished.
  *
  * The walk follows the STARRED side through subordinate brackets and fans out
  * across a coordinate bracket's whole packet — Progression included (the Mark
- * 4:10–12 diagram highlights BOTH members of its final P). Mirrors the
- * server's main_point.
+ * 4:10–12 diagram highlights BOTH members of its final P).
  */
 export function mainPointRefs(forest: Forest): string[] {
-  const root = forest.roots.length === 1 ? forest.roots[0] : undefined;
-  if (root === undefined || root.kind !== 'bracket') return [];
-  // A HANGING SIDE means an edit is half-made (§7.11: what used to be "while
-  // any hole exists"): what the tree supports is not decided yet, so nothing
-  // is the main point, and the server's main_point agrees.
   const hangs = (u: Unit): boolean =>
     u.kind === 'bracket'
     && (u.leftHanging || u.rightHanging || [...u.left, ...u.right].some(hangs));
-  if (hangs(root)) return [];
   const out: string[] = [];
   const walk = (u: Unit): void => {
     if (u.kind === 'leaf') {
@@ -291,7 +285,9 @@ export function mainPointRefs(forest: Forest): string[] {
     else if (u.star === 'right') walk(u.right[0]!);
     else for (const child of [...u.left, ...u.right]) walk(child); // coordinate
   };
-  walk(root);
+  for (const root of forest.roots) {
+    if (root.kind === 'bracket' && !hangs(root)) walk(root);
+  }
   return out;
 }
 

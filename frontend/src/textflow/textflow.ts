@@ -104,11 +104,13 @@ export function startsSentence(
 function withMarks(line: TextFlowLine, marks: readonly TextFlowMark[]): TextFlowLine {
   const out: TextFlowLine = { start: line.start, end: line.end, indent: line.indent };
   const kept = marks
-    .filter((m) => (m.before ?? '') !== '' || (m.after ?? '') !== '')
+    .filter((m) => (m.before ?? '') !== '' || (m.after ?? '') !== '' || m.bold || m.highlight)
     .map((m) => {
       const mark: TextFlowMark = { at: m.at };
       if (m.before) mark.before = m.before;
       if (m.after) mark.after = m.after;
+      if (m.bold) mark.bold = true;
+      if (m.highlight) mark.highlight = true;
       return mark;
     })
     .sort((a, b) => a.at - b.at);
@@ -290,4 +292,47 @@ export function removeMark(flow: TextFlow, caret: Caret, fromFront = false): Tex
   const lines = [...flow.lines];
   lines[idx] = withMarks(line, marks);
   return { lines };
+}
+
+/** Which of a word's two styles. */
+export type WordStyle = 'bold' | 'highlight';
+
+/**
+ * Toggle `style` over the words `from..to` (inclusive corpus indexes, any
+ * number of lines): if every one of them already has it, it comes off them
+ * all; otherwise every one gets it — as a text editor's Bold does.
+ */
+export function toggleStyle(flow: TextFlow, from: number, to: number, style: WordStyle): TextFlow {
+  const lo = Math.min(from, to);
+  const hi = Math.max(from, to);
+  const all = flow.lines.every((line) => {
+    for (let at = Math.max(lo, line.start); at <= Math.min(hi, line.end); at += 1) {
+      if (markAt(line, at)?.[style] !== true) return false;
+    }
+    return true;
+  });
+  const lines = flow.lines.map((line) => {
+    if (line.end < lo || line.start > hi) return line;
+    const marks = (line.marks ?? []).map((m) => ({ ...m }));
+    for (let at = Math.max(lo, line.start); at <= Math.min(hi, line.end); at += 1) {
+      let mark = marks.find((m) => m.at === at);
+      if (mark === undefined) {
+        mark = { at };
+        marks.push(mark);
+      }
+      if (all) delete mark[style];
+      else mark[style] = true;
+    }
+    return withMarks(line, marks);
+  });
+  return { lines };
+}
+
+/** Move every line from `fromLine` to `toLine` (inclusive) in or out together. */
+export function indentLines(flow: TextFlow, fromLine: number, toLine: number, delta: number): TextFlow {
+  let out = flow;
+  for (let i = Math.min(fromLine, toLine); i <= Math.max(fromLine, toLine); i += 1) {
+    out = indentLine(out, i, delta);
+  }
+  return out;
 }

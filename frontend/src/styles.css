@@ -1161,6 +1161,21 @@ div.error-box {
   color: var(--muted);
 }
 
+/* The analyst's own emphasis on words (Cmd/Ctrl+B, Cmd/Ctrl+Shift+H). */
+.textflow-word.tf-bold {
+  font-weight: 700;
+}
+
+.textflow-word.tf-highlight {
+  background: var(--tf-highlight, #fde68a);
+  border-radius: 2px;
+}
+
+/* The words selected by dragging or Shift — what Tab, bold and highlight act on. */
+.textflow-word.selected {
+  background: var(--tf-selection, rgb(59 130 246 / 25%));
+}
+
 /* The caret: a bar between the words, blinking the way an editor's does. */
 .textflow-caret {
   display: inline-block;

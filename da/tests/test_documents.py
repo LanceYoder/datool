@@ -720,6 +720,13 @@ class TestTextFlow:
         doc["textFlow"]["lines"][1]["marks"] = [{"at": 3, "before": "([", "after": "])"}]
         validate_document(doc)
 
+    def test_a_mark_may_bold_or_highlight_its_word(self):
+        doc = flow_doc()
+        doc["textFlow"]["lines"][1]["marks"] = [{"at": 3, "bold": True, "highlight": True}]
+        validate_document(doc)
+        doc["textFlow"]["lines"][1]["marks"] = [{"at": 3, "bold": False}]
+        assert problems_of(doc) == ["textFlow.lines[1].marks[0].bold must be true when present"]
+
     def test_a_mark_carries_something(self):
         doc = flow_doc()
         doc["textFlow"]["lines"][1]["marks"] = [{"at": 3}]

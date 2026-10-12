@@ -103,6 +103,10 @@ export interface TextFlowMark {
   before?: string;
   /** Characters typed just after the word. */
   after?: string;
+  /** The word is bolded (Cmd/Ctrl+B in the panel). */
+  bold?: true;
+  /** The word is highlighted (Cmd/Ctrl+Shift+H in the panel). */
+  highlight?: true;
 }
 
 /** One clause line of the text flow. */
