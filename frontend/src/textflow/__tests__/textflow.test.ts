@@ -3,6 +3,7 @@ import type { CorpusWord, TextFlow } from '../../types';
 import {
   MAX_INDENT,
   indentLine,
+  indentLines,
   initTextFlow,
   insertMark,
   isAligned,
@@ -15,6 +16,7 @@ import {
   removeMark,
   splitLineAfter,
   startsSentence,
+  toggleStyle,
 } from '../textflow';
 
 /** Type a string of marks at a caret, one character at a time. */
@@ -463,5 +465,37 @@ describe('lookups', () => {
     // Divide the second sentence: the tail no longer opens one.
     const split = splitLineAfter(base, 102);
     expect(startsSentence(split, 2, byIndex)).toBe(false);
+  });
+});
+
+describe('toggleStyle / indentLines', () => {
+  const flow: TextFlow = {
+    lines: [
+      { start: 1, end: 3, indent: 0, marks: [{ at: 2, before: '(' }] },
+      { start: 4, end: 6, indent: 1 },
+      { start: 7, end: 9, indent: 0 },
+    ],
+  };
+
+  it('bolds a run of words across lines, keeping typed marks', () => {
+    const out = toggleStyle(flow, 2, 5, 'bold');
+    expect(out.lines[0]!.marks).toEqual([{ at: 2, before: '(', bold: true }, { at: 3, bold: true }]);
+    expect(out.lines[1]!.marks).toEqual([{ at: 4, bold: true }, { at: 5, bold: true }]);
+    expect(out.lines[2]).toBe(flow.lines[2]);
+  });
+
+  it('takes the style off when every word already has it', () => {
+    const on = toggleStyle(flow, 2, 3, 'highlight');
+    const off = toggleStyle(on, 2, 3, 'highlight');
+    expect(off.lines[0]!.marks).toEqual([{ at: 2, before: '(' }]);
+    // A partly styled run is styled throughout first.
+    const partly = toggleStyle(toggleStyle(flow, 2, 2, 'bold'), 2, 3, 'bold');
+    expect(partly.lines[0]!.marks!.filter((m) => m.bold).map((m) => m.at)).toEqual([2, 3]);
+  });
+
+  it('indents every line in the range together, each clamped', () => {
+    const out = indentLines(flow, 0, 1, 1);
+    expect(out.lines.map((l) => l.indent)).toEqual([1, 2, 0]);
+    expect(indentLines(flow, 0, 2, -1).lines.map((l) => l.indent)).toEqual([0, 0, 0]);
   });
 });

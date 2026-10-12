@@ -8,7 +8,13 @@
 //   ( ) [ ]                    typed at the cursor: the handout's marks
 //   Backspace / Delete         take a typed mark back
 //   ← → Home End               walk the cursor along the line; ↑ ↓ change line
-//   Tab / Shift+Tab            move the line in / out one step
+//   Tab / Shift+Tab            move the line in / out one step — every
+//                              selected line, when a selection spans several
+//   drag, Shift+click,
+//   Shift+arrows               select words, across lines
+//   Cmd/Ctrl+B                 bold the selected words (or the word at the
+//                              cursor); again to take it off
+//   Cmd/Ctrl+Shift+H           highlight them, the same way
 //   Enter                      divide the line at the cursor — which divides
 //                              the PROPOSITION, since the lines are the
 //                              propositions (one per line, both views)
@@ -34,7 +40,10 @@ import {
   INDENT_STEP,
   type Caret,
   indentLine,
+  indentLines,
   insertMark,
+  lineIndexOf,
+  toggleStyle,
   isMarkChar,
   markAt,
   removeMark,
@@ -78,6 +87,9 @@ export default function TextFlowPanel({
   const [words, setWords] = useState<CorpusWord[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [caret, setCaret] = useState<Caret | null>(null);
+  // The other end of a selection: the words between it and the caret are
+  // selected. Null, or equal to the caret, is no selection.
+  const [anchor, setAnchor] = useState<Caret | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   // Where the cursor goes once a division has come back as a new flow: the
   // division is made in the document, and the line to stand on does not exist
@@ -157,7 +169,10 @@ export default function TextFlowPanel({
   useEffect(() => {
     if (caret === null) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setCaret(null);
+      if (event.key === 'Escape') {
+        setCaret(null);
+        setAnchor(null);
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => {
@@ -209,7 +224,11 @@ export default function TextFlowPanel({
    * past the last word — at the line's end. Exactly where a text editor's
    * would land.
    */
-  const caretFromClick = (line: TextFlowLine, lineEl: HTMLElement, event: ReactMouseEvent): Caret => {
+  const caretFromClick = (
+    line: TextFlowLine,
+    lineEl: HTMLElement,
+    event: { clientX: number; target: EventTarget | null },
+  ): Caret => {
     const target = event.target instanceof Element ? event.target.closest('.textflow-word') : null;
     const wordEls = [...lineEl.querySelectorAll<HTMLElement>('.textflow-word')];
     const x = event.clientX;
@@ -233,9 +252,45 @@ export default function TextFlowPanel({
     const line = flow.lines[lineIdx];
     if (line === undefined) return;
     event.preventDefault(); // no text selection: the cursor is ours
-    setCaret(caretFromClick(line, event.currentTarget, event));
+    const at = caretFromClick(line, event.currentTarget, event);
+    // Shift+click extends the selection from where it began; a plain click
+    // starts afresh, and dragging from it selects.
+    if (event.shiftKey && caret !== null) setAnchor(anchor ?? caret);
+    else setAnchor(at);
+    setCaret(at);
     event.currentTarget.focus();
+    startDrag();
   };
+
+  /** Dragging with the button down moves the caret, so the words between it
+   *  and where the press began are selected — across lines too. */
+  const startDrag = () => {
+    const onMove = (event: MouseEvent) => {
+      const hit = document.elementFromPoint(event.clientX, event.clientY);
+      const lineEl = hit instanceof Element ? hit.closest<HTMLElement>('.textflow-line') : null;
+      if (lineEl === null) return;
+      const idx = Number(lineEl.dataset.line);
+      const line = flow.lines[idx];
+      if (line === undefined) return;
+      setCaret(caretFromClick(line, lineEl, { clientX: event.clientX, target: hit }));
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  /** The selected words, inclusive, or null when nothing is selected. */
+  const gap = (c: Caret) => (c.side === 'before' ? c.at : c.at + 1);
+  const selection = (): { from: number; to: number } | null => {
+    if (anchor === null || caret === null || gap(anchor) === gap(caret)) return null;
+    const lo = Math.min(gap(anchor), gap(caret));
+    const hi = Math.max(gap(anchor), gap(caret));
+    return { from: lo, to: hi - 1 };
+  };
+  const selected = selection();
 
   /**
    * A click on the body itself — in the gap between two sentences, in the
@@ -259,8 +314,11 @@ export default function TextFlowPanel({
     const line = flow.lines[idx];
     if (line === undefined) return;
     event.preventDefault();
-    setCaret(caretFromClick(line, el, event));
+    const at = caretFromClick(line, el, event);
+    setAnchor(at);
+    setCaret(at);
     el.focus();
+    startDrag();
   };
 
   /** Walk the cursor one step along its line; it stops at the line's ends. */
@@ -289,13 +347,38 @@ export default function TextFlowPanel({
     if (line === undefined) return;
     if (event.key === 'Tab') {
       event.preventDefault();
-      commit(indentLine(flow, lineIdx, event.shiftKey ? -INDENT_STEP : INDENT_STEP));
+      const delta = event.shiftKey ? -INDENT_STEP : INDENT_STEP;
+      // A selection moves every line it touches, together.
+      commit(
+        selected === null
+          ? indentLine(flow, lineIdx, delta)
+          : indentLines(flow, lineIndexOf(flow, selected.from), lineIndexOf(flow, selected.to), delta),
+      );
       return;
     }
-    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    const mod = event.metaKey || event.ctrlKey;
+    const key = event.key.toLowerCase();
+    if (mod && !event.altKey && ((key === 'b' && !event.shiftKey) || (key === 'h' && event.shiftKey))) {
+      // Bold / highlight: the selected words, or the word at the cursor.
+      event.preventDefault();
+      const words = selected ?? (caret === null ? null : { from: caret.at, to: caret.at });
+      if (words !== null) {
+        commit(toggleStyle(flow, words.from, words.to, key === 'b' ? 'bold' : 'highlight'));
+      }
+      return;
+    }
+    if (mod || event.altKey) return;
     // Everything below is the cursor's, and the cursor must be on THIS line.
     const here = caret !== null && caret.at >= line.start && caret.at <= line.end ? caret : null;
     if (here === null) return;
+    const moving = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key);
+    // Shift+movement extends the selection from where it stands; any other
+    // key collapses it and acts at the cursor.
+    if (moving && event.shiftKey) {
+      if (anchor === null) setAnchor(here);
+    } else if (event.key !== 'Shift') {
+      setAnchor(null);
+    }
     const atLineStart = here.side === 'before' && here.at === line.start;
     const atLineEnd = here.side === 'after' && here.at === line.end;
 
@@ -401,7 +484,17 @@ export default function TextFlowPanel({
           {newVerse && <sup className="ev">{word.verse}</sup>}
           {mark?.before && <span className="textflow-mark">{mark.before}</span>}
           {before && caretBar}
-          <span className="textflow-word" data-index={i}>
+          <span
+            className={[
+              'textflow-word',
+              mark?.bold ? 'tf-bold' : '',
+              mark?.highlight ? 'tf-highlight' : '',
+              selected !== null && i >= selected.from && i <= selected.to ? 'selected' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            data-index={i}
+          >
             {displayWordText(word.text)}
           </span>
           {mark?.after && <span className="textflow-mark">{mark.after}</span>}
@@ -425,6 +518,7 @@ export default function TextFlowPanel({
                 : 'textflow-line'
             }
             style={{ '--tf-indent': line.indent } as CSSProperties}
+            data-line={lineIdx}
             tabIndex={editable ? 0 : undefined}
             onMouseDown={(event) => onLineMouseDown(event, lineIdx)}
             onKeyDown={(event) => onLineKeyDown(event, lineIdx)}
@@ -434,6 +528,7 @@ export default function TextFlowPanel({
               const to = event.relatedTarget;
               if (!(to instanceof HTMLElement && to.classList.contains('textflow-line'))) {
                 setCaret(null);
+                setAnchor(null);
               }
             }}
           >

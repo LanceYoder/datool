@@ -105,6 +105,7 @@ import RelationshipMenu from './RelationshipMenu';
 import ColorSettings from './ColorSettings';
 import SectionStrip from './SectionStrip';
 import { sectionColor, sectionColorByPid, sectionsOf } from './sections';
+import { useGlide } from './glide';
 import HelpPanel from './HelpPanel';
 import { loadViewSettings, saveViewSettings } from './viewSettings';
 import type { ViewSettings } from './viewSettings';
@@ -1160,6 +1161,12 @@ function EditorInner({
     };
   }, [overlay, pointer, selectedDotId, relLookup]);
 
+  // What the reader sees: the tree flexed around what they are carrying, or
+  // the tree as it stands — and after a delete, gliding to its new shape so
+  // the eye can follow where each line went.
+  const glideNext = useRef(false);
+  const shown = useGlide(flexed ?? overlay, glideNext);
+
   // §10 A6: the hover SPAN-WASH IS GONE. Hovering a dot no longer paints a
   // band across the passage — the state, the memo that derived it, the rect
   // that drew it and its CSS are all deleted. The endangered wash while AIMING
@@ -1323,7 +1330,11 @@ function EditorInner({
     const addr =
       ref.kind === 'hang' ? ({ kind: 'bracket', id: ref.id } as const) : dotAddr(ref);
     if (addr === null) return;
-    if (deleteAt(editor, addr) !== null) rejectConnection(dotId);
+    glideNext.current = true;
+    if (deleteAt(editor, addr) !== null) {
+      glideNext.current = false;
+      rejectConnection(dotId);
+    }
   };
   deleteDotRef.current = onDotDelete;
 
@@ -1541,9 +1552,6 @@ function EditorInner({
     setRelationship(editor, bracketId, rel, taxonomy);
   };
 
-  // What the reader sees: the tree flexed around what they are carrying, or
-  // the tree as it stands.
-  const shown = flexed ?? overlay;
 
   // ---- Popovers -----------------------------------------------------------
 

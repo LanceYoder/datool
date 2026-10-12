@@ -18,8 +18,10 @@ The document shape (see docs/DESIGN.md §3, §7):
     }
 
     line := {"start": int, "end": int, "indent": int,
-             "marks": [{"at": int, "before": str?, "after": str?}, ...]?}
-             # marks: the ( ) [ ] typed around a word, chars from "()[]" only
+             "marks": [{"at": int, "before": str?, "after": str?,
+                        "bold": true?, "highlight": true?}, ...]?}
+             # marks: the ( ) [ ] typed around a word, chars from "()[]" only,
+             # and whether the word is bolded or highlighted
 
     node := {"kind": "prop", "ref": str}
           | {"kind": "bracket", "rel": str, "prominent": 0 | 1 | None,
@@ -404,7 +406,10 @@ def _check_text_flow(flow, corpus_size: int | None, problems: list[str]) -> None
                 text = mark[side]
                 if not isinstance(text, str) or not text or any(c not in MARK_CHARS for c in text):
                     problems.append(f"{spot}.{side} must be one or more of ( ) [ ]")
-            if "before" not in mark and "after" not in mark:
+            for style in ("bold", "highlight"):
+                if style in mark and mark[style] is not True:
+                    problems.append(f"{spot}.{style} must be true when present")
+            if not any(k in mark for k in ("before", "after", "bold", "highlight")):
                 problems.append(f"{spot} carries nothing")
 
 

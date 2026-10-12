@@ -342,10 +342,19 @@ describe('mainPointRefs', () => {
     expect(mainPointRefs(forestOf(root))).toEqual(['x']);
   });
 
-  it('is empty while the analysis is incomplete (many roots, or a bare proposition)', () => {
-    expect(mainPointRefs(buildForest())).toEqual([]); // three roots
-    expect(mainPointRefs(forestOf(p('p1')))).toEqual([]); // one root, but no tree
+  it("marks each tree's own top point while there are several trees", () => {
+    const first = br(1, 'Grnd', 'left', p('a'), p('b'));
+    const second = br(2, 'Inf', 'right', p('c'), p('d'));
+    expect(mainPointRefs({ roots: [first, p('x'), second], nextId: 3 })).toEqual(['a', 'd']);
+    // A lone proposition has no star: nothing to mark.
+    expect(mainPointRefs(forestOf(p('p1')))).toEqual([]);
     expect(mainPointRefs({ roots: [], nextId: 1 })).toEqual([]);
+  });
+
+  it('skips only the tree that has a hanging side', () => {
+    const room = br(2, 'Ser', null, [p('a'), p('b')], p('c'));
+    const whole = br(3, 'Grnd', 'left', p('d'), p('e'));
+    expect(mainPointRefs({ roots: [room, whole], nextId: 4 })).toEqual(['d']);
   });
 
   it('is empty while ANY SIDE HANGS — §7.11’s replacement for "any hole"', () => {

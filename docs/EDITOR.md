@@ -10,8 +10,9 @@ The analysis page has three parts: the **tree** in the left margin, the
   brackets: Series(Series(a, b), c), never one three-way bracket.
 - Brackets never cross, and propositions never change order.
 - Subordinate relationships have a star on one side; coordinate ones don't.
-- The **main point** is found by following the stars from the top. It is
-  highlighted once the tree is a single connected tree.
+- The **main point** is found by following the stars from the top, and is
+  shown in red. While the analysis is still several separate trees, each
+  tree's own top point is red; once it is one tree, only the main point is.
 
 ## Tree gestures
 
@@ -32,7 +33,8 @@ means exactly that unit.
   connected: the dot shakes, and nothing else happens.
 - **Relabel**: click the bracket's label. **Move the star**: click it.
 - **Delete**: right-click a dot (or select it and press Delete). Only that
-  one relationship goes. Nothing else on the page moves.
+  one relationship goes. The remaining lines glide to their new positions
+  over about a second, so you can see where each one went.
 - **Undo / Redo** and **Clear tree** (removes every relationship) are in
   the toolbar.
 
@@ -75,7 +77,12 @@ fills in its own section guesses when an analysis is created.
 The passage written out one clause per line, under the tree. Its lines
 always match the propositions.
 
-- **Tab / Shift-Tab** changes a line's indentation.
+- **Select** words by dragging, Shift-clicking or Shift-arrows, across
+  lines if needed.
+- **Tab / Shift-Tab** changes indentation: the cursor's line, or every
+  selected line together.
+- **Cmd/Ctrl-B** bolds and **Cmd/Ctrl-Shift-H** highlights the selected
+  words (or the word at the cursor); press again to remove.
 - **Enter** splits a line, **Backspace** at a line's start or **Delete**
   at its end merges. These are the same split and merge as in the tree,
   so both views change together and share one undo history.
